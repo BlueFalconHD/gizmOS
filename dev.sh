@@ -16,7 +16,9 @@ set ASFLAGS -target aarch64-none-elf -mcpu=cortex-a57
 set LDFLAGS -EL -o build/kernel.elf -T src/linker.ld
 
 # Source files
-set SOURCES src/main.c src/uart.c src/memory.c src/string_utils.c src/gear.c src/command.c src/ledger_alloc/ledger.c
+set SOURCES src/main.c src/uart.c src/memory.c src/string_utils.c src/gear.c src/command.c \
+            src/ledger_alloc/ledger.c src/ledger_alloc/stress_test.c src/virtio_gpu.c src/graphics/fb.c \
+            src/dma/qemu_dma.c src/math/rand.c src/math/trig.c src/math/geo.c src/device/rtc.c
 
 # Object files
 set OBJECTS
@@ -39,4 +41,4 @@ echo "Linking with ld.lld..."
 $LD $LDFLAGS $OBJECTS
 
 echo "Running in QEMU..."
-qemu-system-aarch64 -M virt -cpu cortex-a57 -kernel build/kernel.elf -nographic
+qemu-system-aarch64 -M virt -cpu cortex-a57 -kernel build/kernel.elf -device ramfb -serial stdio -display cocoa,zoom-to-fit=on

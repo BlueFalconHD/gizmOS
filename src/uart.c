@@ -1,4 +1,5 @@
 #include "uart.h"
+#include "string_utils.h"
 
 void uart_putc(char c)
 {
@@ -23,4 +24,20 @@ char uart_getc(void)
     while (*UART0_FR & UARTFR_RXFE)
         ;
     return (char)(*UART0_DR);
+}
+
+// Outputs an unsigned integer using uart_puts
+void uart_putnbr(unsigned int value) {
+    char buffer[11]; // Maximum length for 32-bit unsigned int
+    utoa(value, buffer);
+    uart_puts(buffer);
+}
+
+// Outputs a pointer address in hexadecimal using uart_puts
+void uart_putptr(void* ptr) {
+    uintptr_t addr = (uintptr_t)ptr;
+    uart_puts("0x");
+    char buffer[2 * sizeof(uintptr_t) + 1];
+    itoa_hex(addr, buffer);
+    uart_puts(buffer);
 }

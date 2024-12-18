@@ -419,8 +419,7 @@ void parse_command(char *buf)
                 if (gear != NULL) {
                     uart_puts("Allocated gear at address 0x");
                     char addr_str[17];
-                    int_to_string_upper(addr_str, (uintptr_t)gear, 16);
-                    uart_puts(addr_str);
+                    uart_putptr(gear);
                     uart_puts("\n");
                 } else {
                     uart_puts("Allocation failed\n");
@@ -437,17 +436,11 @@ void parse_command(char *buf)
         for (unsigned int i = 0; i < root->count; i++) {
             gear_t *gear = root->gears[i];
             uart_puts("Gear ");
-            char id_str[9];
-            int_to_string(id_str, gear->id, 10);
-            uart_puts(id_str);
+            uart_putnbr(gear->id);
             uart_puts(" at address 0x");
-            char addr_str[17];
-            int_to_string_upper(addr_str, (uintptr_t)gear, 16);
-            uart_puts(addr_str);
+            uart_putptr(gear);
             uart_puts(", size ");
-            char size_str[9];
-            int_to_string(size_str, gear->size, 10);
-            uart_puts(size_str);
+            uart_putnbr(gear->size);
             uart_puts(" bytes\n");
         }
     } else if (strcmp(command, "help") == 0) {

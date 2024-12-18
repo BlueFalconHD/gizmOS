@@ -1,6 +1,7 @@
 #ifndef STRING_UTILS_H
 #define STRING_UTILS_H
 
+#include <stdint.h>
 typedef __builtin_va_list va_list;
 
 #define va_start(ap, param) __builtin_va_start(ap, param)
@@ -9,10 +10,10 @@ typedef __builtin_va_list va_list;
 
 unsigned int strlen(const char *str);
 int strcmp(const char *s1, const char *s2);
-void sprintf(char *buffer, const char *format, ...);
 
 /* Integer to string conversion functions */
-char *int_to_string(char *str, unsigned int value, int base);
-char *int_to_string_upper(char *str, unsigned int value, int base);
+void utoa(unsigned int value, char* buffer);
+void itoa(int value, char* buffer);
+void itoa_hex(uintptr_t value, char* buffer);
 
 #endif /* STRING_UTILS_H */

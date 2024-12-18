@@ -19,112 +19,53 @@ int strcmp(const char *s1, const char *s2)
     return *(const unsigned char *)s1 - *(const unsigned char *)s2;
 }
 
-void sprintf(char *buffer, const char *format, ...)
-{
-    va_list args;
-    va_start(args, format);
-
-    char *str = buffer;
-    const char *fmt = format;
-
-    while (*fmt) {
-        if (*fmt != '%') {
-            *str++ = *fmt++;
-            continue;
-        }
-
-        fmt++; /* Skip '%' */
-
-        switch (*fmt) {
-            case 'c': {
-                char c = (char)va_arg(args, int);
-                *str++ = c;
-                break;
-            }
-            case 's': {
-                const char *s = va_arg(args, const char *);
-                while (*s) {
-                    *str++ = *s++;
-                }
-                break;
-            }
-            case 'd':
-            case 'i': {
-                int value = va_arg(args, int);
-                if (value < 0) {
-                    *str++ = '-';
-                    value = -value;
-                }
-                str = int_to_string(str, value, 10);
-                break;
-            }
-            case 'u': {
-                unsigned int value = va_arg(args, unsigned int);
-                str = int_to_string(str, value, 10);
-                break;
-            }
-            case 'x': {
-                unsigned int value = va_arg(args, unsigned int);
-                str = int_to_string(str, value, 16);
-                break;
-            }
-            case 'X': {
-                unsigned int value = va_arg(args, unsigned int);
-                str = int_to_string_upper(str, value, 16);
-                break;
-            }
-            case '%': {
-                *str++ = '%';
-                break;
-            }
-            default: {
-                /* Unsupported format specifier */
-                *str++ = '%';
-                *str++ = *fmt;
-                break;
-            }
-        }
-        fmt++;
+// Converts an unsigned integer to a decimal string
+void utoa(unsigned int value, char* buffer) {
+    char temp[10];
+    int i = 0;
+    if (value == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+        return;
     }
-
-    *str = '\0'; /* Null-terminate the buffer */
-    va_end(args);
+    while (value > 0) {
+        temp[i++] = '0' + (value % 10);
+        value /= 10;
+    }
+    int j;
+    for (j = 0; j < i; j++) {
+        buffer[j] = temp[i - j - 1];
+    }
+    buffer[j] = '\0';
 }
 
-char *int_to_string(char *str, unsigned int value, int base)
-{
-    char buffer[32];
-    char *ptr = &buffer[31];
-    const char *digits = "0123456789abcdef";
-
-    *ptr = '\0';
-    do {
-        *--ptr = digits[value % base];
-        value /= base;
-    } while (value != 0);
-
-    /* Copy to str */
-    while (*ptr) {
-        *str++ = *ptr++;
+// Converts an integer to a decimal string (supports negative numbers)
+void itoa(int value, char* buffer) {
+    if (value < 0) {
+        buffer[0] = '-';
+        utoa(-value, buffer + 1);
+    } else {
+        utoa(value, buffer);
     }
-    return str;
 }
 
-char *int_to_string_upper(char *str, unsigned int value, int base)
-{
-    char buffer[32];
-    char *ptr = &buffer[31];
-    const char *digits = "0123456789ABCDEF";
-
-    *ptr = '\0';
-    do {
-        *--ptr = digits[value % base];
-        value /= base;
-    } while (value != 0);
-
-    /* Copy to str */
-    while (*ptr) {
-        *str++ = *ptr++;
+// Converts an unsigned integer to a hexadecimal string
+void itoa_hex(uintptr_t value, char* buffer) {
+    const char* hex_digits = "0123456789ABCDEF";
+    char temp[2 * sizeof(uintptr_t)];
+    int i = 0;
+    if (value == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+        return;
     }
-    return str;
+    while (value > 0) {
+        temp[i++] = hex_digits[value % 16];
+        value /= 16;
+    }
+    int j;
+    for (j = 0; j < i; j++) {
+        buffer[j] = temp[i - j - 1];
+    }
+    buffer[j] = '\0';
 }

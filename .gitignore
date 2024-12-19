@@ -3,6 +3,8 @@
 bin/
 lib/
 
+util/
+
 # CMake generated files and directories
 CMakeCache.txt
 CMakeFiles/

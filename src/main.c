@@ -1,4 +1,5 @@
 #include "device/uart.h"
+#include "font/font_render.h"
 #include "memory.h"
 #include "device/framebuffer.h"
 #include "qemu/dma.h"
@@ -59,18 +60,10 @@ void main() {
 
     uint8_t *rgb_map = (uint8_t *)fb_memory;
 
+    // draw font
+    font_print_string(10, 10, "hello", &fb);
 
     while (1) {
-        for (int i = 0; i < fb.fb_width; i++) {
-            for (int j = 0; j < fb.fb_height; j++) {
-                uint8_t pixel[4] = {0, 0, 0, 0};
-                pixel[0] = i + read_cntpct() / 10;
-                pixel[1] = j + read_cntpct() * 2;
-                pixel[2] = 0;
-                pixel[3] = 255;
-                write_xrgb256_pixel(&fb, i, j, pixel);
-            }
-        }
     }
 
     free(fb_memory);

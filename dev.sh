@@ -15,27 +15,28 @@ set CFLAGS -target aarch64-none-elf -mcpu=cortex-a57 -ffreestanding
 set ASFLAGS -target aarch64-none-elf -mcpu=cortex-a57
 set LDFLAGS -EL -o build/kernel.elf -T src/linker.ld
 
-# Source files
-set SOURCES src/main.c src/uart.c src/memory.c src/string_utils.c src/gear.c src/command.c \
-            src/ledger_alloc/ledger.c src/ledger_alloc/stress_test.c src/virtio_gpu.c src/graphics/fb.c \
-            src/dma/qemu_dma.c src/math/rand.c src/math/trig.c src/math/geo.c src/device/rtc.c
+# Find source files dynamically and recursively
+set C_SOURCES (find src -type f -name '*.c')
+set S_SOURCES (find src -type f -name '*.s')
 
 # Object files
 set OBJECTS
 
-echo "Compiling source files with clang..."
-for SRC in $SOURCES
+echo "Compiling C source files with clang..."
+for SRC in $C_SOURCES
     set OBJ build/(basename $SRC .c).o
     echo "Compiling $SRC..."
     $CC $CFLAGS -c $SRC -o $OBJ
     set OBJECTS $OBJECTS $OBJ
 end
 
-echo "Assembling boot.s with clang..."
-$AS $ASFLAGS -c src/boot.s -o build/boot.o
-
-# Add boot.o to objects
-set OBJECTS $OBJECTS build/boot.o
+echo "Assembling assembly files with clang..."
+for SRC in $S_SOURCES
+    set OBJ build/(basename $SRC .s).o
+    echo "Assembling $SRC..."
+    $AS $ASFLAGS -c $SRC -o $OBJ
+    set OBJECTS $OBJECTS $OBJ
+end
 
 echo "Linking with ld.lld..."
 $LD $LDFLAGS $OBJECTS

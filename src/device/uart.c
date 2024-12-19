@@ -1,5 +1,5 @@
 #include "uart.h"
-#include "string_utils.h"
+#include "../string.h"
 
 void uart_putc(char c)
 {

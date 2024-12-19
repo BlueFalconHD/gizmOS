@@ -1,4 +1,4 @@
-#include "qemu_dma.h"
+#include "dma.h"
 #include  <stdint.h>
 
 int memcmp_str(void *str1, void *str2, uint64_t count) {
@@ -31,7 +31,6 @@ static void mmio_write16(uint64_t addr, uint16_t val) {
     volatile uint16_t *mmio_w = (volatile uint16_t*)addr;
     *mmio_w = val;
 }
-
 
 static uint64_t mmio_read_bsw64(uint64_t addr) {
     return __builtin_bswap64(*((volatile uint64_t*)addr));

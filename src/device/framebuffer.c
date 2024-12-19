@@ -1,6 +1,6 @@
-#include "fb.h"
-#include "../dma/qemu_dma.h"
-#include "../uart.h"
+#include "framebuffer.h"
+#include "../qemu/dma.h"
+#include "uart.h"
 
 void memcpy_(void *dest, void *src, uint64_t n)
 {

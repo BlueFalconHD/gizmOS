@@ -1,5 +1,5 @@
-#ifndef STRING_UTILS_H
-#define STRING_UTILS_H
+#ifndef STRING_H
+#define STRING_H
 
 #include <stdint.h>
 typedef __builtin_va_list va_list;
@@ -16,4 +16,4 @@ void utoa(unsigned int value, char* buffer);
 void itoa(int value, char* buffer);
 void itoa_hex(uintptr_t value, char* buffer);
 
-#endif /* STRING_UTILS_H */
+#endif /* STRING_H */

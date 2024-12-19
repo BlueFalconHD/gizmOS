@@ -1,5 +1,5 @@
-#ifndef QEMU_DMA_H
-#define QEMU_DMA_H
+#ifndef DMA_H
+#define DMA_H
 
 #include  <stdint.h>
 
@@ -50,4 +50,4 @@ void kprint(uint8_t *print_string);
 void qemu_cfg_write_entry(void *buf, uint32_t e, uint32_t len);
 int qemu_cfg_find_file();
 
-#endif /* QEMU_DMA_H */
+#endif /* DMA_H */

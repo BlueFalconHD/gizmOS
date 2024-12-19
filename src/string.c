@@ -1,5 +1,4 @@
-#include "string_utils.h"
-#include "uart.h"
+#include "string.h"
 
 unsigned int strlen(const char *str)
 {

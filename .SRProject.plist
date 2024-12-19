@@ -5,7 +5,7 @@
 	<key>description</key>
 	<string>os</string>
 	<key>language</key>
-	<string></string>
+	<string>c</string>
 	<key>name</key>
 	<string>gizmOS</string>
 </dict>

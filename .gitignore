@@ -1,1 +1,53 @@
-build/
+# Directories for build outputs
+/build/
+bin/
+lib/
+
+# CMake generated files and directories
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+CMakeScripts/
+CMakeTmp/
+CMakeError.log
+CMakeOutput.log
+
+# Compiler generated object files and executables
+*.o
+*.obj
+*.elf
+*.exe
+*.out
+*.app
+
+# Libraries
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# Logs and user-specific files
+*.log
+*.user
+
+# Temporary files
+*.temp
+*.tmp
+*.swp
+*.swo
+*~
+
+# IDE specific files
+.vscode/
+.idea/
+*.code-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Other
+tags

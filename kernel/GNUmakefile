@@ -18,10 +18,10 @@ ifeq ($(filter $(ARCH),aarch64 loongarch64 riscv64 x86_64),)
 endif
 
 # User controllable C compiler command.
-CC := clang
+CC := /opt/homebrew/opt/llvm/bin/clang
 
 # User controllable archiver command.
-AR :=
+AR := ar
 
 # User controllable C flags.
 CFLAGS := -g -O2 -pipe
@@ -35,7 +35,7 @@ ifeq ($(ARCH),x86_64)
 endif
 
 # User controllable linker flags. We set none by default.
-LDFLAGS :=
+LDFLAGS := -fuse-ld=/opt/homebrew/bin/ld.lld
 
 # Ensure the dependencies have been obtained.
 ifneq ($(shell ( test '$(MAKECMDGOALS)' = clean || test '$(MAKECMDGOALS)' = distclean ); echo $$?),0)
@@ -58,7 +58,9 @@ override CFLAGS += \
     -fno-stack-check \
     -fno-PIC \
     -ffunction-sections \
-    -fdata-sections
+    -fdata-sections \
+    -isysroot /dev/null  # Add this line
+
 
 # Internal C preprocessor flags that should not be changed by the user.
 override CPPFLAGS := \
@@ -67,7 +69,8 @@ override CPPFLAGS := \
     $(CPPFLAGS) \
     -DLIMINE_API_REVISION=2 \
     -MMD \
-    -MP
+    -MP \
+    -isysroot /dev/null  # Add this line
 
 ifeq ($(ARCH),x86_64)
     # Internal nasm flags that should not be changed by the user.
@@ -98,7 +101,7 @@ endif
 ifeq ($(ARCH),aarch64)
     ifeq ($(CC_IS_CLANG),1)
         override CC += \
-            -target aarch64-unknown-none
+            -target aarch64-none-elf
     endif
     override CFLAGS += \
         -mgeneral-regs-only
@@ -136,7 +139,8 @@ ifeq ($(ARCH),loongarch64)
 endif
 
 # Internal linker flags that should not be changed by the user.
-override LDFLAGS += \
+override LDFLAGS := -fuse-ld=lld \
+    -isysroot /dev/null \
     -Wl,--build-id=none \
     -nostdlib \
     -static \

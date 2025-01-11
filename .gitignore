@@ -3,7 +3,12 @@
 bin/
 lib/
 
-util/
+/kernel-deps
+/limine
+/ovmf
+*.iso
+*.hdd
+
 
 # CMake generated files and directories
 CMakeCache.txt

@@ -4,18 +4,17 @@
 #include "device/framebuffer.h"
 #include "qemu/dma.h"
 #include "device/rtc.h"
-#include "device/rtc.h"
 
 #define HEAP_SIZE 1024 * 1024 * 16 /* 16 MB heap size */
 
 uint8_t heap_area[HEAP_SIZE]; /* Heap memory */
 
-void main() {
+void kmain() {
     // Initialize the allocator with the heap area
     memory_init(heap_area, HEAP_SIZE);
 
-    uint32_t fb_width = 256;
-    uint32_t fb_height = 144;
+    uint32_t fb_width = 640;
+    uint32_t fb_height = 360;
     uint32_t fb_bpp = 4;  // Bytes per pixel
     uint32_t fb_stride = fb_bpp * fb_width;
 
@@ -60,8 +59,15 @@ void main() {
 
     uint8_t *rgb_map = (uint8_t *)fb_memory;
 
-    // draw font
-    font_print_string(10, 10, "hello", &fb);
+    uint8_t black[3] = {0, 0, 0};
+
+    int line = 0;
+    int cursor_pos = 0;
+
+    // Buffer for user input
+    int size = 128;
+    int buffer_length = 0;
+    char buf[size];
 
     while (1) {
     }

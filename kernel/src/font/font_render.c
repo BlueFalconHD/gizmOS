@@ -1,5 +1,6 @@
 #include "font_render.h"
-#include "font.h"
+#include "font_l.h"
+#include <stdint.h>
 
 // UTF-8 Decoder Function
 int utf8_decode(const char *s, int *index, uint32_t *codepoint) {
@@ -43,55 +44,64 @@ int utf8_decode(const char *s, int *index, uint32_t *codepoint) {
 }
 
 void font_draw_pixel(int c, int x, int y, fb_info *fb) {
-    uint8_t pixel[3] = { (uint8_t)(255 * c), (uint8_t)(255 * c), (uint8_t)(255 * c) };
+    uint8_t pixel[3];
+
+    if (c) {
+        // Foreground color (e.g., white)
+        pixel[0] = 255; // Red
+        pixel[1] = 255; // Green
+        pixel[2] = 255; // Blue
+    } else {
+        // Background color (e.g., black)
+        pixel[0] = 0;
+        pixel[1] = 0;
+        pixel[2] = 0;
+    }
+
     write_rgb256_pixel(fb, x, y, pixel);
 }
 
+
+void draw_byte_stride(int x, int y, uint8_t byte, fb_info *fb) {
+    for (int i = 0; i < 8; i++) {
+        if (byte & (1 << i)) {
+            font_draw_pixel(1, x + i, y, fb);
+        } else {
+            font_draw_pixel(0, x + i, y, fb);
+        }
+    }
+}
+
 int font_print_char(int x, int y, uint32_t codepoint, fb_info *fb) {
-    // Use the dimensions from the font
-    const int charWidth = FONT_WIDTH;
-    const int charHeight = FONT_HEIGHT;
+    const int charWidth = 8;
+    const int charHeight = 16;
     const int charSpacing = 1; // Adjust spacing as needed
 
-    // Clear the area where the character and spacing will be
-    for (int py = 0; py < charHeight; py++) {
-        for (int px = 0; px < charWidth + charSpacing; px++) {
-            font_draw_pixel(0, x + px, y + py, fb);
-        }
-    }
-
-    // Special handling for space character
-    if (codepoint == ' ') {
+    // Check if codepoint is within the valid range
+    if (codepoint > 255) {
+        // Optionally render a placeholder or skip the character
         return charWidth + charSpacing;
     }
 
-    // Loop to find the matching character in the font array
-    int match = -1;
-    int font_size = sizeof(font) / sizeof(font[0]);
-    for (int l = 0; l < font_size; l++) {
-        if (font[l].codepoint == codepoint) {
-            match = l;
-            break;
-        }
-    }
+    // Calculate the starting index of the glyph in the font data array
+    int glyph_offset = codepoint * charHeight; // Each character has 'charHeight' bytes
 
-    // If the character is found, render it
-    if (match != -1) {
-        for (int py = 0; py < charHeight; py++) {
-            for (int px = 0; px < charWidth; px++) {
-                char pixel_value = font[match].code[py][px];
-                if (pixel_value == '#') {
-                    font_draw_pixel(1, x + px, y + py, fb);
-                } else {
-                    // For completeness, you can choose to draw background pixels here
-                    // font_draw_pixel(0, x + px, y + py, fb);
-                }
+    // Loop over each row of the glyph
+    for (int py = 0; py < charHeight; py++) {
+        uint8_t row_data = FONT_DATA_LARGE[glyph_offset + py];
+
+        // Loop over each pixel in the row
+        for (int px = 0; px < charWidth; px++) {
+            // Check if the pixel is set (bits are from MSB to LSB)
+            int pixel_set = row_data & (1 << (7 - px));
+
+            if (pixel_set) {
+                font_draw_pixel(1, x + px, y + py, fb);
+            } else {
+                // Optionally, draw background pixel
+                font_draw_pixel(0, x + px, y + py, fb);
             }
         }
-    } else {
-        // Character not found, you can choose to render a placeholder or skip
-        // For now, we'll skip rendering and return the width
-        return charWidth + charSpacing;
     }
 
     // Return the total width consumed by this character including spacing
@@ -103,27 +113,26 @@ int font_print_string(int x, int y, const char *string, fb_info *fb) {
     int cy = y;
     int index = 0;
 
-    while (1) {
-        if (string[index] == '\0') {
-            break;
-        }
-
+    while (string[index] != '\0') {
         uint32_t codepoint;
         int res = utf8_decode(string, &index, &codepoint);
+
         if (res == -1) {
             // Invalid UTF-8 sequence, skip the byte
             index++;
             continue;
         }
 
+        // Render the character and get the width
         int length = font_print_char(cx, cy, codepoint, fb);
         cx += length;
 
+        // Handle line wrapping if needed
+        // Assuming SCREEN_WIDTH is defined and represents the width of the framebuffer
         #ifdef SCREEN_WIDTH
-        // Text wrap after space or if we reach end of line
-        if (cx > SCREEN_WIDTH - FONT_WIDTH && codepoint == ' ') {
+        if (cx > SCREEN_WIDTH - 8) { // Adjust '8' based on charWidth
             cx = x;
-            cy += FONT_HEIGHT; // Move to the next line
+            cy += 8; // Move to next line; adjust based on charHeight
         }
         #endif
     }

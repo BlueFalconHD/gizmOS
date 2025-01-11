@@ -18,7 +18,37 @@ extern uintptr_t mem_free;    /* Global variable for next free memory address */
  * @param n Number of bytes to copy.
  * @return Pointer to the destination memory area.
  */
-void *memcpy(void *dest, const void *src, unsigned int n);
+void *memcpy(void *dest, const void *src, size_t n);
+
+/**
+ * Sets the first n bytes of the block of memory pointed by ptr to the specified value.
+ *
+ * @param dest Pointer to the block of memory to fill.
+ * @param value Value to be set.
+ * @param n Number of bytes to be set to the value.
+ */
+void *memset(void *s, int t, size_t n);
+
+/**
+ * Copies n bytes from memory area src to memory area dest. The memory areas may overlap.
+ *
+ * @param dest Pointer to the destination memory area.
+ * @param src Pointer to the source memory area.
+ * @param n Number of bytes to copy.
+ * @return Pointer to the destination memory area.
+ */
+void *memmove(void *dest, const void *src, size_t n);
+
+/**
+ * Compares the first n bytes of two memory blocks.
+ *
+ * @param ptr1 Pointer to the first memory block.
+ * @param ptr2 Pointer to the second memory block.
+ * @param n Number of bytes to compare.
+ * @return 0 if the contents of both memory blocks are equal, non-zero otherwise.
+ */
+
+int memcmp(const void *s1, const void *s2, size_t n);
 
 /**
  * Initializes the memory allocator with the provided memory region.

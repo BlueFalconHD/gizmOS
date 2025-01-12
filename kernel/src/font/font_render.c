@@ -43,7 +43,7 @@ int utf8_decode(const char *s, int *index, uint32_t *codepoint) {
     }
 }
 
-void font_draw_pixel(int c, int x, int y, fb_info *fb) {
+void font_draw_pixel(int c, int x, int y, struct limine_framebuffer *fb) {
     uint8_t pixel[3];
 
     if (c) {
@@ -62,7 +62,7 @@ void font_draw_pixel(int c, int x, int y, fb_info *fb) {
 }
 
 
-void draw_byte_stride(int x, int y, uint8_t byte, fb_info *fb) {
+void draw_byte_stride(int x, int y, uint8_t byte, struct limine_framebuffer *fb) {
     for (int i = 0; i < 8; i++) {
         if (byte & (1 << i)) {
             font_draw_pixel(1, x + i, y, fb);
@@ -72,7 +72,7 @@ void draw_byte_stride(int x, int y, uint8_t byte, fb_info *fb) {
     }
 }
 
-int font_print_char(int x, int y, uint32_t codepoint, fb_info *fb) {
+int font_print_char(int x, int y, uint32_t codepoint, struct limine_framebuffer *fb) {
     const int charWidth = 8;
     const int charHeight = 16;
     const int charSpacing = 1; // Adjust spacing as needed
@@ -108,7 +108,7 @@ int font_print_char(int x, int y, uint32_t codepoint, fb_info *fb) {
     return charWidth + charSpacing;
 }
 
-int font_print_string(int x, int y, const char *string, fb_info *fb) {
+int font_print_string(int x, int y, const char *string, struct limine_framebuffer *fb) {
     int cx = x;
     int cy = y;
     int index = 0;

@@ -50,6 +50,7 @@ run-aarch64: ovmf/ovmf-code-$(ARCH).fd $(IMAGE_NAME).iso
 	qemu-system-$(ARCH) \
 		-M virt \
 		-cpu cortex-a72 \
+		-serial stdio \
 		-device ramfb \
 		-device qemu-xhci \
 		-device usb-kbd \
@@ -63,6 +64,7 @@ run-hdd-aarch64: ovmf/ovmf-code-$(ARCH).fd $(IMAGE_NAME).hdd
 	qemu-system-$(ARCH) \
 		-M virt \
 		-cpu cortex-a72 \
+		-serial stdio \
 		-device ramfb \
 		-device qemu-xhci \
 		-device usb-kbd \

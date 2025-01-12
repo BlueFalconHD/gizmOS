@@ -1,14 +1,10 @@
-#include "device/uart.h"
-#include "font/font_render.h"
-#include "memory.h"
 #include "device/framebuffer.h"
-#include "qemu/dma.h"
-#include "device/rtc.h"
-
-#include <stdint.h>
+#include "device/term.h"
 #include <stddef.h>
 #include <stdbool.h>
-#include <limine.h>
+#include "limine.h"
+#include "string.h"
+#include "time.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -17,16 +13,12 @@
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(3);
 
-// The Limine requests can be placed anywhere, but it is important that
-// the compiler does not optimise them away, so, usually, they should
-// be made volatile or equivalent, _and_ they should be accessed at least
-// once or marked as used with the "used" attribute as done here.
-
 __attribute__((used, section(".limine_requests")))
-static volatile struct limine_framebuffer_request framebuffer_request = {
-    .id = LIMINE_FRAMEBUFFER_REQUEST,
+static volatile struct limine_boot_time_request boot_time_request = {
+    .id = LIMINE_BOOT_TIME_REQUEST,
     .revision = 0
 };
+
 
 // Finally, define the start and end markers for the Limine requests.
 // These can also be moved anywhere, to any .c file, as seen fit.
@@ -42,11 +34,20 @@ static volatile LIMINE_REQUESTS_END_MARKER;
 
 // uint8_t heap_area[HEAP_SIZE]; /* Heap memory */
 
-static void hcf(void) {
+static void hcf() {
     for (;;) {
         asm ("wfi");
     }
 }
+
+#define ANSI_RESET "\x1b[0m"
+#define ANSI_BOLD "\x1b[1m"
+#define ANSI_UNDERLINE "\x1b[4m"
+#define ANSI_RED "\x1b[31m"
+#define ANSI_GREEN "\x1b[32m"
+#define ANSI_YELLOW "\x1b[33m"
+#define ANSI_BLUE "\x1b[34m"
+
 
 void kmain() {
     // Initialize the allocator with the heap area
@@ -118,20 +119,38 @@ void kmain() {
         hcf();
     }
 
-    // Ensure we got a framebuffer.
-    if (framebuffer_request.response == NULL
-     || framebuffer_request.response->framebuffer_count < 1) {
-        hcf();
+    // Initialize the framebuffer
+    struct limine_framebuffer *fb = get_framebuffer();
+    term_init(fb);
+
+    // Set the text color
+    term_puts(ANSI_GREEN);
+    term_puts(ANSI_UNDERLINE);
+
+    // Print a welcome message
+    term_puts("Welcome to gizmOS!\n");
+
+    term_puts(ANSI_RESET);
+
+    // Get boot time
+    struct limine_boot_time_response *boot_time_response = boot_time_request.response;
+    if (boot_time_response == NULL) {
+        term_puts(ANSI_RED);
+        term_puts(ANSI_BOLD);
+        term_puts("[err] Response to boot time request to Limine was null\n");
+        term_puts(ANSI_RESET);
+    } else {
+        term_puts("Booted at ");
+        struct tm time;
+        unix_time_to_tm(boot_time_response->boot_time,&time);
+        char buffer[128];
+        tm_to_string(&time, buffer);
+        term_puts(buffer);
+        term_puts("\n");
     }
 
-    // Fetch the first framebuffer.
-    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
-
-    // Note: we assume the framebuffer model is RGB with 32-bit pixels.
-    for (size_t i = 0; i < 1000; i++) {
-        volatile uint32_t *fb_ptr = framebuffer->address;
-        fb_ptr[i * (framebuffer->pitch / 4) + i] = 0xffffff;
-    }
+    term_puts(ANSI_RESET);
+    term_puts("TODO: implement keyboard handling\n");
 
     // We're done, just hang...
     hcf();

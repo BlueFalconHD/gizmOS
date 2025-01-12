@@ -1,60 +1,44 @@
 #include "framebuffer.h"
-#include "../qemu/dma.h"
-#include "uart.h"
+#include "../memory.h"
 
-void memcpy_(void *dest, void *src, uint64_t n)
-{
-   char *csrc = (char *)src;
-   char *cdest = (char *)dest;
-
-   for (int i=0; i<n; i++)
-       cdest[i] = csrc[i];
+static void hcf() {
+    for (;;) {
+        asm ("wfi");
+    }
 }
 
-int ramfb_setup(fb_info *fb) {
-    uint32_t select = qemu_cfg_find_file();
 
-    if (select == 0) {
-        return 1;
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_framebuffer_request framebuffer_request = {
+    .id = LIMINE_FRAMEBUFFER_REQUEST,
+    .revision = 0
+};
+
+struct limine_framebuffer *get_framebuffer(void) {
+    // Ensure we got a framebuffer.
+    if (framebuffer_request.response == NULL
+     || framebuffer_request.response->framebuffer_count < 1) {
+        hcf();
     }
 
-    struct QemuRAMFBCfg cfg = {
-        .addr   = __builtin_bswap64(fb->fb_addr),
-        .fourcc = __builtin_bswap32(DRM_FORMAT_XRGB8888),
-        .flags  = __builtin_bswap32(0),
-        .width  = __builtin_bswap32(fb->fb_width),
-        .height = __builtin_bswap32(fb->fb_height),
-        .stride = __builtin_bswap32(fb->fb_stride),
-    };
-    qemu_cfg_write_entry(&cfg, select, sizeof(cfg));
-
-    uart_puts("ramfb setup no return\n");
+    // Fetch the first framebuffer.
+    struct limine_framebuffer *framebuffer = framebuffer_request.response->framebuffers[0];
+    return framebuffer;
 }
 
-void write_xrgb256_pixel(fb_info *fb, uint16_t x, uint16_t y, uint8_t pixel[4]){
-    memcpy_((void*)fb->fb_addr + ((y * fb->fb_stride) + (x * fb->fb_bpp)), pixel, 4);
+void write_rgb256_pixel(struct limine_framebuffer *fb, uint32_t x, uint32_t y, uint8_t pixel[3]) {
+    // volatile uint32_t *fb_ptr = framebuffer->address;
+    // fb_ptr[y * (framebuffer->pitch / 4) + x] = color;
+
+    volatile uint32_t *fb_ptr = fb->address;
+    fb_ptr[y * (fb->pitch / 4) + x] = (0xFF << 24) | (pixel[0] << 16) | (pixel[1] << 8) | pixel[2];
 }
 
-
-void write_rgb256_pixel(fb_info *fb, uint16_t x, uint16_t y, uint8_t pixel[3]) {
-    // offset one byte (xrgb)
-    memcpy_((void*)fb->fb_addr + ((y * fb->fb_stride) + (x * fb->fb_bpp)), pixel, 4);
-}
-
-void draw_rgb256_map(fb_info *fb, uint32_t x_res, uint32_t y_res, uint8_t *rgb_map) {
-
-    uint8_t map_bpp = 4;
-    uint64_t map_stride = x_res * map_bpp;
-    uint64_t map_size = map_stride*y_res;
-
-    uint64_t i = 0;
-    for (int map_i = 0; map_i < map_size; map_i += 4) {
-        if (map_i%map_stride == 0 && map_i != 0) {
-            i += fb->fb_stride-map_stride;
+void draw_rgb256_map(struct limine_framebuffer *fb, uint32_t x_res, uint32_t y_res, uint8_t *rgb_map) {
+    for (uint32_t x = 0; x < x_res; x++) {
+        for (uint32_t y = 0; y < y_res; y++) {
+            uint8_t pixel[3] = {rgb_map[(y * x_res + x) * 3], rgb_map[(y * x_res + x) * 3 + 1], rgb_map[(y * x_res + x) * 3 + 2]};
+            write_rgb256_pixel(fb, x, y, pixel);
         }
-        // 1 compensates for alignement (xRGB)
-        memcpy_((void*)fb->fb_addr + i, &rgb_map[map_i], 4);
-
-        i += 4;
     }
 }

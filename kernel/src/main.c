@@ -1,10 +1,13 @@
 #include "device/framebuffer.h"
+#include "device/rtc.h"
 #include "device/term.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include "limine.h"
+#include "memory.h"
 #include "string.h"
 #include "time.h"
+#include "dtb/dtb.h"
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -16,6 +19,12 @@ static volatile LIMINE_BASE_REVISION(3);
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_boot_time_request boot_time_request = {
     .id = LIMINE_BOOT_TIME_REQUEST,
+    .revision = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_dtb_request dtb_request = {
+    .id = LIMINE_DTB_REQUEST,
     .revision = 0
 };
 
@@ -40,13 +49,24 @@ static void hcf() {
     }
 }
 
-#define ANSI_RESET "\x1b[0m"
-#define ANSI_BOLD "\x1b[1m"
-#define ANSI_UNDERLINE "\x1b[4m"
-#define ANSI_RED "\x1b[31m"
-#define ANSI_GREEN "\x1b[32m"
-#define ANSI_YELLOW "\x1b[33m"
-#define ANSI_BLUE "\x1b[34m"
+uint8_t triangle_oscillator(uint64_t time) {
+    uint64_t period = 1000000000;
+    uint64_t half_period = period / 2;
+    uint64_t quarter_period = period / 4;
+    uint64_t eighth_period = period / 8;
+
+    uint64_t phase = time % period;
+
+    if (phase < half_period) {
+        return 0;
+    } else if (phase < half_period + quarter_period) {
+        return 1;
+    } else if (phase < half_period + quarter_period + eighth_period) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
 
 
 void kmain() {
@@ -114,6 +134,10 @@ void kmain() {
 
     // free(fb_memory);
 
+    // save content of x0 to variable
+    uint64_t x0;
+    asm volatile("mov %0, x0" : "=r"(x0));
+
     // Ensure the bootloader actually understands our base revision (see spec).
     if (LIMINE_BASE_REVISION_SUPPORTED == false) {
         hcf();
@@ -123,24 +147,14 @@ void kmain() {
     struct limine_framebuffer *fb = get_framebuffer();
     term_init(fb);
 
-    // Set the text color
-    term_puts(ANSI_GREEN);
-    term_puts(ANSI_UNDERLINE);
-
-    // Print a welcome message
-    term_puts("Welcome to gizmOS!\n");
-
-    term_puts(ANSI_RESET);
+    print_header("ahoy", "Welcome to gizmOS!\n");
 
     // Get boot time
     struct limine_boot_time_response *boot_time_response = boot_time_request.response;
     if (boot_time_response == NULL) {
-        term_puts(ANSI_RED);
-        term_puts(ANSI_BOLD);
-        term_puts("[err] Response to boot time request to Limine was null\n");
-        term_puts(ANSI_RESET);
+        print_error("Response to boot time request to Limine was null\n");
     } else {
-        term_puts("Booted at ");
+        print_header("time", "Booted at ");
         struct tm time;
         unix_time_to_tm(boot_time_response->boot_time,&time);
         char buffer[128];
@@ -150,7 +164,53 @@ void kmain() {
     }
 
     term_puts(ANSI_RESET);
-    term_puts("TODO: implement keyboard handling\n");
+    //term_puts("TODO: implement keyboard handling\n");
+
+    // Get the device tree blob
+    struct limine_dtb_response *dtb_response = dtb_request.response;
+    if (dtb_response == NULL) {
+        print_error("Response to DTB request to Limine was null\n");
+    } else {
+        // make fdt_header at the start of the dtb_ptr
+        struct fdt_header *header = (struct fdt_header *)dtb_response->dtb_ptr;
+
+        char buffer[128];
+        itoa_hex(header->magic, buffer);
+
+        print_header("dtb", " Magic number: 0x");
+        term_puts(buffer);
+        term_puts("\n");
+
+        bool valid = verify_magic(header);
+
+        if (!valid) {
+            print_error("Invalid Device Tree Blob. Make sure virt.dtb is in img/\n");
+            hcf();
+        }
+
+        print_header("dtb", " Version ");
+        itoa(swap_uint32(header->version), buffer);
+        term_puts(buffer);
+        term_puts("\n");
+
+        print_header("dtb", " Last compatible version ");
+        itoa(swap_uint32(header->last_comp_version), buffer);
+        term_puts(buffer);
+        term_puts("\n");
+
+        print_header("dtb", " Boot CPU ID ");
+        itoa(swap_uint32(header->boot_cpuid_phys), buffer);
+        term_puts(buffer);
+        term_puts("\n");
+
+        print_header("dtb", " Size of the Device Tree Blob ");
+        itoa(swap_uint32(header->totalsize), buffer);
+        term_puts(buffer);
+        term_puts("\n");
+
+    }
+
+    print_header("done", "Finished all startup processes. TODO: keyboard input");
 
     // We're done, just hang...
     hcf();

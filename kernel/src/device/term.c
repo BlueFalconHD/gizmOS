@@ -47,3 +47,25 @@ void term_puts(const char *s) {
 
     flanterm_write(ft_ctx, s, strlen(s));
 }
+
+void print_header(const char *title, const char *content) {
+    term_puts("[");
+    term_puts(ANSI_BOLD);
+    term_puts(ANSI_GREEN);
+    term_puts(title);
+    term_puts(ANSI_RESET);
+    term_puts("] ");
+    term_puts(content);
+    //term_puts("\n");
+}
+
+void print_error(const char *content) {
+    term_puts("[");
+    term_puts(ANSI_BOLD);
+    term_puts(ANSI_RED);
+    term_puts("ERROR");
+    term_puts(ANSI_RESET);
+    term_puts("] ");
+    term_puts(content);
+    //term_puts("\n");
+}

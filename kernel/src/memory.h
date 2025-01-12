@@ -73,5 +73,27 @@ void* malloc(size_t size);
  */
 void free(void* ptr);
 
+/**
+ * Swaps the endianness of a 16-bit integer.
+ *
+ * @param value The value to swap.
+ */
+uint16_t swap_uint16(uint16_t val);
+
+/**
+ * Swaps the endianness of a 32-bit integer.
+ *
+ * @param value The value to swap.
+ */
+uint32_t swap_uint32(uint32_t val);
+
+/**
+ * Swaps the endianness of a 64-bit integer.
+ *
+ * @param value The value to swap.
+ */
+uint64_t swap_uint64(uint64_t val);
+
+
 
 #endif /* MEMORY_H */

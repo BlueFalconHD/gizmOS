@@ -1,4 +1,5 @@
 #include "hhdm.h"
+#include "hcf.h"
 #include "limine.h"
 #include "memory.h"
 #include "device/term.h"
@@ -17,9 +18,7 @@ void hhdm_init() {
     struct limine_hhdm_response *hhdm_response = hhdm_request.response;
     if (hhdm_response == NULL) {
         print_error("Response to HHDM request to Limine was null\n");
-        for (;;) {
-            asm ("wfi");
-        }
+        hcf();
     } else {
         hhdm_offset = hhdm_response->offset;
     }

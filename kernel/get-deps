@@ -64,6 +64,13 @@ download_by_hash() {
     fi
 }
 
+find_and_replace() {
+# $1 - directory
+# $2 - search string
+# $3 - replace string
+    find "$1" -type f -exec sed -i "s/$2/$3/g" {} +
+}
+
 clone_repo_commit \
     https://github.com/osdev0/freestnd-c-hdrs-0bsd.git \
     freestnd-c-hdrs-0bsd \
@@ -91,3 +98,6 @@ clone_repo_commit \
     https://github.com/mintsuki/flanterm \
     src/flanterm \
     6f4e92ed8f7202bda3a53e28fd527f2f997bbb5c
+
+find_and_replace src/dtb/smoldtb/smoldtb.h "dtb_init" "smoldtb_init"
+find_and_replace src/dtb/smoldtb/smoldtb.c "dtb_init" "smoldtb_init"

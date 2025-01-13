@@ -18,10 +18,12 @@ struct page_header {
 
 #define PAGE_HEADER_SIZE (sizeof(struct page_header))
 
-static struct page_header *head_page = NULL;
+extern struct page_header *head_page;
 
 void initialize_pages(struct limine_memmap_entry **entries, uint64_t entry_count);
 
 uint64_t get_free_page_count();
+void *alloc_page();
+void free_page(void *ptr);
 
 #endif /* PHYSICAL_ALLOC_H */

@@ -1,4 +1,5 @@
 #include "memory_map.h"
+#include "hcf.h"
 #include "limine.h"
 #include "device/term.h"
 #include "string.h"
@@ -18,9 +19,7 @@ void memory_map_init() {
     struct limine_memmap_response *memory_map_response = memory_map_request.response;
     if (memory_map_response == NULL) {
         print_error("Response to memory map request to Limine was null\n");
-        for (;;) {
-            asm ("wfi");
-        }
+        hcf();
     } else {
         itoa(memory_map_response->entry_count, buffer);
         memory_map_entries = memory_map_response->entries;

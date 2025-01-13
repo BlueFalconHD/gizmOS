@@ -14,6 +14,6 @@ static dtb_ops gizmOS_dtb_ops = {
     .on_error = on_error
 };
 
-bool init_dtb(uintptr_t start);
+void dtb_init();
 
 #endif /* DTB_H */

@@ -1,5 +1,4 @@
 #include "physical_alloc.h"
-#include "device/term.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -7,14 +6,13 @@
 #include "string.h"
 #include "hhdm.h"
 
-static struct page_header *head_page;
+struct page_header *head_page = NULL;
 
 void initialize_pages(struct limine_memmap_entry **entries, uint64_t entry_count) {
 
     head_page = NULL;
     struct page_header *prev = NULL;
 
-    char buffer[64];
 
     for (uint64_t i = 0; i < entry_count; i++) {
         struct limine_memmap_entry *entry = entries[i];
@@ -24,17 +22,6 @@ void initialize_pages(struct limine_memmap_entry **entries, uint64_t entry_count
             uint64_t end = entry->base + entry->length;
             uint64_t pages = (end - start) / PAGE_SIZE;
 
-            // Debug print
-            term_puts("usable region  ");
-            itoa_hex(start + hhdm_offset, buffer);
-            term_puts(buffer);
-            term_puts(" -> ");
-            itoa_hex(end + hhdm_offset, buffer);
-            term_puts(buffer);
-            term_puts(" (fits ");
-            uint64_to_str(pages, buffer);
-            term_puts(buffer);
-            term_puts(" pages)\n");
 
             for (uint64_t j = 0; j < pages; j++) {
                 // Add HHDM offset to access physical memory
@@ -65,4 +52,23 @@ uint64_t get_free_page_count() {
         curr = curr->next;
     }
     return count;
+}
+
+void *alloc_page() {
+    struct page_header *curr = head_page;
+    while (curr != NULL) {
+        if (curr->free) {
+            curr->free = false;
+            // Return pointer after the page header
+            return (void *)((uintptr_t)curr + PAGE_HEADER_SIZE);
+        }
+        curr = curr->next;
+    }
+    return NULL;
+}
+
+void free_page(void *ptr) {
+    // Adjust pointer back to include the page header
+    struct page_header *page = (struct page_header *)((uintptr_t)ptr - PAGE_HEADER_SIZE);
+    page->free = true;
 }

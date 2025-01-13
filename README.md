@@ -18,6 +18,8 @@ Features:
 > [!WARNING]
 > You need to change the path to the compiler in kernel/GNUmakefile (CC = ...), as it is hardcoded for my system currently.
 
+First, `cd` into `kernel/` and `chmod u+x get-deps` and then `./get-deps` to download dependencies.
+
 To build the kernel, run the following command:
 ```bash
 make

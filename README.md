@@ -12,7 +12,7 @@ Features:
 - [x] Real time clock
 - [x] DTB parsing
   - [x] Initial loading
-  - [x] Parsing
+  - [x] Parsing (smoldtb https://github.com/deanoburrito/smoldtb)
 - [ ] Interrupts
 - [ ] Timers
 - [ ] Keyboard input

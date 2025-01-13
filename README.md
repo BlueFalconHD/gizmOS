@@ -4,11 +4,15 @@
 Features:
 - [x] PL011 UART (Note: use DTB parsing to get address eventually)
 - [x] Framebuffer support (formerly rawfb only, now supports any framebuffer backed by Limine)
-- [x] Memory allocation (kinda, not really sure if it works very well)
+- [ ] Memory allocation (kinda, not really sure if it works very well)
+  - [ ] Physical allocator
+    - [x] Page setup
+    - [ ] Allocation
+    - [ ] Freeing
 - [x] Real time clock
-- [ ] DTB parsing
+- [x] DTB parsing
   - [x] Initial loading
-  - [ ] Parsing
+  - [x] Parsing
 - [ ] Interrupts
 - [ ] Timers
 - [ ] Keyboard input

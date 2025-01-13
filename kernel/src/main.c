@@ -5,9 +5,16 @@
 #include <stdbool.h>
 #include "limine.h"
 #include "memory.h"
+#include "memory_map.h"
 #include "string.h"
 #include "time.h"
 #include "dtb/dtb.h"
+#include "dtb/smoldtb/smoldtb.h"
+#include "img/img.h"
+#include "img/gizmOS_logo.h"
+#include "physical_alloc.h"
+#include "hhdm.h"
+
 
 // Set the base revision to 3, this is recommended as this is the latest
 // base revision described by the Limine boot protocol specification.
@@ -15,6 +22,16 @@
 
 __attribute__((used, section(".limine_requests")))
 static volatile LIMINE_BASE_REVISION(3);
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_paging_mode_request paging_mode_request = {
+    .id = LIMINE_PAGING_MODE_REQUEST,
+    .revision = 0,
+    .mode = LIMINE_PAGING_MODE_AARCH64_4LVL
+};
+
+
+
 
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_boot_time_request boot_time_request = {
@@ -27,6 +44,9 @@ static volatile struct limine_dtb_request dtb_request = {
     .id = LIMINE_DTB_REQUEST,
     .revision = 0
 };
+
+
+
 
 
 // Finally, define the start and end markers for the Limine requests.
@@ -46,25 +66,6 @@ static volatile LIMINE_REQUESTS_END_MARKER;
 static void hcf() {
     for (;;) {
         asm ("wfi");
-    }
-}
-
-uint8_t triangle_oscillator(uint64_t time) {
-    uint64_t period = 1000000000;
-    uint64_t half_period = period / 2;
-    uint64_t quarter_period = period / 4;
-    uint64_t eighth_period = period / 8;
-
-    uint64_t phase = time % period;
-
-    if (phase < half_period) {
-        return 0;
-    } else if (phase < half_period + quarter_period) {
-        return 1;
-    } else if (phase < half_period + quarter_period + eighth_period) {
-        return 0;
-    } else {
-        return 1;
     }
 }
 
@@ -145,72 +146,108 @@ void kmain() {
 
     // Initialize the framebuffer
     struct limine_framebuffer *fb = get_framebuffer();
+
+    // draw boot splash logo
+    draw_image_aligned(fb, IMAGE_WIDTH, IMAGE_HEIGHT, color_palette, bitmap, IMAGE_ALIGN_HORIZONTAL_LEFT, IMAGE_ALIGN_VERTICAL_TOP);
+
+    sleep_s(1);
+
     term_init(fb);
 
-    print_header("ahoy", "Welcome to gizmOS!\n");
+
+
+    print_header("BOOT", "Initializing kernel components.\n");
+
+    char buffer[128];
 
     // Get boot time
     struct limine_boot_time_response *boot_time_response = boot_time_request.response;
     if (boot_time_response == NULL) {
-        print_error("Response to boot time request to Limine was null\n");
+        print_error("Response to boot time request was null\n");
     } else {
-        print_header("time", "Booted at ");
+        term_puts("Booted at ");
         struct tm time;
         unix_time_to_tm(boot_time_response->boot_time,&time);
-        char buffer[128];
         tm_to_string(&time, buffer);
         term_puts(buffer);
         term_puts("\n");
     }
 
     term_puts(ANSI_RESET);
-    //term_puts("TODO: implement keyboard handling\n");
 
-    // Get the device tree blob
+    print_header("DTB", "Fetching and parsing DTB\n");
+
     struct limine_dtb_response *dtb_response = dtb_request.response;
     if (dtb_response == NULL) {
         print_error("Response to DTB request to Limine was null\n");
     } else {
-        // make fdt_header at the start of the dtb_ptr
-        struct fdt_header *header = (struct fdt_header *)dtb_response->dtb_ptr;
+        init_dtb((uintptr_t)dtb_response->dtb_ptr);
 
-        char buffer[128];
-        itoa_hex(header->magic, buffer);
-
-        print_header("dtb", " Magic number: 0x");
-        term_puts(buffer);
-        term_puts("\n");
-
-        bool valid = verify_magic(header);
-
-        if (!valid) {
-            print_error("Invalid Device Tree Blob. Make sure virt.dtb is in img/\n");
+        dtb_node *root = dtb_find("/");
+        if (root == NULL) {
+            print_error("Failed to find root node in DTB\n");
             hcf();
         }
 
-        print_header("dtb", " Version ");
-        itoa(swap_uint32(header->version), buffer);
-        term_puts(buffer);
-        term_puts("\n");
+        // get `intc`
+        dtb_node *intc = dtb_find_child(root, "intc");
+        if (intc == NULL) {
+            print_error("Failed to find `intc` node in DTB\n");
+            hcf();
+        }
 
-        print_header("dtb", " Last compatible version ");
-        itoa(swap_uint32(header->last_comp_version), buffer);
-        term_puts(buffer);
-        term_puts("\n");
 
-        print_header("dtb", " Boot CPU ID ");
-        itoa(swap_uint32(header->boot_cpuid_phys), buffer);
-        term_puts(buffer);
-        term_puts("\n");
+        dtb_prop* reg_prop = dtb_find_prop(intc, "reg");
+        if (reg_prop != NULL) {
+            size_t addr_cells = dtb_get_addr_cells_for(intc);
+            uintmax_t address;
+            if (dtb_read_prop_values(reg_prop, addr_cells, &address) > 0) {
+                term_puts("Interrupt controller address: 0x");
+                itoa_hex(address, buffer);
+                term_puts(buffer);
+                term_puts("\n");
+            } else {
+                print_error("Failed to read `reg` property\n");
+                hcf();
+            }
+        }
 
-        print_header("dtb", " Size of the Device Tree Blob ");
-        itoa(swap_uint32(header->totalsize), buffer);
-        term_puts(buffer);
-        term_puts("\n");
 
     }
 
-    print_header("done", "Finished all startup processes. TODO: keyboard input");
+    hhdm_init();
+    memory_map_init();
+
+
+    if (paging_mode_request.response == NULL) {
+        print_error("Response to paging mode request was null\n");
+        hcf();
+    } else {
+        term_puts("Paging mode set to AArch64 4-level paging\n");
+
+        // get response from paging mode request
+        struct limine_paging_mode_response *paging_mode_response = paging_mode_request.response;
+
+        // ensure mode value is correct
+        if (paging_mode_response->mode != LIMINE_PAGING_MODE_AARCH64_4LVL) {
+            print_error("Paging mode not set to AArch64 4-level paging\n");
+            hcf();
+        }
+    }
+
+
+
+    print_header("alloc", "Initializing pages\n");
+    initialize_pages(memory_map_entries, memory_map_entry_count);
+
+
+    uint64_t free_page_count = get_free_page_count();
+    uint64_to_str(free_page_count, buffer);
+    term_puts("Free pages: ");
+    term_puts(buffer);
+    term_puts("\n");
+
+
 
     // We're done, just hang...
     hcf();

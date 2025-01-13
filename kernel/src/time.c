@@ -1,6 +1,11 @@
 #include <stdint.h>
 #include "time.h"
+#include "device/rtc.h"
 #include "string.h"
+#include "memory.h"
+
+// global variable that represents the time that sleep should end
+static uint32_t sleep_end = 0;
 
 // Array of days in each month (non-leap year)
 static const uint8_t days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
@@ -142,4 +147,52 @@ void tm_to_string(const struct tm *tm, char *buf) {
     gz_strcat(buf, min);
     gz_strcat(buf, ":");
     gz_strcat(buf, sec);
+}
+
+
+// clock_frequency is in Hz
+static uint64_t clock_frequency = 0;
+
+void get_clock_frequency(void) {
+    asm volatile("mrs %0, cntfrq_el0" : "=r" (clock_frequency));
+}
+
+void sleep_s(uint32_t seconds) {
+    if (clock_frequency == 0) {
+        get_clock_frequency();
+    }
+
+    sleep_end = read_cntpct() + clock_frequency * seconds;
+    while (read_cntpct() < sleep_end)
+        ;
+}
+
+void sleep_ms(uint32_t milliseconds) {
+    if (clock_frequency == 0) {
+        get_clock_frequency();
+    }
+
+    sleep_end = read_cntpct() + clock_frequency * milliseconds / 1000;
+    while (read_cntpct() < sleep_end)
+        ;
+}
+
+void sleep_us(uint32_t microseconds) {
+    if (clock_frequency == 0) {
+        get_clock_frequency();
+    }
+
+    sleep_end = read_cntpct() + clock_frequency * microseconds / 1000000;
+    while (read_cntpct() < sleep_end)
+        ;
+}
+
+void sleep_ns(uint32_t nanoseconds) {
+    if (clock_frequency == 0) {
+        get_clock_frequency();
+    }
+
+    sleep_end = read_cntpct() + clock_frequency * nanoseconds / 1000000000;
+    while (read_cntpct() < sleep_end)
+        ;
 }

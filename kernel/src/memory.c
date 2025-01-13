@@ -274,6 +274,10 @@ void free(void* ptr) {
     free_list_head = block;
 }
 
+void free_size(void *ptr, size_t size) {
+    free(ptr);
+}
+
 uint16_t swap_uint16(uint16_t val) {
     return (val << 8) | (val >> 8);
 }

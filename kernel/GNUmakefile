@@ -24,6 +24,9 @@ CC := /opt/homebrew/opt/llvm/bin/clang
 AR := ar
 
 # User controllable C flags.
+# -g: Generate debug information.
+# -O2: Optimize for speed.
+# -pipe: Use pipes rather than temporary files for communication between the various stages of compilation.
 CFLAGS := -g -O2 -pipe
 
 # User controllable C preprocessor flags. We set none by default.

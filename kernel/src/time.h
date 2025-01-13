@@ -36,4 +36,9 @@ uint32_t tm_to_unix_time(const struct tm *tm);
 
 void tm_to_string(const struct tm *tm, char *buf);
 
+void sleep_s(uint32_t seconds);
+void sleep_ms(uint32_t milliseconds);
+void sleep_us(uint32_t microseconds);
+void sleep_ns(uint32_t nanoseconds);
+
 #endif

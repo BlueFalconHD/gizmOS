@@ -6,7 +6,15 @@ MAKEFLAGS += -rR
 ARCH := aarch64
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
+# -m 2G: 2 GiB of RAM.
+# -s: Enable the GDB stub.
+# -S: Wait for a GDB connection before starting the CPU.
+
 QEMUFLAGS := -m 2G
+
+ifdef DEBUG
+QEMUFLAGS += -s -S
+endif
 
 override IMAGE_NAME := template-$(ARCH)
 

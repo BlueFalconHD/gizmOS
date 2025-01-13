@@ -26,7 +26,7 @@ zero_loop:
 
 zero_done:
     /* Call main */
-    bl main
+    bl kmain
 
 halt:
     /* Infinite loop to prevent exit */

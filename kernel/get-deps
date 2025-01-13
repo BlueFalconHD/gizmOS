@@ -78,3 +78,16 @@ download_by_hash \
     https://github.com/limine-bootloader/limine/raw/7cddb61183685d9bddd2eb13d42223d929c2abe6/limine.h \
     src/limine.h \
     c00e7d4cd6e2674eca481f978b64a7fb8c8479cc32c466ec35aad2207761bf01
+
+clone_repo_commit \
+    https://codeberg.org/r4/smoldtb.git \
+    src/dtb/smoldtb \
+    f61e7dbec93e64ac9abfaf09a7b3b706fe06f0c1
+
+# special for dtb
+rm -f src/dtb/smoldtb/test.c
+
+clone_repo_commit \
+    https://github.com/mintsuki/flanterm \
+    src/flanterm \
+    6f4e92ed8f7202bda3a53e28fd527f2f997bbb5c

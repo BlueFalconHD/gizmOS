@@ -74,6 +74,15 @@ void* malloc(size_t size);
 void free(void* ptr);
 
 /**
+ * Frees a previously allocated block of memory with a specified size.
+ *
+ * @param ptr Pointer to the memory block to free.
+ * @param size Size of the memory block to free in bytes.
+ */
+
+void free_size(void* ptr, size_t size);
+
+/**
  * Swaps the endianness of a 16-bit integer.
  *
  * @param value The value to swap.

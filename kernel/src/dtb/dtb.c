@@ -1,15 +1,21 @@
 #include "dtb.h"
 #include <stdint.h>
-#include "../memory.h"
+#include "smoldtb/smoldtb.h"
+#include "../device/term.h"
 
-bool verify_magic(struct fdt_header *header) {
-    return header->magic == FDT_MAGIC_LE;
+
+void hcf() {
+    for (;;) {
+        asm ("wfi");
+    }
 }
 
-uint32_t size_mem_rsvmap(struct fdt_header *header) {
-    uint32_t total_size = swap_uint32(header->totalsize);
-    uint32_t size_dt_struct = swap_uint32(header->size_dt_struct);
-    uint32_t size_dt_strings = swap_uint32(header->size_dt_strings);
+void on_error(const char* why) {
+    print_error("smoldtb error:");
+    print_error(why);
+    hcf();
+}
 
-    return total_size - size_dt_struct - size_dt_strings;
+bool init_dtb(uintptr_t start) {
+    return dtb_init(start, gizmOS_dtb_ops);
 }

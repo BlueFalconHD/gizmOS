@@ -4,11 +4,15 @@
 Features:
 - [x] PL011 UART (Note: use DTB parsing to get address eventually)
 - [x] Framebuffer support (formerly rawfb only, now supports any framebuffer backed by Limine)
-- [x] Memory allocation (kinda, not really sure if it works very well)
+- [ ] Memory allocation (kinda, not really sure if it works very well)
+  - [ ] Physical allocator
+    - [x] Page setup
+    - [ ] Allocation
+    - [ ] Freeing
 - [x] Real time clock
-- [ ] DTB parsing
+- [x] DTB parsing
   - [x] Initial loading
-  - [ ] Parsing
+  - [x] Parsing (smoldtb https://github.com/deanoburrito/smoldtb)
 - [ ] Interrupts
 - [ ] Timers
 - [ ] Keyboard input
@@ -17,6 +21,8 @@ Features:
 
 > [!WARNING]
 > You need to change the path to the compiler in kernel/GNUmakefile (CC = ...), as it is hardcoded for my system currently.
+
+First, `cd` into `kernel/` and `chmod u+x get-deps` and then `./get-deps` to download dependencies.
 
 To build the kernel, run the following command:
 ```bash

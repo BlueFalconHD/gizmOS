@@ -9,6 +9,9 @@ lib/
 *.iso
 *.hdd
 
+# because absolute paths are used in .clangd, it is machine specific
+.clangd
+
 
 # CMake generated files and directories
 CMakeCache.txt

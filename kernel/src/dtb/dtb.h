@@ -3,8 +3,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "smoldtb/smoldtb.h"
-#include "../memory.h"
+#include <extern/smoldtb/smoldtb.h>
+#include <memory.h>
 
 void on_error(const char* why);
 

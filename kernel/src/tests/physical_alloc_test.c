@@ -1,7 +1,7 @@
-#include "../physical_alloc.h"
-#include "../device/term.h"
-#include "../string.h"
-#include "../device/rtc.h"
+#include <physical_alloc.h>
+#include <device/term.h>
+#include <lib/str.h>
+#include <device/rtc.h>
 #include "test.h"
 #include <stdbool.h>
 
@@ -45,7 +45,7 @@ static bool test_multiple_alloc() {
         if (pages[i] == NULL) {
             term_puts("Failed to allocate page ");
             char buffer[8];
-            itoa(i, buffer);
+            strfuint(i, buffer);
             term_puts(buffer);
             term_puts("\n");
             success = false;
@@ -60,7 +60,7 @@ static bool test_multiple_alloc() {
         if (*(uint64_t*)pages[i] != TEST_PATTERN + i) {
             term_puts("Pattern verification failed for page ");
             char buffer[8];
-            itoa(i, buffer);
+            strfuint(i, buffer);
             term_puts(buffer);
             term_puts("\n");
             success = false;
@@ -130,7 +130,7 @@ static bool test_stress_alloc() {
     if (final_free_count != initial_free_count) {
         term_puts("Page count mismatch after stress test\n");
         term_puts("Final free pages: ");
-        uint64_to_str(final_free_count, buffer);
+        strfuint(final_free_count, buffer);
         term_puts(buffer);
         term_puts("\n");
         success = false;

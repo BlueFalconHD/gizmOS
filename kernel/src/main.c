@@ -2,19 +2,17 @@
 #include "device/framebuffer.h"
 #include "device/term.h"
 #include <stdbool.h>
-#include "font/font_render.h"
 #include <limine.h>
 #include <memory_map.h>
+#include <lib/str.h>
 #include "paging_mode.h"
-#include "time.h"
 #include "dtb/dtb.h"
-#include "img/img.h"
-#include "img/gizmOS_logo.h"
 #include "physical_alloc.h"
 #include "hhdm.h"
 #include "tests/physical_alloc_test.h"
 #include "hcf.h"
-#include "font/ce-font.h"
+#include "lib/fmt.h"
+#include <lib/panic.h>
 
 #define VERSION "0.0.1"
 
@@ -38,12 +36,9 @@ void kmain() {
 
     struct limine_framebuffer *fb = get_framebuffer();
 
-    ce_font_draw_string(CE_SOURCE_CODE_PRO, "gizmOS", 16, 16, fb);
-    ce_font_draw_string(CE_SOURCE_CODE_PRO, "v 0.0.1", 16, 32, fb);
-    sleep_ms(500);
 
     term_init(fb);
-    boot_time_init();
+    // boot_time_init();
     hhdm_init();
     memory_map_init();
     dtb_init();
@@ -59,8 +54,11 @@ void kmain() {
     #endif
 
 
-    term_puts("all components initialized :3\n");
+    term_puts("all components initialized\n");
+
+    term_puts(format("Hello, %{type: uint}\n", "world!"));
+
+    panic("hi");
 
 
-    hcf();
 }

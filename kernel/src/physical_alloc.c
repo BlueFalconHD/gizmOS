@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "limine.h"
-#include "string.h"
+#include <lib/str.h>
 #include "hhdm.h"
 
 struct page_header *head_page = NULL;

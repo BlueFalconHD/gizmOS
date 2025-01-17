@@ -1,8 +1,5 @@
-#ifndef HCF_H
-#define HCF_H
+#pragma once
 
 #include <stdint.h>
 
 static void hcf();
-
-#endif /* HCF_H */

@@ -2,7 +2,7 @@
 #include "hcf.h"
 #include "limine.h"
 #include "device/term.h"
-#include "string.h"
+#include <lib/str.h>
 
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_memmap_request memory_map_request = {
@@ -21,7 +21,7 @@ void memory_map_init() {
         print_error("Response to memory map request to Limine was null\n");
         hcf();
     } else {
-        itoa(memory_map_response->entry_count, buffer);
+        strfuint(memory_map_response->entry_count, buffer);
         memory_map_entries = memory_map_response->entries;
         memory_map_entry_count = memory_map_response->entry_count;
     }

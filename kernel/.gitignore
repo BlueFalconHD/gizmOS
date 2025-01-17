@@ -1,7 +1,7 @@
 /freestnd-c-hdrs-0bsd
 /cc-runtime*
 /src/limine.h
-/src/dtb/smoldtb
-/src/flanterm
 /bin-*
 /obj-*
+
+/src/extern

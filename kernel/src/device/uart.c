@@ -1,5 +1,5 @@
 #include "uart.h"
-#include "../string.h"
+#include <lib/str.h>
 
 void uart_putc(char c)
 {
@@ -29,7 +29,7 @@ char uart_getc(void)
 // Outputs an unsigned integer using uart_puts
 void uart_putnbr(unsigned int value) {
     char buffer[11]; // Maximum length for 32-bit unsigned int
-    utoa(value, buffer);
+    strfuint(value, buffer);
     uart_puts(buffer);
 }
 
@@ -38,6 +38,6 @@ void uart_putptr(void* ptr) {
     uintptr_t addr = (uintptr_t)ptr;
     uart_puts("0x");
     char buffer[2 * sizeof(uintptr_t) + 1];
-    itoa_hex(addr, buffer);
+    hexstrfuint(addr, buffer);
     uart_puts(buffer);
 }

@@ -1,8 +1,9 @@
 #include "dtb.h"
 #include <stdint.h>
-#include "smoldtb/smoldtb.h"
-#include "../device/term.h"
-#include "../limine.h"
+#include <extern/smoldtb/smoldtb.h>
+#include <extern/ce-base/ce-base.h>
+#include <device/term.h>
+#include <limine.h>
 
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_dtb_request dtb_request = {

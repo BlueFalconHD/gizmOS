@@ -3,6 +3,7 @@
 set -ex
 
 srcdir="$(dirname "$0")"
+
 test -z "$srcdir" && srcdir=.
 
 cd "$srcdir"
@@ -64,13 +65,6 @@ download_by_hash() {
     fi
 }
 
-find_and_replace() {
-# $1 - directory
-# $2 - search string
-# $3 - replace string
-    find "$1" -type f -exec sed -i "s/$2/$3/g" {} +
-}
-
 clone_repo_commit \
     https://github.com/osdev0/freestnd-c-hdrs-0bsd.git \
     freestnd-c-hdrs-0bsd \
@@ -86,15 +80,25 @@ download_by_hash \
     src/limine.h \
     c00e7d4cd6e2674eca481f978b64a7fb8c8479cc32c466ec35aad2207761bf01
 
+# make src/extern directory
+mkdir -p src/extern
+
 clone_repo_commit \
     https://github.com/BlueFalconHD/smoldtb.git \
-    src/dtb/smoldtb \
-    ec089818cbf90456984b23fd7f892f971d7c42d2
-
-# special for dtb
-rm -f src/dtb/smoldtb/test.c
+    src/extern/smoldtb \
+    0132b80615f7eea8374bcb16ebab0d733dcb743e
 
 clone_repo_commit \
     https://github.com/mintsuki/flanterm \
-    src/flanterm \
+    src/extern/flanterm \
     6f4e92ed8f7202bda3a53e28fd527f2f997bbb5c
+
+clone_repo_commit \
+    https://github.com/cute-engineering/ce-base.git \
+    src/extern/ce-base \
+    69c539ac1009ab19baca6e1980883eecda96b2a8
+
+clone_repo_commit \
+    https://github.com/cute-engineering/ce-fonts.git \
+    src/extern/ce-fonts \
+    04bd194300413908891571b2a9e39637d1b4c915

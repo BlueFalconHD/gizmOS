@@ -62,7 +62,7 @@ override CFLAGS += \
     -fno-PIC \
     -ffunction-sections \
     -fdata-sections \
-    -isysroot /dev/null  # Add this line
+    -isysroot /dev/null
 
 
 # Internal C preprocessor flags that should not be changed by the user.
@@ -106,8 +106,6 @@ ifeq ($(ARCH),aarch64)
         override CC += \
             -target aarch64-none-elf
     endif
-    override CFLAGS += \
-        -mgeneral-regs-only
     override LDFLAGS += \
         -Wl,-m,aarch64elf
 endif

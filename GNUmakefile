@@ -3,7 +3,10 @@ MAKEFLAGS += -rR
 .SUFFIXES:
 
 # Target architecture to build for. Default to x86_64.
-ARCH := aarch64
+ARCH := riscv64
+
+# Uncomment following line to enable debugging.
+DEBUG := 1
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
 # -m 2G: 2 GiB of RAM.
@@ -11,6 +14,8 @@ ARCH := aarch64
 # -S: Wait for a GDB connection before starting the CPU.
 
 QEMUFLAGS := -m 2G
+
+
 
 ifdef DEBUG
 QEMUFLAGS += -s -S
@@ -58,7 +63,7 @@ run-aarch64: ovmf/ovmf-code-$(ARCH).fd $(IMAGE_NAME).iso
 	qemu-system-$(ARCH) \
 		-M virt \
 		-cpu cortex-a72 \
-		-serial stdio \
+		-serial mon:stdio \
 		-device ramfb \
 		-device qemu-xhci \
 		-device usb-kbd \

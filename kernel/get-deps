@@ -93,12 +93,12 @@ clone_repo_commit \
     src/extern/flanterm \
     6f4e92ed8f7202bda3a53e28fd527f2f997bbb5c
 
-clone_repo_commit \
-    https://github.com/cute-engineering/ce-base.git \
-    src/extern/ce-base \
-    69c539ac1009ab19baca6e1980883eecda96b2a8
+# clone_repo_commit \
+#     https://github.com/cute-engineering/ce-base.git \
+#     src/extern/ce-base \
+#     69c539ac1009ab19baca6e1980883eecda96b2a8
 
-clone_repo_commit \
-    https://github.com/cute-engineering/ce-fonts.git \
-    src/extern/ce-fonts \
-    04bd194300413908891571b2a9e39637d1b4c915
+# clone_repo_commit \
+#     https://github.com/cute-engineering/ce-fonts.git \
+#     src/extern/ce-fonts \
+#     04bd194300413908891571b2a9e39637d1b4c915

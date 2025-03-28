@@ -1,10 +1,12 @@
 #pragma once
 
-#include <stdint.h>
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
-/* Comparison, Copying, and Concatenation */
+/****************************************
+Comparison, Copying, and Concatenation
+****************************************/
 
 /**
  * Returns the length of a string.
@@ -28,7 +30,7 @@ bool strcmp(const char *s1, const char *s2);
  * @param dest The destination string.
  * @param src The source string.
  */
-void strcpy(char *dest, const char *src);
+void strcopy(char *dest, const char *src);
 
 /**
  * Copies n characters of a string.
@@ -37,7 +39,7 @@ void strcpy(char *dest, const char *src);
  * @param src The source string.
  * @param n The number of characters to copy.
  */
-void strncpy(char *dest, const char *src, size_t n);
+void strncopy(char *dest, const char *src, size_t n);
 
 /**
  * Concatenates two strings.
@@ -56,7 +58,9 @@ void strcat(char *dest, const char *src);
  */
 void strncat(char *dest, const char *src, size_t n);
 
-/* Integer Conversion */
+/*********************************
+Integer Conversion
+*********************************/
 
 /**
  * Converts an unsigned integer to a string in hexadecimal format.
@@ -64,7 +68,7 @@ void strncat(char *dest, const char *src, size_t n);
  * @param value The integer.
  * @param buffer The buffer to store the string.
  */
-void hexstrfuint(uint64_t value, char* buffer);
+void hexstrfuint(uint64_t value, char *buffer);
 
 /**
  * Converts an unsigned integer to a string.
@@ -72,14 +76,14 @@ void hexstrfuint(uint64_t value, char* buffer);
  * @param value The integer.
  * @param buffer The buffer to store the string.
  */
-void strfuint(uint64_t value, char* buffer);
+void strfuint(uint64_t value, char *buffer);
 
 /**
  * Converts a string to an unsigned integer.
  *
  * @param str The string.
  */
-uint64_t uintfstr(const char* str);
+uint64_t uintfstr(const char *str);
 
 /**
  * Converts a signed integer to a string in hexadecimal format.
@@ -87,7 +91,7 @@ uint64_t uintfstr(const char* str);
  * @param value The integer.
  * @param buffer The buffer to store the string.
  */
-void hexstrfint(int64_t value, char* buffer);
+void hexstrfint(int64_t value, char *buffer);
 
 /**
  * Converts a signed integer to a string.
@@ -95,11 +99,11 @@ void hexstrfint(int64_t value, char* buffer);
  * @param value The integer.
  * @param buffer The buffer to store the string.
  */
-void strfint(int64_t value, char* buffer);
+void strfint(int64_t value, char *buffer);
 
 /**
  * Converts a string to a signed integer.
  *
  * @param str The string.
  */
-int64_t intfstr(const char* str);
+int64_t intfstr(const char *str);

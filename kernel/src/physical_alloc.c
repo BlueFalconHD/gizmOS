@@ -1,74 +1,65 @@
 #include "physical_alloc.h"
 
+#include "hhdm.h"
+#include "lib/panic.h"
+#include "limine.h"
 #include <stddef.h>
 #include <stdint.h>
-#include "limine.h"
-#include <lib/str.h>
-#include "hhdm.h"
 
-struct page_header *head_page = NULL;
+static uint64_t free_pages[MAX_PAGES];
+static uint64_t free_pages_count = 0;
 
-void initialize_pages(struct limine_memmap_entry **entries, uint64_t entry_count) {
+void initialize_pages(struct limine_memmap_entry **entries,
+                      uint64_t entry_count) {
 
-    head_page = NULL;
-    struct page_header *prev = NULL;
+  free_pages_count = 0;
 
+  for (uint64_t i = 0; i < entry_count; i++) {
+    struct limine_memmap_entry *entry = entries[i];
 
-    for (uint64_t i = 0; i < entry_count; i++) {
-        struct limine_memmap_entry *entry = entries[i];
-        if (entry->type == LIMINE_MEMMAP_USABLE && entry->length >= PAGE_SIZE) { // TODO: figure out why adding || entry->type == LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE breaks things
-            // Align the start address to page boundary
-            uint64_t start = (entry->base + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-            uint64_t end = entry->base + entry->length;
-            uint64_t pages = (end - start) / PAGE_SIZE;
+    // Consider usable and bootloader-reclaimable memory regions
+    if ((entry->type == LIMINE_MEMMAP_USABLE /*||
+         entry->type == LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE*/) &&
+        entry->length >= PAGE_SIZE) {
 
+      // Align the start address to the next page boundary
+      uint64_t start = (entry->base + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+      uint64_t end = entry->base + entry->length;
+      uint64_t pages = (end - start) / PAGE_SIZE;
 
-            for (uint64_t j = 0; j < pages; j++) {
-                // Add HHDM offset to access physical memory
-                struct page_header *page = (struct page_header *)((start + j * PAGE_SIZE) + hhdm_offset);
-                page->free = true;
-                page->next = NULL;
-
-                if (prev != NULL) {
-                    prev->next = page;
-                }
-                prev = page;
-                if (head_page == NULL) {
-                    head_page = page;
-                }
-            }
+      for (uint64_t j = 0; j < pages; j++) {
+        if (free_pages_count >= MAX_PAGES) {
+          panic_msg("Not enough free_pages entries allocated");
         }
+
+        uint64_t page_addr = start + j * PAGE_SIZE;
+        free_pages[free_pages_count++] = page_addr;
+      }
     }
+  }
 }
 
-uint64_t get_free_page_count() {
-
-    uint64_t count = 0;
-    struct page_header *curr = head_page;
-    while (curr != NULL) {
-        if (curr->free) {
-            count++;
-        }
-        curr = curr->next;
-    }
-    return count;
-}
+uint64_t get_free_page_count() { return free_pages_count; }
 
 void *alloc_page() {
-    struct page_header *curr = head_page;
-    while (curr != NULL) {
-        if (curr->free) {
-            curr->free = false;
-            // Return pointer after the page header
-            return (void *)((uintptr_t)curr + PAGE_HEADER_SIZE);
-        }
-        curr = curr->next;
-    }
+  if (free_pages_count == 0) {
+    panic_msg("Out of memory");
     return NULL;
+  }
+  // Pop a page address from the free list
+  uint64_t page_addr = free_pages[--free_pages_count];
+
+  // Return the virtual address by adding the HHDM offset
+  return (void *)(page_addr + hhdm_offset);
 }
 
 void free_page(void *ptr) {
-    // Adjust pointer back to include the page header
-    struct page_header *page = (struct page_header *)((uintptr_t)ptr - PAGE_HEADER_SIZE);
-    page->free = true;
+  if (free_pages_count >= MAX_PAGES) {
+    panic_msg("Free pages list overflow");
+  }
+  // Get the physical address by subtracting the HHDM offset
+  uint64_t addr = (uint64_t)ptr - hhdm_offset;
+
+  // Push the address back onto the free list
+  free_pages[free_pages_count++] = addr;
 }

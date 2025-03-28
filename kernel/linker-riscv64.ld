@@ -2,7 +2,7 @@
 OUTPUT_FORMAT(elf64-littleriscv)
 
 /* We want the symbol kmain to be our entry point */
-ENTRY(kmain)
+ENTRY(main)
 
 /* Define the program headers we want so the bootloader gives us the right */
 /* MMU permissions; this also allows us to exert more control over the linking */
@@ -22,6 +22,8 @@ SECTIONS
     /* Any address in this region will do, but often 0xffffffff80000000 is chosen as */
     /* that is the beginning of the region. */
     . = 0xffffffff80000000;
+
+    PROVIDE(kstart = .);
 
     /* Define a section to contain the Limine requests and assign it to its own PHDR */
     .limine_requests : {
@@ -67,4 +69,6 @@ SECTIONS
         *(.eh_frame*)
         *(.note .note.*)
     }
+
+    PROVIDE(kend = .);
 }

@@ -1,168 +1,175 @@
-// #include <stdint.h>
-// #include "time.h"
-// #include <device/rtc.h>
-// #include <lib/str.h>
-// #include <lib/fmt.h>
-// #include "memory.h"
+#include <device/rtc.h>
+#include <lib/fmt.h>
+#include <lib/print.h>
+#include <lib/str.h>
+#include <lib/time.h>
+#include <physical_alloc.h>
+#include <stdint.h>
 
-// // global variable that represents the time that sleep should end
-// static uint32_t sleep_end = 0;
+// Global variable that represents the time that sleep should end
+static uint64_t sleep_end = 0;
 
-// // Array of days in each month (non-leap year)
-// static const uint8_t days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+// Array of days in each month (non-leap year)
+static const uint8_t days_in_month[] = {31, 28, 31, 30, 31, 30,
+                                        31, 31, 30, 31, 30, 31};
 
-// #define EPOCH_YEAR 1970
+// Helper function to get days in a specific month considering leap years
+static uint8_t get_days_in_month(month_t month, year_t year) {
+  if (month == FEBRUARY && IS_LEAP_YEAR(year)) { // February in leap year
+    return 29;
+  }
+  return days_in_month[month];
+}
 
-// // Helper function to get days in a specific month considering leap years
-// static uint8_t get_days_in_month(uint8_t month, uint16_t year) {
-//     if (month == 1 && IS_LEAP_YEAR(year)) { // February in leap year
-//         return 29;
-//     }
-//     return days_in_month[month];
-// }
+void unix_time_ns_to_time(uint64_t unix_time, time_t *tm) {
+  // Convert nanoseconds to seconds
+  uint32_t seconds = unix_time / 1000000000ULL;
 
-// void unix_time_to_time(uint32_t unix_time, struct tm *time) {
-//     uint32_t days, seconds_remaining, years;
-//     uint16_t year;
-//     uint8_t month;
+  // Convert remaining nanoseconds to milliseconds
+  uint32_t milliseconds = (unix_time % 1000000000ULL) / 1000000ULL;
 
-//     // Calculate days since epoch
-//     days = unix_time / SECONDS_IN_DAY;
-//     seconds_remaining = unix_time % SECONDS_IN_DAY;
+  // Convert seconds to time structure
+  unix_time_to_time(seconds, tm);
+}
 
-//     // Calculate time
-//     time->tm_hour = seconds_remaining / SECONDS_IN_HOUR;
-//     seconds_remaining = seconds_remaining % SECONDS_IN_HOUR;
-//     time->tm_min = seconds_remaining / SECONDS_IN_MINUTE;
-//     time->tm_sec = seconds_remaining % SECONDS_IN_MINUTE;
+void unix_time_to_time(uint32_t unix_time, time_t *tm) {
+  uint32_t days, seconds_remaining;
+  year_t year;
+  month_t month;
 
-//     // Calculate year
-//     year = EPOCH_YEAR;
-//     years = days / 365;
-//     days -= years * 365;
+  // Calculate days since epoch
+  days = unix_time / SECONDS_IN_DAY;
+  seconds_remaining = unix_time % SECONDS_IN_DAY;
 
-//     // Adjust for leap years
-//     for (uint16_t y = EPOCH_YEAR; y < EPOCH_YEAR + years; y++) {
-//         if (IS_LEAP_YEAR(y)) {
-//             days--;
-//         }
-//     }
+  // Calculate time
+  tm->hours = seconds_remaining / SECONDS_IN_HOUR;
+  seconds_remaining = seconds_remaining % SECONDS_IN_HOUR;
+  tm->minutes = seconds_remaining / SECONDS_IN_MINUTE;
+  tm->seconds = seconds_remaining % SECONDS_IN_MINUTE;
 
-//     // Adjust year if we've gone too far
-//     while (days >= (IS_LEAP_YEAR(year) ? DAYS_IN_LEAP_YEAR : DAYS_IN_YEAR)) {
-//         days -= (IS_LEAP_YEAR(year) ? DAYS_IN_LEAP_YEAR : DAYS_IN_YEAR);
-//         year++;
-//     }
+  // Calculate year
+  year = EPOCH_YEAR;
 
-//     time->tm_year = year - 1900;
-//     time->tm_yday = days;
+  // Adjust for years
+  while (days >= (IS_LEAP_YEAR(year) ? DAYS_IN_LEAP_YEAR : DAYS_IN_YEAR)) {
+    days -= (IS_LEAP_YEAR(year) ? DAYS_IN_LEAP_YEAR : DAYS_IN_YEAR);
+    year++;
+  }
 
-//     // Calculate month and day
-//     for (month = 0; month < 12; month++) {
-//         uint8_t dim = get_days_in_month(month, year);
-//         if (days < dim)
-//             break;
-//         days -= dim;
-//     }
+  tm->year = year;
 
-//     time->tm_mon = month;
-//     time->tm_mday = days + 1;
+  // Calculate month and day
+  for (month = JANUARY; month <= DECEMBER; month++) {
+    uint8_t dim = get_days_in_month(month, year);
+    if (days < dim)
+      break;
+    days -= dim;
+  }
 
-//     // Calculate day of week (1/1/1970 was a Thursday)
-//     time->tm_wday = (unix_time / SECONDS_IN_DAY + 4) % 7;
+  tm->month = month;
+  tm->day = days + 1;
 
-//     // Set DST to 0 (not handled)
-//     time->tm_isdst = 0;
-// }
+  // Calculate day of week (1/1/1970 was a Thursday)
+  tm->weekday =
+      (unix_time / SECONDS_IN_DAY + 4) % 7; // Thursday + 4 = 4 (Thursday)
+}
 
-// uint32_t time_to_unix_time(const struct tm *time) {
-//     uint32_t unix_time = 0;
-//     uint16_t year = time->tm_year + 1900;
+uint32_t time_to_unix_time(const time_t *tm) {
+  uint32_t unix_time = 0;
+  year_t year = tm->year;
 
-//     // Calculate seconds from date
-//     // First calculate days from years since epoch
-//     for (uint16_t y = EPOCH_YEAR; y < year; y++) {
-//         unix_time += IS_LEAP_YEAR(y) ? DAYS_IN_LEAP_YEAR : DAYS_IN_YEAR;
-//     }
+  // Calculate seconds from date
+  // First calculate days from years since epoch
+  for (year_t y = EPOCH_YEAR; y < year; y++) {
+    unix_time += IS_LEAP_YEAR(y) ? DAYS_IN_LEAP_YEAR : DAYS_IN_YEAR;
+  }
 
-//     // Add days from months
-//     for (uint8_t m = 0; m < time->tm_mon; m++) {
-//         unix_time += get_days_in_month(m, year);
-//     }
+  // Add days from months
+  for (month_t m = JANUARY; m < tm->month; m++) {
+    unix_time += get_days_in_month(m, year);
+  }
 
-//     // Add days in current month
-//     unix_time += time->tm_mday - 1;
+  // Add days in current month
+  unix_time += tm->day - 1;
 
-//     // Convert days to seconds and add time components
-//     unix_time = unix_time * SECONDS_IN_DAY +
-//                 time->tm_hour * SECONDS_IN_HOUR +
-//                 time->tm_min * SECONDS_IN_MINUTE +
-//                 time->tm_sec;
+  // Convert days to seconds and add time components
+  unix_time = unix_time * SECONDS_IN_DAY + tm->hours * SECONDS_IN_HOUR +
+              tm->minutes * SECONDS_IN_MINUTE + tm->seconds;
 
-//     return unix_time;
-// }
+  return unix_time;
+}
 
-// static const char *month_names[] = {
-//     "January", "February", "March", "April", "May", "June",
-//     "July", "August", "September", "October", "November", "December"
-// };
+static const char *month_names[] = {
+    "January", "February", "March",     "April",   "May",      "June",
+    "July",    "August",   "September", "October", "November", "December"};
 
-// static const char *day_names[] = {
-//     "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
-// };
+static const char *weekday_names[] = {"Sunday",    "Monday",   "Tuesday",
+                                      "Wednesday", "Thursday", "Friday",
+                                      "Saturday"};
 
-// char *time_to_string(const struct time *tm) {
-//     const char *month = month_names[tm->tm_mon];
-//     const char *day_of_week = day_names[tm->tm_wday];
+void time_to_string(const time_t *tm, char *buf) {
+  const char *month = month_names[tm->month];
+  const char *weekday = weekday_names[tm->weekday];
 
-//     return format("%{type: str} %{type: str} %{type: uint}, %{type: uint} %{type: uint, precision: 2}:%{type: uint, precision: 2}:%{type: uint, precision: 2}",
-//                   day_of_week, month, tm->tm_mday, tm->tm_year + EPOCH_YEAR, tm->tm_hour, tm->tm_min, tm->tm_sec);
-// }
+  char *f = format(
+      "%{type: str} %{type:str} %{type: uint}, %{type: uint} %{type: "
+      "uint}:%{type: uint}:%{type: uint}",
+      weekday, month, tm->day, tm->year, tm->hours, tm->minutes, tm->seconds);
 
+  strncopy(buf, f, strlen(f) + 1);
+  free_page(f);
+}
 
-// // clock_frequency is in Hz
-// static uint64_t clock_frequency = 0;
+void sleep_s(uint32_t seconds) {
+  // Convert time to ns
+  uint64_t ns = (uint64_t)seconds * 1000000000ULL;
+  uint64_t current_time = goldfish_get_time();
 
-// void get_clock_frequency(void) {
-//     asm volatile("mrs %0, cntfrq_el0" : "=r" (clock_frequency));
-// }
+  // Set the end time
+  sleep_end = current_time + ns;
 
-// void sleep_s(uint32_t seconds) {
-//     if (clock_frequency == 0) {
-//         get_clock_frequency();
-//     }
+  // Wait until the end time
+  while (goldfish_get_time() < sleep_end) {
+    asm volatile("wfi");
+  }
+}
 
-//     sleep_end = read_cntpct() + clock_frequency * seconds;
-//     while (read_cntpct() < sleep_end)
-//         ;
-// }
+void sleep_ms(uint32_t milliseconds) {
+  // Convert time to ns
+  uint64_t ns = (uint64_t)milliseconds * 1000000ULL;
+  uint64_t current_time = goldfish_get_time();
 
-// void sleep_ms(uint32_t milliseconds) {
-//     if (clock_frequency == 0) {
-//         get_clock_frequency();
-//     }
+  // Set the end time
+  sleep_end = current_time + ns;
 
-//     sleep_end = read_cntpct() + clock_frequency * milliseconds / 1000;
-//     while (read_cntpct() < sleep_end)
-//         ;
-// }
+  // Wait until the end time
+  while (goldfish_get_time() < sleep_end) {
+    asm volatile("wfi");
+  }
+}
 
-// void sleep_us(uint32_t microseconds) {
-//     if (clock_frequency == 0) {
-//         get_clock_frequency();
-//     }
+void sleep_us(uint32_t microseconds) {
+  // Convert time to ns
+  uint64_t ns = (uint64_t)microseconds * 1000ULL;
+  uint64_t current_time = goldfish_get_time();
 
-//     sleep_end = read_cntpct() + clock_frequency * microseconds / 1000000;
-//     while (read_cntpct() < sleep_end)
-//         ;
-// }
+  // Set the end time
+  sleep_end = current_time + ns;
 
-// void sleep_ns(uint32_t nanoseconds) {
-//     if (clock_frequency == 0) {
-//         get_clock_frequency();
-//     }
+  // Wait until the end time
+  while (goldfish_get_time() < sleep_end) {
+    asm volatile("wfi");
+  }
+}
 
-//     sleep_end = read_cntpct() + clock_frequency * nanoseconds / 1000000000;
-//     while (read_cntpct() < sleep_end)
-//         ;
-// }
+void sleep_ns(uint32_t nanoseconds) {
+  uint64_t current_time = goldfish_get_time();
+
+  // Set the end time
+  sleep_end = current_time + nanoseconds;
+
+  // Wait until the end time
+  while (goldfish_get_time() < sleep_end) {
+    asm volatile("wfi");
+  }
+}

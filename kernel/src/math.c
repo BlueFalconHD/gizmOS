@@ -10,22 +10,22 @@
  * @example sqrt(16) returns 4.
  */
 double sqrt(double n) {
-    if (n < 0) {
-        return -1; // Undefined for negative numbers
-    }
-    if (n == 0) {
-        return 0;
-    }
+  if (n < 0) {
+    return -1; // Undefined for negative numbers
+  }
+  if (n == 0) {
+    return 0;
+  }
 
-    double x = n;
-    double y = 1.0;
-    double epsilon = 0.000001; // Desired precision
+  double x = n;
+  double y = 1.0;
+  double epsilon = 0.000001; // Desired precision
 
-    while (x - y > epsilon) {
-        x = (x + y) / 2;
-        y = n / x;
-    }
-    return x;
+  while (x - y > epsilon) {
+    x = (x + y) / 2;
+    y = n / x;
+  }
+  return x;
 }
 
 /**
@@ -37,19 +37,19 @@ double sqrt(double n) {
  * @example pow(2, 3) returns 8.
  */
 double pow(double base, double exp) {
-    if (base == 0.0) {
-        if (exp == 0.0) {
-            return -1; // Undefined (0^0)
-        } else {
-            return 0.0;
-        }
-    }
+  if (base == 0.0) {
     if (exp == 0.0) {
-        return 1.0;
+      return -1; // Undefined (0^0)
+    } else {
+      return 0.0;
     }
+  }
+  if (exp == 0.0) {
+    return 1.0;
+  }
 
-    // General case using exp and ln functions
-    return expf(exp * ln(base));
+  // General case using exp and ln functions
+  return expf(exp * ln(base));
 }
 
 /**
@@ -61,11 +61,11 @@ double pow(double base, double exp) {
  * @example root(27, 3) returns 3.
  */
 double root(double n, double r) {
-    if (r == 0) {
-        return -1; // Undefined
-    }
+  if (r == 0) {
+    return -1; // Undefined
+  }
 
-    return pow(n, 1.0 / r);
+  return pow(n, 1.0 / r);
 }
 
 /**
@@ -75,9 +75,7 @@ double root(double n, double r) {
  * @return The absolute value of n.
  * @example abs(-5) returns 5.
  */
-double abs(double n) {
-    return n < 0 ? -n : n;
-}
+double abs(double n) { return n < 0 ? -n : n; }
 
 /**
  * ceil(n)
@@ -87,12 +85,12 @@ double abs(double n) {
  * @example ceil(4.3) returns 5.
  */
 double ceil(double n) {
-    int in = (int)n;
-    if (n > 0 && n > (double)in) {
-        return (double)(in + 1);
-    } else {
-        return (double)in;
-    }
+  int in = (int)n;
+  if (n > 0 && n > (double)in) {
+    return (double)(in + 1);
+  } else {
+    return (double)in;
+  }
 }
 
 /**
@@ -103,11 +101,11 @@ double ceil(double n) {
  * @example floor(4.7) returns 4.
  */
 double floor(double n) {
-    int in = (int)n;
-    if (n < 0 && n != (double)in) {
-        return (double)(in - 1);
-    }
-    return (double)in;
+  int in = (int)n;
+  if (n < 0 && n != (double)in) {
+    return (double)(in - 1);
+  }
+  return (double)in;
 }
 
 /**
@@ -118,11 +116,11 @@ double floor(double n) {
  * @example round(4.3) returns 4.
  */
 double round(double n) {
-    if (n >= 0) {
-        return floor(n + 0.5);
-    } else {
-        return ceil(n - 0.5);
-    }
+  if (n >= 0) {
+    return floor(n + 0.5);
+  } else {
+    return ceil(n - 0.5);
+  }
 }
 
 /**
@@ -133,9 +131,7 @@ double round(double n) {
  * @return The maximum of a and b.
  * @example max(3, 5) returns 5.
  */
-double max(double a, double b) {
-    return a > b ? a : b;
-}
+double max(double a, double b) { return a > b ? a : b; }
 
 /**
  * min(a, b)
@@ -145,9 +141,7 @@ double max(double a, double b) {
  * @return The minimum of a and b.
  * @example min(3, 5) returns 3.
  */
-double min(double a, double b) {
-    return a < b ? a : b;
-}
+double min(double a, double b) { return a < b ? a : b; }
 
 /**
  * clamp(n, min, max)
@@ -159,7 +153,7 @@ double min(double a, double b) {
  * @example clamp(5, 0, 10) returns 5.
  */
 double clamp(double n, double min_value, double max_value) {
-    return max(min_value, min(n, max_value));
+  return max(min_value, min(n, max_value));
 }
 
 /**
@@ -171,9 +165,7 @@ double clamp(double n, double min_value, double max_value) {
  * @return The interpolated value between a and b.
  * @example lerp(0, 10, 0.5) returns 5.
  */
-double lerp(double a, double b, double t) {
-    return a + t * (b - a);
-}
+double lerp(double a, double b, double t) { return a + t * (b - a); }
 
 /**
  * map(n, start1, stop1, start2, stop2)
@@ -187,11 +179,11 @@ double lerp(double a, double b, double t) {
  * @example map(5, 0, 10, 0, 100) returns 50.
  */
 double map(double n, double start1, double stop1, double start2, double stop2) {
-    if (stop1 == start1) {
-        return -1; // Undefined
-    }
-    double ratio = (n - start1) / (stop1 - start1);
-    return start2 + ratio * (stop2 - start2);
+  if (stop1 == start1) {
+    return -1; // Undefined
+  }
+  double ratio = (n - start1) / (stop1 - start1);
+  return start2 + ratio * (stop2 - start2);
 }
 
 /**
@@ -202,13 +194,13 @@ double map(double n, double start1, double stop1, double start2, double stop2) {
  * @example sign(-5) returns -1.
  */
 int sign(double n) {
-    if (n > 0) {
-        return 1;
-    } else if (n < 0) {
-        return -1;
-    } else {
-        return 0;
-    }
+  if (n > 0) {
+    return 1;
+  } else if (n < 0) {
+    return -1;
+  } else {
+    return 0;
+  }
 }
 
 /**
@@ -219,17 +211,17 @@ int sign(double n) {
  * @example sin(0) returns 0.
  */
 double sin(double x) {
-    double term = x;
-    double sum = x;
-    int n = 1;
+  double term = x;
+  double sum = x;
+  int n = 1;
 
-    const double epsilon = 0.0000001;
-    while (abs(term) > epsilon) {
-        term = -term * x * x / ((2 * n) * (2 * n + 1));
-        sum += term;
-        n++;
-    }
-    return sum;
+  const double epsilon = 0.0000001;
+  while (abs(term) > epsilon) {
+    term = -term * x * x / ((2 * n) * (2 * n + 1));
+    sum += term;
+    n++;
+  }
+  return sum;
 }
 
 /**
@@ -240,17 +232,17 @@ double sin(double x) {
  * @example cos(0) returns 1.
  */
 double cos(double x) {
-    double term = 1.0;
-    double sum = 1.0;
-    int n = 1;
+  double term = 1.0;
+  double sum = 1.0;
+  int n = 1;
 
-    const double epsilon = 0.0000001;
-    while (abs(term) > epsilon) {
-        term = -term * x * x / ((2 * n - 1) * (2 * n));
-        sum += term;
-        n++;
-    }
-    return sum;
+  const double epsilon = 0.0000001;
+  while (abs(term) > epsilon) {
+    term = -term * x * x / ((2 * n - 1) * (2 * n));
+    sum += term;
+    n++;
+  }
+  return sum;
 }
 
 /**
@@ -260,9 +252,7 @@ double cos(double x) {
  * @return The tangent of the angle n.
  * @example tan(0) returns 0.
  */
-double tan(double x) {
-    return sin(x) / cos(x);
-}
+double tan(double x) { return sin(x) / cos(x); }
 
 /**
  * asin(n)
@@ -272,22 +262,23 @@ double tan(double x) {
  * @example asin(0) returns 0.
  */
 double asin(double x) {
-    if (x < -1.0 || x > 1.0) {
-        return -1; // Undefined
-    }
+  if (x < -1.0 || x > 1.0) {
+    return -1; // Undefined
+  }
 
-    double term = x;
-    double sum = x;
-    int n = 1;
+  double term = x;
+  double sum = x;
+  int n = 1;
 
-    const double epsilon = 0.0000001;
-    while (abs(term) > epsilon) {
-        term *= x * x * (2 * n - 1) * (2 * n - 1) / (2 * n * (2 * n + 1));
-        sum += term;
-        n++;
-        if (n > 100) break;
-    }
-    return sum;
+  const double epsilon = 0.0000001;
+  while (abs(term) > epsilon) {
+    term *= x * x * (2 * n - 1) * (2 * n - 1) / (2 * n * (2 * n + 1));
+    sum += term;
+    n++;
+    if (n > 100)
+      break;
+  }
+  return sum;
 }
 
 /**
@@ -297,9 +288,7 @@ double asin(double x) {
  * @return The arccosine of n in radians.
  * @example acos(1) returns 0.
  */
-double acos(double x) {
-    return (PI / 2) - asin(x);
-}
+double acos(double x) { return (PI / 2) - asin(x); }
 
 /**
  * atan(n)
@@ -309,42 +298,44 @@ double acos(double x) {
  * @example atan(0) returns 0.
  */
 double atan(double x) {
-    double term = x;
-    double sum = x;
-    int n = 1;
+  double term = x;
+  double sum = x;
+  int n = 1;
 
-    const double epsilon = 0.0000001;
-    while (abs(term) > epsilon) {
-        term = -term * x * x * (2 * n - 1) / (2 * n + 1);
-        sum += term;
-        n++;
-        if (n > 100) break;
-    }
-    return sum;
+  const double epsilon = 0.0000001;
+  while (abs(term) > epsilon) {
+    term = -term * x * x * (2 * n - 1) / (2 * n + 1);
+    sum += term;
+    n++;
+    if (n > 100)
+      break;
+  }
+  return sum;
 }
 
 /**
  * atan2(y, x)
- * Calculate the arctangent of y/x in radians, using the signs of both arguments to determine the quadrant.
+ * Calculate the arctangent of y/x in radians, using the signs of both arguments
+ * to determine the quadrant.
  * @param y The y-coordinate.
  * @param x The x-coordinate.
  * @return The arctangent of y/x in radians.
  * @example atan2(1, 1) returns π/4.
  */
 double atan2(double y, double x) {
-    if (x > 0) {
-        return atan(y / x);
-    } else if (x < 0 && y >= 0) {
-        return atan(y / x) + PI;
-    } else if (x < 0 && y < 0) {
-        return atan(y / x) - PI;
-    } else if (x == 0 && y > 0) {
-        return PI / 2;
-    } else if (x == 0 && y < 0) {
-        return -PI / 2;
-    } else {
-        return 0; // Undefined
-    }
+  if (x > 0) {
+    return atan(y / x);
+  } else if (x < 0 && y >= 0) {
+    return atan(y / x) + PI;
+  } else if (x < 0 && y < 0) {
+    return atan(y / x) - PI;
+  } else if (x == 0 && y > 0) {
+    return PI / 2;
+  } else if (x == 0 && y < 0) {
+    return -PI / 2;
+  } else {
+    return 0; // Undefined
+  }
 }
 
 /**
@@ -355,17 +346,17 @@ double atan2(double y, double x) {
  * @example exp(0) returns 1.
  */
 double exp(double x) {
-    double term = 1.0;
-    double sum = 1.0;
+  double term = 1.0;
+  double sum = 1.0;
 
-    int n = 1;
-    const double epsilon = 0.0000001;
-    while (abs(term) > epsilon) {
-        term *= x / n;
-        sum += term;
-        n++;
-    }
-    return sum;
+  int n = 1;
+  const double epsilon = 0.0000001;
+  while (abs(term) > epsilon) {
+    term *= x / n;
+    sum += term;
+    n++;
+  }
+  return sum;
 }
 
 /**
@@ -376,18 +367,18 @@ double exp(double x) {
  * @example ln(1) returns 0.
  */
 double ln(double x) {
-    if (x <= 0) {
-        return -1; // Undefined
-    }
+  if (x <= 0) {
+    return -1; // Undefined
+  }
 
-    double y = x - 1.0;
-    double prev_y = 0.0;
-    const double epsilon = 0.0000001;
-    while (abs(y - prev_y) > epsilon) {
-        prev_y = y;
-        y = y - (exp(y) - x) / exp(y);
-    }
-    return y;
+  double y = x - 1.0;
+  double prev_y = 0.0;
+  const double epsilon = 0.0000001;
+  while (abs(y - prev_y) > epsilon) {
+    prev_y = y;
+    y = y - (exp(y) - x) / exp(y);
+  }
+  return y;
 }
 
 /**
@@ -397,9 +388,7 @@ double ln(double x) {
  * @return The base-10 logarithm of n.
  * @example log10(10) returns 1.
  */
-double log10(double x) {
-    return ln(x) / ln(10.0);
-}
+double log10(double x) { return ln(x) / ln(10.0); }
 
 /**
  * log(base, n)
@@ -409,9 +398,7 @@ double log10(double x) {
  * @return The logarithm of n with the specified base.
  * @example log(2, 8) returns 3.
  */
-double log(double base, double x) {
-    return ln(x) / ln(base);
-}
+double log(double base, double x) { return ln(x) / ln(base); }
 
 /**
  * deg_to_rad(deg)
@@ -420,9 +407,7 @@ double log(double base, double x) {
  * @return The angle in radians.
  * @example deg_to_rad(180) returns π.
  */
-double deg_to_rad(double deg) {
-    return deg * (PI / 180.0);
-}
+double deg_to_rad(double deg) { return deg * (PI / 180.0); }
 
 /**
  * rad_to_deg(rad)
@@ -431,9 +416,7 @@ double deg_to_rad(double deg) {
  * @return The angle in degrees.
  * @example rad_to_deg(π) returns 180.
  */
-double rad_to_deg(double rad) {
-    return rad * (180.0 / PI);
-}
+double rad_to_deg(double rad) { return rad * (180.0 / PI); }
 
 /**
  * hypot(x, y)
@@ -443,20 +426,18 @@ double rad_to_deg(double rad) {
  * @return The length of the hypotenuse.
  * @example hypot(3, 4) returns 5.
  */
-double hypot(double x, double y) {
-    return sqrt(x * x + y * y);
-}
+double hypot(double x, double y) { return sqrt(x * x + y * y); }
 
 /**
  * rand()
  * Generate pseudo-random numbers using a linear congruential generator.
  * @return A pseudo-random number between 0 and 1.
  */
-double rand(void) {
-    uint64_t static seed = 0;
-    seed = read_cntpct() * 6364136223846793005ULL + 1;
-    return (uint32_t)(seed >> 32) / (double)UINT32_MAX;
-}
+// double rand(void) {
+//     uint64_t static seed = 0;
+//     seed = read_cntpct() * 6364136223846793005ULL + 1;
+//     return (uint32_t)(seed >> 32) / (double)UINT32_MAX;
+// }
 
 /**
  * expf(n)
@@ -466,15 +447,15 @@ double rand(void) {
  * @example expf(0) returns 1.
  */
 float expf(float x) {
-    float term = 1.0f;
-    float sum = 1.0f;
+  float term = 1.0f;
+  float sum = 1.0f;
 
-    int n = 1;
-    const float epsilon = 0.0000001f;
-    while (abs(term) > epsilon) {
-        term *= x / n;
-        sum += term;
-        n++;
-    }
-    return sum;
+  int n = 1;
+  const float epsilon = 0.0000001f;
+  while (abs(term) > epsilon) {
+    term *= x / n;
+    sum += term;
+    n++;
+  }
+  return sum;
 }

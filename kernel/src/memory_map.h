@@ -8,5 +8,6 @@ extern uint64_t memory_map_entry_count;
 
 void memory_map_init(void);
 const char *get_memmap_type_name(uint32_t type);
+void print_memory_map(void);
 
 #endif /* MEMORY_MAP_H */

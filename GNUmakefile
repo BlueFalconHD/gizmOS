@@ -6,7 +6,8 @@ MAKEFLAGS += -rR
 ARCH := riscv64
 
 # Uncomment following line to enable debugging.
-DEBUG := 1
+# DEBUG := 1
+# MONITOR := 1
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
 # -m 2G: 2 GiB of RAM.
@@ -19,6 +20,12 @@ QEMUFLAGS := -m 2G
 
 ifdef DEBUG
 QEMUFLAGS += -s -S
+endif
+
+ifdef MONITOR
+QEMUFLAGS += -monitor stdio
+else
+QEMUFLAGS += -serial stdio
 endif
 
 override IMAGE_NAME := template-$(ARCH)

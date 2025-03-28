@@ -1,69 +1,45 @@
 #include "panic.h"
-#include <device/term.h>
-#include <lib/ansi.h>
+#include "device/uart.h"
 #include <device/framebuffer.h>
+#include <device/term.h>
 #include <font/font_render.h>
 #include <hhdm.h>
-
-/* UART0 registers */
-#define UART0_PHYS_BASE 0x09000000
-
-// Macros to produce the *virtual* address
-#define UART0_BASE ((volatile unsigned int *)(UART0_PHYS_BASE + hhdm_offset))
-#define UART0_DR   (UART0_BASE + 0x00/4) // each register is 4 bytes
-#define UART0_FR   (UART0_BASE + 0x18/4)
-#define UARTFR_TXFF (1 << 5)    /* Transmit FIFO Full */
-#define UARTFR_RXFE (1 << 4)    /* Receive FIFO Empty */
-
+#include <lib/ansi.h>
+#include <lib/print.h>
 
 void panic(const char *msg) {
-    term_puts(ANSI_EFFECT_BOLD);
-    term_puts(ANSI_RGB_COLOR("231", "130", "132"));
-    term_puts("PANIC: ");
-    term_puts(ANSI_EFFECT_RESET);
-    term_puts(msg);
-    term_puts("\n");
+  panic_msg(msg);
 
-    for (;;) {
-        asm ("wfi");
-    }
+  for (;;) {
+    // hcf loop, noop
+    asm("nop");
+  }
 }
 
-void lastresort_uart_init() {
-    // Initialize UART for last resort panic
-    *UART0_FR = 0x00; // Disable FIFO
-    *UART0_DR = 0x00; // Clear data register
-
-    // Set FIFO empty flag
-    *UART0_FR = UARTFR_RXFE;
+void panic_msg(const char *msg) {
+  print(ANSI_EFFECT_BOLD, PRINT_FLAG_BOTH);
+  print(ANSI_RGB_COLOR("231", "130", "132"), PRINT_FLAG_BOTH);
+  print("PANIC: ", PRINT_FLAG_BOTH);
+  print(ANSI_EFFECT_RESET, PRINT_FLAG_BOTH);
+  print(msg, PRINT_FLAG_BOTH);
+  print("\n", PRINT_FLAG_BOTH);
 }
 
-void lastresort_uart_putc(char c)
-{
-    /* Wait until UART is ready to transmit */
-    while (*UART0_FR & UARTFR_TXFF)
-        ;
-    *UART0_DR = c;
+void panic_msg_no_cr(const char *msg) {
+  term_puts(ANSI_EFFECT_BOLD);
+  term_puts(ANSI_RGB_COLOR("231", "130", "132"));
+  term_puts("PANIC: ");
+  term_puts(ANSI_EFFECT_RESET);
+  term_puts(msg);
 }
-
-void lastresort_uart_puts(const char *s)
-{
-    while (*s) {
-        if (*s == '\n')
-            lastresort_uart_putc('\r');    /* Carriage return for new line */
-        lastresort_uart_putc(*s++);
-    }
-}
-
-
 
 void panic_lastresort(const char *msg) {
-    lastresort_uart_init();
-    lastresort_uart_puts("PANIC: ");
-    lastresort_uart_puts(msg);
-    lastresort_uart_puts("\n");
+  uart_init();
+  uart_puts("PANIC: ");
+  uart_puts(msg);
+  uart_puts("\n");
 
-    for (;;) {
-        asm ("wfi");
-    }
+  for (;;) {
+    asm("nop");
+  }
 }

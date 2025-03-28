@@ -6,8 +6,10 @@ MAKEFLAGS += -rR
 # Change as needed.
 override OUTPUT := kernel
 
+DEBUG := 1
+
 # Target architecture to build for. Default to x86_64.
-ARCH := aarch64
+ARCH := riscv64
 
 # Install prefix; /usr/local is a good, standard default pick.
 PREFIX := /usr/local
@@ -27,7 +29,18 @@ AR := ar
 # -g: Generate debug information.
 # -O2: Optimize for speed.
 # -pipe: Use pipes rather than temporary files for communication between the various stages of compilation.
-CFLAGS := -g -O2 -pipe -I src
+
+
+CFLAGS := -g
+
+# if debug is enabled, use -O0, otherwise use -O2
+ifeq ($(DEBUG),1)
+	CFLAGS += -O0
+else
+	CFLAGS += -O2
+endif
+
+CFLAGS += -pipe -I src
 
 # User controllable C preprocessor flags. We set none by default.
 CPPFLAGS :=
@@ -73,7 +86,7 @@ override CPPFLAGS := \
     -DLIMINE_API_REVISION=2 \
     -MMD \
     -MP \
-    -isysroot /dev/null  # Add this line
+    -isysroot /dev/null
 
 ifeq ($(ARCH),x86_64)
     # Internal nasm flags that should not be changed by the user.
@@ -149,7 +162,7 @@ override LDFLAGS := -fuse-ld=lld \
     -Wl,--gc-sections \
     -T linker-$(ARCH).ld
 
-# Use "find" to glob all *.c, *.S, and *.asm files in the tree and obtain the
+# Use "find" to glob all *.c, *.S, *.asm, and *.s files in the tree and obtain the
 # object and header dependency file names.
 override SRCFILES := $(shell cd src && find -L * -type f | LC_ALL=C sort)
 override CFILES := $(filter %.c,$(SRCFILES))
@@ -157,9 +170,15 @@ override ASFILES := $(filter %.S,$(SRCFILES))
 ifeq ($(ARCH),x86_64)
 override NASMFILES := $(filter %.asm,$(SRCFILES))
 endif
+ifeq ($(ARCH),riscv64)
+override RISCV_SFILES := $(filter %.s,$(SRCFILES))
+endif
 override OBJ := $(addprefix obj-$(ARCH)/,$(CFILES:.c=.c.o) $(ASFILES:.S=.S.o))
 ifeq ($(ARCH),x86_64)
 override OBJ += $(addprefix obj-$(ARCH)/,$(NASMFILES:.asm=.asm.o))
+endif
+ifeq ($(ARCH),riscv64)
+override OBJ += $(addprefix obj-$(ARCH)/,$(RISCV_SFILES:.s=.s.o))
 endif
 override HEADER_DEPS := $(addprefix obj-$(ARCH)/,$(CFILES:.c=.c.d) $(ASFILES:.S=.S.d))
 
@@ -200,6 +219,13 @@ ifeq ($(ARCH),x86_64)
 obj-$(ARCH)/%.asm.o: src/%.asm GNUmakefile
 	mkdir -p "$$(dirname $@)"
 	nasm $(NASMFLAGS) $< -o $@
+endif
+
+ifeq ($(ARCH),riscv64)
+# Compilation rules for *.s files.
+obj-$(ARCH)/%.s.o: src/%.s GNUmakefile
+	mkdir -p "$$(dirname $@)"
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 endif
 
 # Remove object files and the final executable.

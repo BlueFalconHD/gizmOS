@@ -1,8 +1,9 @@
 #include "shared.h"
-#include "device/rtc.h"
 #include <device/console.h>
 #include <device/framebuffer.h>
+#include <device/rtc.h>
 #include <device/uart.h>
+#include <lib/macros.h>
 #include <lib/types.h>
 
 uart_t *shared_uart = NULL;

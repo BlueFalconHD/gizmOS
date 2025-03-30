@@ -1,5 +1,4 @@
 #include "fmt.h"
-#include <hcf.h>
 #include <lib/str.h>
 
 #include <physical_alloc.h>

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <device/term.h>
-#include <hcf.h>
 #include <lib/fmt.h>
 
 void panic(const char *msg);

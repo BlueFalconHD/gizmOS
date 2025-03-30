@@ -2,6 +2,10 @@
 #include <lib/panic.h>
 #include <limine.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Weverything"
+
+// NOLINTBEGIN
 __attribute__((used,
                section(".limine_requests"))) volatile LIMINE_BASE_REVISION(3);
 
@@ -47,6 +51,9 @@ __attribute__((
     limine_req_paging_mode = {.id = LIMINE_PAGING_MODE_REQUEST,
                               .revision = 0,
                               .mode = LIMINE_PAGING_MODE_RISCV_SV39};
+// NOLINTEND
+
+#pragma clang diagnostic pop
 
 uint64_t hhdm_offset;
 

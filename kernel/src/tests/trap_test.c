@@ -1,5 +1,4 @@
 #include "trap_test.h"
-#include <device/term.h>
 #include <lib/fmt.h>
 #include <lib/print.h>
 

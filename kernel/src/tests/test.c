@@ -1,6 +1,5 @@
 #include "test.h"
-#include "../device/term.h"
-#include "lib/print.h"
+#include <lib/print.h>
 
 void test_complete(const char *name, bool result) {
   if (!result) {

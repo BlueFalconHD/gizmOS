@@ -1,6 +1,5 @@
 #include "trap_handler.h"
 #include "physical_alloc.h"
-#include <device/term.h>
 #include <lib/ansi.h>
 #include <lib/print.h>
 #include <lib/str.h>
@@ -58,6 +57,17 @@ void trap_handler() {
   asm volatile("csrr %0, stval" : "=r"(stval));
   asm volatile("csrr %0, sstatus" : "=r"(sstatus));
 
+  if (scause & (1ULL << 63)) {
+    // Handle interrupt
+    print("Interrupt occurred\n", PRINT_FLAG_BOTH);
+  } else {
+    // Handle exception
+    exception_handler(scause, sepc, stval, sstatus);
+  }
+}
+
+void exception_handler(uint64_t scause, uint64_t sepc, uint64_t stval,
+                       uint64_t sstatus) {
   // Print trap header
   print("\n\n", PRINT_FLAG_BOTH);
   print(

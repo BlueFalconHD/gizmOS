@@ -1,13 +1,9 @@
-#include "boot_time.h"
 #include "device/console.h"
 #include "device/framebuffer.h"
 #include "device/rtc.h"
 #include "device/shared.h"
-#include "device/term.h"
 #include "dtb/dtb.h"
-#include "hhdm.h"
 #include "page_table.h"
-#include "paging_mode.h"
 #include "physical_alloc.h"
 #include <device/uart.h>
 #include <lib/ansi.h>

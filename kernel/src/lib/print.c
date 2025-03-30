@@ -1,6 +1,5 @@
 #include "print.h"
 #include "device/shared.h"
-#include <device/term.h>
 #include <device/uart.h>
 
 void print(const char *str, print_flags_t flags) {

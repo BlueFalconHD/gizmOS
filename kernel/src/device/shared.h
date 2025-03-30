@@ -1,6 +1,7 @@
 #pragma once
 
 #include "device/rtc.h"
+#include "lib/macros.h"
 #include <device/console.h>
 #include <device/framebuffer.h>
 #include <device/uart.h>
@@ -21,3 +22,17 @@ void set_shared_console(console_t *console);
 void set_shared_framebuffer(framebuffer_t *framebuffer);
 void set_shared_rtc(rtc_t *rtc);
 uint64_t shared_rtc_get_time();
+
+G_INLINE g_bool is_shared_char_available() {
+  g_bool available = false;
+
+  if (shared_uart_initialized) {
+    available = shared_uart->is_initialized;
+  }
+
+  if (shared_console_initialized) {
+    available = shared_console->is_initialized || available;
+  }
+
+  return available;
+}

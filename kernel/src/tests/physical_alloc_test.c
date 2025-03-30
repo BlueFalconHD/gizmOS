@@ -1,8 +1,7 @@
-#include "device/shared.h"
-#include "lib/print.h"
 #include "test.h"
 #include <device/rtc.h>
-#include <device/term.h>
+#include <device/shared.h>
+#include <lib/print.h>
 #include <lib/str.h>
 #include <physical_alloc.h>
 #include <stdbool.h>

@@ -1,18 +1,7 @@
-#ifndef PAGE_TABLE_H
-#define PAGE_TABLE_H
+#pragma once
 
 #include <stdbool.h>
 #include <stdint.h>
-
-/**
- * @file page_table.h
- * @brief Page table management for RISC-V SV39 paging mode.
- */
-
-/**
- * @defgroup PageTable Page Table Management
- * @{
- */
 
 /**
  * @brief Number of page table levels in SV39 mode.
@@ -112,7 +101,3 @@ bool map_range(page_table_t *root_table, uint64_t virtual_start,
  * @param root_table Pointer to the root page table to activate.
  */
 void activate_page_table(page_table_t *root_table);
-
-/** @} */
-
-#endif // PAGE_TABLE_H

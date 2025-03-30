@@ -59,57 +59,59 @@ void trap_handler() {
   asm volatile("csrr %0, sstatus" : "=r"(sstatus));
 
   // Print trap header
-  term_puts("\n\n");
-  term_puts(
-      ANSI_APPLY(ANSI_COLOR_RED, ANSI_APPLY(ANSI_EFFECT_BOLD, "TRAP HANDLER")));
-  term_puts("\nA trap has occurred. This is usually due to an unhandled "
-            "exception or a fatal error.\n\n");
+  print("\n\n", PRINT_FLAG_BOTH);
+  print(
+      ANSI_APPLY(ANSI_COLOR_RED, ANSI_APPLY(ANSI_EFFECT_BOLD, "TRAP HANDLER")),
+      PRINT_FLAG_BOTH);
+  print("\nA trap has occurred. This is usually due to an unhandled "
+        "exception or a fatal error.\n\n",
+        PRINT_FLAG_BOTH);
 
   // Print exception information
   char buffer[64];
 
   // Print exception cause
-  term_puts(ANSI_APPLY(ANSI_EFFECT_BOLD, "Exception Cause: "));
+  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Exception Cause: "), PRINT_FLAG_BOTH);
   hexstrfuint(scause, buffer);
-  term_puts("0x");
-  term_puts(buffer);
-  term_puts(" (");
-  term_puts(get_exception_cause_str(scause & 0x7FFFFFFFFFFFFFFF));
-  term_puts(")\n");
+  print("0x", PRINT_FLAG_BOTH);
+  print(buffer, PRINT_FLAG_BOTH);
+  print(" (", PRINT_FLAG_BOTH);
+  print(get_exception_cause_str(scause & 0x7FFFFFFFFFFFFFFF), PRINT_FLAG_BOTH);
+  print(")\n", PRINT_FLAG_BOTH);
 
   // Print instruction pointer where exception occurred
-  term_puts(ANSI_APPLY(ANSI_EFFECT_BOLD, "Exception PC: "));
+  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Exception PC: "), PRINT_FLAG_BOTH);
   hexstrfuint(sepc, buffer);
-  term_puts("0x");
-  term_puts(buffer);
-  term_puts("\n");
+  print("0x", PRINT_FLAG_BOTH);
+  print(buffer, PRINT_FLAG_BOTH);
+  print("\n", PRINT_FLAG_BOTH);
 
   // Print bad address or instruction (if applicable)
-  term_puts(ANSI_APPLY(ANSI_EFFECT_BOLD, "Trap Value: "));
+  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Trap Value: "), PRINT_FLAG_BOTH);
   hexstrfuint(stval, buffer);
-  term_puts("0x");
-  term_puts(buffer);
-  term_puts("\n");
+  print("0x", PRINT_FLAG_BOTH);
+  print(buffer, PRINT_FLAG_BOTH);
+  print("\n", PRINT_FLAG_BOTH);
 
   // Print status register
-  term_puts(ANSI_APPLY(ANSI_EFFECT_BOLD, "Status Register: "));
+  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Status Register: "), PRINT_FLAG_BOTH);
   hexstrfuint(sstatus, buffer);
-  term_puts("0x");
-  term_puts(buffer);
-  term_puts("\n\n");
+  print("0x", PRINT_FLAG_BOTH);
+  print(buffer, PRINT_FLAG_BOTH);
+  print("\n\n", PRINT_FLAG_BOTH);
 
   // Print memory stats
-  term_puts(ANSI_APPLY(ANSI_EFFECT_BOLD, "Memory Status:\n"));
+  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Memory Status:\n"), PRINT_FLAG_BOTH);
   strfuint(get_free_page_count(), buffer);
-  term_puts("Free page count: ");
-  term_puts(buffer);
-  term_puts("\n\n");
+  print("Free page count: ", PRINT_FLAG_BOTH);
+  print(buffer, PRINT_FLAG_BOTH);
+  print("\n\n", PRINT_FLAG_BOTH);
 
   // You could also dump register values here if you save them in your trap
   // entry point However, that would require modifying your trap.s assembly file
 
   // Halt the system (or you could return to let the trap.s code handle it)
-  term_puts("System halted.\n");
+  print("System halted.\n", PRINT_FLAG_BOTH);
   for (;;) {
     asm volatile("wfi");
   }

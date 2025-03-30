@@ -1,14 +1,15 @@
 #include "test.h"
 #include "../device/term.h"
+#include "lib/print.h"
 
 void test_complete(const char *name, bool result) {
-    if (!result) {
-        term_puts("test ");
-        term_puts(name);
-        term_puts(" ");
-        // term_puts(ANSI_RED);
-        term_puts("failed");
-        // term_puts(ANSI_RESET);
-        term_puts("\n");
-    }
+  if (!result) {
+    print("test ", PRINT_FLAG_BOTH);
+    print(name, PRINT_FLAG_BOTH);
+    print(" ", PRINT_FLAG_BOTH);
+    // term_puts(ANSI_RED);
+    print("failed", PRINT_FLAG_BOTH);
+    // term_puts(ANSI_RESET);
+    print("\n", PRINT_FLAG_BOTH);
+  }
 }

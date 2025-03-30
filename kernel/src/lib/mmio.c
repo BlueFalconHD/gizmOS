@@ -16,8 +16,7 @@ mmio_map *alloc_mmio_map() {
   return mmap;
 }
 
-bool mmio_map_add(mmio_map *map, uint64_t base, uint64_t size, uint64_t flags,
-                  void (*page_callback)(uint64_t addr)) {
+bool mmio_map_add(mmio_map *map, uint64_t base, uint64_t size, uint64_t flags) {
   // Check if the map is null
   if (!map) {
     return false;
@@ -39,7 +38,6 @@ bool mmio_map_add(mmio_map *map, uint64_t base, uint64_t size, uint64_t flags,
   map->entries[map->count].base = base;
   map->entries[map->count].size = size;
   map->entries[map->count].flags = flags;
-  map->entries[map->count].page_callback = page_callback;
   map->count++;
   return true;
 }
@@ -110,14 +108,4 @@ bool mmio_unmap_pages(mmio_map *map, page_table_t *pt) {
   }
 
   return true;
-}
-
-void mmio_map_was_activated(mmio_map *map) {
-  for (uint64_t i = 0; i < map->count; i++) {
-    for (uint64_t j = 0; j < map->entries[i].size; j += PAGE_SIZE) {
-      if (map->entries[i].page_callback) {
-        map->entries[i].page_callback(map->entries[i].base + j);
-      }
-    }
-  }
 }

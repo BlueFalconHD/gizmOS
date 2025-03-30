@@ -1,3 +1,5 @@
+#include "device/shared.h"
+#include "lib/print.h"
 #include "test.h"
 #include <device/rtc.h>
 #include <device/term.h>
@@ -17,7 +19,7 @@ struct test_allocation {
 static bool test_basic_alloc_free() {
   void *page = alloc_page();
   if (page == NULL) {
-    term_puts("Failed to allocate page\n");
+    print("Failed to allocate page\n", PRINT_FLAG_BOTH);
     return false;
   }
 
@@ -26,7 +28,7 @@ static bool test_basic_alloc_free() {
 
   // Verify pattern
   if (*(uint64_t *)page != TEST_PATTERN) {
-    term_puts("Test pattern verification failed\n");
+    print("Test pattern verification failed\n", PRINT_FLAG_BOTH);
     return false;
   }
 
@@ -43,11 +45,11 @@ static bool test_multiple_alloc() {
   for (int i = 0; i < 10; i++) {
     pages[i] = alloc_page();
     if (pages[i] == NULL) {
-      term_puts("Failed to allocate page ");
+      print("Failed to allocate page ", PRINT_FLAG_BOTH);
       char buffer[8];
       strfuint(i, buffer);
-      term_puts(buffer);
-      term_puts("\n");
+      print(buffer, PRINT_FLAG_BOTH);
+      print("\n", PRINT_FLAG_BOTH);
       success = false;
       break;
     }
@@ -58,11 +60,11 @@ static bool test_multiple_alloc() {
   // Verify patterns
   for (int i = 0; i < 10 && success; i++) {
     if (*(uint64_t *)pages[i] != TEST_PATTERN + i) {
-      term_puts("Pattern verification failed for page ");
+      print("Pattern verification failed for page ", PRINT_FLAG_BOTH);
       char buffer[8];
       strfuint(i, buffer);
-      term_puts(buffer);
-      term_puts("\n");
+      print(buffer, PRINT_FLAG_BOTH);
+      print("\n", PRINT_FLAG_BOTH);
       success = false;
       break;
     }
@@ -94,8 +96,8 @@ static bool test_stress_alloc() {
 
   // Randomly allocate and free pages
   for (int i = 0; i < 1000; i++) {
-    uint64_t index = goldfish_get_time() % MAX_TEST_PAGES; // Use timer as
-                                                           // random source
+    uint64_t index = shared_rtc_get_time() % MAX_TEST_PAGES; // Use timer as
+                                                             // random source
 
     if (!allocations[index].allocated) {
       // Allocate new page
@@ -108,7 +110,8 @@ static bool test_stress_alloc() {
     } else {
       // Verify and free existing page
       if (*(uint64_t *)allocations[index].ptr != TEST_PATTERN + index) {
-        term_puts("Pattern verification failed during stress test\n");
+        print("Pattern verification failed during stress test\n",
+              PRINT_FLAG_BOTH);
         success = false;
         break;
       }
@@ -129,11 +132,11 @@ static bool test_stress_alloc() {
   // Verify final count matches initial
   uint64_t final_free_count = get_free_page_count();
   if (final_free_count != initial_free_count) {
-    term_puts("Page count mismatch after stress test\n");
-    term_puts("Final free pages: ");
+    print("Page count mismatch after stress test\n", PRINT_FLAG_BOTH);
+    print("Final free pages: ", PRINT_FLAG_BOTH);
     strfuint(final_free_count, buffer);
-    term_puts(buffer);
-    term_puts("\n");
+    print(buffer, PRINT_FLAG_BOTH);
+    print("\n", PRINT_FLAG_BOTH);
     success = false;
   }
 

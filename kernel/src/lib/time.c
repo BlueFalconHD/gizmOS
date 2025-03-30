@@ -1,3 +1,4 @@
+#include "device/shared.h"
 #include <device/rtc.h>
 #include <lib/fmt.h>
 #include <lib/print.h>
@@ -123,13 +124,13 @@ void time_to_string(const time_t *tm, char *buf) {
 void sleep_s(uint32_t seconds) {
   // Convert time to ns
   uint64_t ns = (uint64_t)seconds * 1000000000ULL;
-  uint64_t current_time = goldfish_get_time();
+  uint64_t current_time = shared_rtc_get_time();
 
   // Set the end time
   sleep_end = current_time + ns;
 
   // Wait until the end time
-  while (goldfish_get_time() < sleep_end) {
+  while (shared_rtc_get_time() < sleep_end) {
     asm volatile("wfi");
   }
 }
@@ -137,13 +138,13 @@ void sleep_s(uint32_t seconds) {
 void sleep_ms(uint32_t milliseconds) {
   // Convert time to ns
   uint64_t ns = (uint64_t)milliseconds * 1000000ULL;
-  uint64_t current_time = goldfish_get_time();
+  uint64_t current_time = shared_rtc_get_time();
 
   // Set the end time
   sleep_end = current_time + ns;
 
   // Wait until the end time
-  while (goldfish_get_time() < sleep_end) {
+  while (shared_rtc_get_time() < sleep_end) {
     asm volatile("wfi");
   }
 }
@@ -151,25 +152,25 @@ void sleep_ms(uint32_t milliseconds) {
 void sleep_us(uint32_t microseconds) {
   // Convert time to ns
   uint64_t ns = (uint64_t)microseconds * 1000ULL;
-  uint64_t current_time = goldfish_get_time();
+  uint64_t current_time = shared_rtc_get_time();
 
   // Set the end time
   sleep_end = current_time + ns;
 
   // Wait until the end time
-  while (goldfish_get_time() < sleep_end) {
+  while (shared_rtc_get_time() < sleep_end) {
     asm volatile("wfi");
   }
 }
 
 void sleep_ns(uint32_t nanoseconds) {
-  uint64_t current_time = goldfish_get_time();
+  uint64_t current_time = shared_rtc_get_time();
 
   // Set the end time
   sleep_end = current_time + nanoseconds;
 
   // Wait until the end time
-  while (goldfish_get_time() < sleep_end) {
+  while (shared_rtc_get_time() < sleep_end) {
     asm volatile("wfi");
   }
 }

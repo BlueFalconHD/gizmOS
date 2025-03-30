@@ -1,20 +1,10 @@
 #include "page_table.h"
-#include "device/term.h"
-#include "hhdm.h" // For hhdm_offset
-#include "lib/panic.h"
-#include "lib/str.h"
-#include <memory.h>         // For memset
+#include <lib/memory.h> // For memset
+#include <lib/panic.h>
+#include <lib/print.h>
+#include <lib/str.h>
+#include <limine_requests.h>
 #include <physical_alloc.h> // For alloc_page and free_page
-
-/**
- * @file page_table.c
- * @brief Implementation of page table management for RISC-V SV39 paging mode.
- */
-
-/**
- * @defgroup PageTableImplementation Page Table Implementation
- * @{
- */
 
 /**
  * @brief Helper function to convert a physical address to a virtual address.
@@ -62,34 +52,28 @@ bool map_page(page_table_t *root_table, uint64_t virtual_address,
 
   page_table_t *current_table = root_table;
 
-  // Traverse the page table levels
   for (int level = SV39_LEVELS - 1; level >= 0; level--) {
     uint16_t index = vpn[level];
     pte_t entry = current_table->entries[index];
 
     if (level == 0) {
-      // Level 0, set up the leaf PTE
       pte_t pte = (physical_address >> 12) << 10; // PPN[2:0] in bits 53:10
       pte |= (flags & 0x3FF);                     // Flags are bits 9:0
       current_table->entries[index] = pte;
       return true;
     }
 
-    // Check if the next level page table exists
     if (entry & PTE_V) {
-      // Entry is valid, get the next level page table
       uint64_t next_table_pa = (entry >> 10) << 12;
       uint64_t next_table_va = pa_to_va(next_table_pa);
       current_table = (page_table_t *)next_table_va;
     } else {
-      // Need to allocate a new page table
       page_table_t *new_table = create_page_table();
       if (!new_table) {
         panic_msg("Failed to allocate new page table");
         return false;
       }
       uint64_t new_table_pa = va_to_pa((uint64_t)new_table);
-      // Set up the PTE for the new page table
       pte_t pte = (new_table_pa >> 12) << 10; // PPN[2:0] in bits 53:10
       pte |= PTE_V;
       current_table->entries[index] = pte;
@@ -98,7 +82,7 @@ bool map_page(page_table_t *root_table, uint64_t virtual_address,
   }
 
   panic_msg("Should not reach here; mapping failed");
-  return false; // Should not reach here; mapping failed
+  return false;
 }
 
 bool unmap_page(page_table_t *root_table, uint64_t virtual_address) {
@@ -111,29 +95,25 @@ bool unmap_page(page_table_t *root_table, uint64_t virtual_address) {
 
   page_table_t *current_table = root_table;
 
-  // Traverse the page table levels
   for (int level = SV39_LEVELS - 1; level >= 0; level--) {
     uint16_t index = vpn[level];
     pte_t entry = current_table->entries[index];
 
-    // Check if entry is valid
     if (!(entry & PTE_V)) {
-      return false; // Mapping doesn't exist
+      return false;
     }
 
     if (level == 0) {
-      // Level 0, clear the PTE
       current_table->entries[index] = 0;
       return true;
     }
 
-    // Move to the next level page table
     uint64_t next_table_pa = (entry >> 10) << 12;
     uint64_t next_table_va = pa_to_va(next_table_pa);
     current_table = (page_table_t *)next_table_va;
   }
 
-  return false; // Should not reach here; unmapping failed
+  return false;
 }
 
 bool get_physical_address(page_table_t *root_table, uint64_t virtual_address,
@@ -156,20 +136,18 @@ bool get_physical_address(page_table_t *root_table, uint64_t virtual_address,
     }
 
     if ((entry & (PTE_R | PTE_W | PTE_X)) != 0) {
-      // Leaf PTE
       uint64_t ppn = entry >> 10;
       uint64_t offset = virtual_address & 0xFFF;
       *physical_address = (ppn << 12) | offset;
       return true;
     }
 
-    // Non-leaf PTE
     uint64_t next_table_pa = (entry >> 10) << 12;
     uint64_t next_table_va = pa_to_va(next_table_pa);
     current_table = (page_table_t *)next_table_va;
   }
 
-  return false; // Mapping not found
+  return false;
 }
 
 bool identity_map(page_table_t *root_table, uint64_t start_address,
@@ -183,8 +161,8 @@ bool identity_map(page_table_t *root_table, uint64_t start_address,
       panic_msg_no_cr("Failed to map page at ");
       char buffer[128];
       hexstrfuint(addr, buffer);
-      term_puts(buffer);
-      term_puts("\n");
+      print(buffer, PRINT_FLAG_BOTH);
+      print("\n", PRINT_FLAG_BOTH);
 
       return false;
     }
@@ -209,8 +187,8 @@ bool map_range(page_table_t *root_table, uint64_t virtual_start,
       panic_msg_no_cr("Failed to map page at virtual address ");
       char buffer[128];
       hexstrfuint(va, buffer);
-      term_puts(buffer);
-      term_puts("\n");
+      print(buffer, PRINT_FLAG_BOTH);
+      print("\n", PRINT_FLAG_BOTH);
       return false;
     }
     addr_offset += PAGE_SIZE;
@@ -226,5 +204,3 @@ void activate_page_table(page_table_t *root_table) {
   asm volatile("csrw satp, %0" ::"r"(satp_value));
   asm volatile("sfence.vma");
 }
-
-/** @} */

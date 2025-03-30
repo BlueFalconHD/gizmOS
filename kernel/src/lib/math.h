@@ -3,8 +3,6 @@
 
 #define PI 3.14159265358979323846
 
-/* Function declarations */
-
 double sqrt(double n);
 double pow(double base, double exp);
 double root(double n, double r);

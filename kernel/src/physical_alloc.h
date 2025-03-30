@@ -1,7 +1,7 @@
 #ifndef PHYSICAL_ALLOC_H
 #define PHYSICAL_ALLOC_H
 
-#include "limine.h"
+#include <limine.h>
 #include <stdint.h>
 
 #define PAGE_SIZE 4096

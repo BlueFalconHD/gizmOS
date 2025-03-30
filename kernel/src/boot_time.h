@@ -1,10 +1,10 @@
-#ifndef BOOT_TIME_H
-#define BOOT_TIME_H
+// #ifndef BOOT_TIME_H
+// #define BOOT_TIME_H
 
-#include <lib/time.h>
+// #include <lib/time.h>
 
-extern time_t boot_time;
+// extern time_t boot_time;
 
-void boot_time_init();
+// void boot_time_init();
 
-#endif
+// #endif

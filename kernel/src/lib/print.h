@@ -9,22 +9,17 @@ typedef uint8_t print_flags_t;
 #define PRINT_FLAG_BOTH PRINT_FLAG_TERM | PRINT_FLAG_UART
 
 // https://linuxjedi.co.uk/nested-variadic-functions-in-c/
-#include <device/term.h>
+#include <device/console.h>
+#include <device/shared.h>
 #include <device/uart.h>
 #include <physical_alloc.h>
+
+void print(const char *str, print_flags_t flags);
 
 #define printf(fmt, flags, ...)                                                \
   do {                                                                         \
     char *buf = format(fmt, ##__VA_ARGS__);                                    \
     if (buf) {                                                                 \
-      if (flags & PRINT_FLAG_TERM) {                                           \
-        term_puts(buf);                                                        \
-      }                                                                        \
-      if (flags & PRINT_FLAG_UART) {                                           \
-        uart_puts(buf);                                                        \
-      }                                                                        \
-      free_page(buf);                                                          \
+      print(buf, flags);                                                       \
     }                                                                          \
   } while (0)
-
-void print(const char *str, print_flags_t flags);

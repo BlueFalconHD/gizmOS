@@ -1,12 +1,11 @@
 #include "dtb.h"
-#include "lib/panic.h"
-#include "lib/print.h"
-#include "physical_alloc.h"
+#include <device/console.h>
 #include <extern/smoldtb/smoldtb.h>
-#include <stdint.h>
-// #include <extern/ce-base/ce-base.h>
-#include <device/term.h>
+#include <lib/panic.h>
+#include <lib/print.h>
 #include <limine.h>
+#include <physical_alloc.h>
+#include <stdint.h>
 
 __attribute__((
     used,

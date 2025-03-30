@@ -1,29 +1,24 @@
 #include "boot_time.h"
+#include "device/console.h"
 #include "device/framebuffer.h"
-#include "device/framebuffera.h"
 #include "device/rtc.h"
+#include "device/shared.h"
 #include "device/term.h"
-#include "device/uarta.h"
 #include "dtb/dtb.h"
-#include "hcf.h"
 #include "hhdm.h"
-#include "lib/device.h"
-#include "lib/fmt.h"
-#include "lib/result.h"
-#include "lib/time.h"
-#include "mem_layout.h"
 #include "page_table.h"
 #include "paging_mode.h"
 #include "physical_alloc.h"
-#include "tests/physical_alloc_test.h"
 #include <device/uart.h>
 #include <lib/ansi.h>
 #include <lib/mmio.h>
 #include <lib/panic.h>
 #include <lib/print.h>
+#include <lib/result.h>
 #include <lib/str.h>
+#include <lib/time.h>
 #include <limine.h>
-#include <math.h>
+#include <limine_requests.h>
 #include <memory_map.h>
 #include <stdbool.h>
 #include <tests/trap_test.h>
@@ -31,18 +26,6 @@
 #define VERSION "0.0.1"
 
 // #define TESTS
-
-__attribute__((
-    used, section(".limine_requests"))) static volatile LIMINE_BASE_REVISION(3);
-
-__attribute__((used,
-               section(".limine_requests_"
-                       "start"))) static volatile LIMINE_REQUESTS_START_MARKER;
-
-__attribute__((
-    used,
-    section(
-        ".limine_requests_end"))) static volatile LIMINE_REQUESTS_END_MARKER;
 
 extern void trap_vector();
 
@@ -56,20 +39,31 @@ void main() {
 
   char buffer[128];
 
-  struct limine_framebuffer *fb = get_framebuffer();
+  limine_requests_init();
 
-  term_init(fb);
-
-  paging_mode_init();
-  hhdm_init();
-  executable_address_init();
-  executable_file_init();
-  memory_map_init();
   dtb_init();
-  boot_time_init();
   initialize_pages(memory_map_entries, memory_map_entry_count);
 
-  printf("*. gizmOS %{type: str}\n", PRINT_FLAG_TERM, VERSION);
+  struct limine_framebuffer *lfb =
+      limine_req_framebuffer.response->framebuffers[0];
+  result_t rfb = make_framebuffer(lfb);
+  if (!result_is_ok(rfb)) {
+    panic("Failed to create framebuffer");
+  }
+  framebuffer_t *fb = (framebuffer_t *)result_unwrap(rfb);
+  set_shared_framebuffer(fb);
+  if (!framebuffer_init(fb)) {
+    panic("Failed to initialize framebuffer");
+  }
+
+  result_t rconsole = make_console(fb);
+  console_t *console = (console_t *)result_unwrap(rconsole);
+  if (!console_init(console)) {
+    panic("Failed to initialize console");
+  }
+  set_shared_console(console);
+
+  printf("*. gizmOS %{type: str}\n", PRINT_FLAG_BOTH, VERSION);
 
   // set trap vector
   asm volatile("csrw stvec, %0" ::"r"(&trap_vector));
@@ -85,18 +79,6 @@ void main() {
            get_free_page_count());
   }
 #endif
-
-  if ((uint64_t)kstart != executable_virtual_base) {
-    panic_msg("Inconsistent kernel bases");
-    hexstrfuint(executable_virtual_base, buffer);
-    panic_msg_no_cr("Executable virtual base: ");
-    term_puts(buffer);
-    term_puts("\n");
-    hexstrfuint((uint64_t)kstart, buffer);
-    panic_msg_no_cr("Kernel start: ");
-    term_puts(buffer);
-    term_puts("\n");
-  }
 
   page_table_t *root_page_table = create_page_table();
   if (!root_page_table) {
@@ -119,33 +101,39 @@ void main() {
   }
 
   mmio_map *mmap = alloc_mmio_map();
-
-  // UART (ns16550a)
-  mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
-               uart_mmio_callback);
-
-  // RTC (goldfish)
-  mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
-               rtc_mmio_callback);
+  mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V);
+  mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V);
 
   mmio_map_pages(mmap, root_page_table);
   activate_page_table(root_page_table);
-  mmio_map_was_activated(mmap);
+
+  result_t ruart = make_uart(0x10000000);
+  if (!result_is_ok(ruart)) {
+    panic("Failed to create UART");
+  }
+  uart_t *uart = (uart_t *)result_unwrap(ruart);
+  if (!uart_init(uart)) {
+    panic("Failed to initialize UART");
+  }
+  set_shared_uart(uart);
+
+  result_t rrtc = make_rtc(0x101000);
+  if (!result_is_ok(rrtc)) {
+    panic("Failed to create RTC");
+  }
+  rtc_t *rtc = (rtc_t *)result_unwrap(rrtc);
+  if (!rtc_init(rtc)) {
+    panic("Failed to initialize RTC");
+  }
+  set_shared_rtc(rtc);
 
   printf("*. gizmOS %{type: str}\n", PRINT_FLAG_UART, VERSION);
-
-  // Current Time
-  time_t initial_complete_time;
-  unix_time_ns_to_time(goldfish_get_time(), &initial_complete_time);
-  char buf2[128];
-  time_to_string(&initial_complete_time, buf2);
-  printf("%{type: str}\n", PRINT_FLAG_BOTH, buf2);
 
   // Print unallocated memory
   printf(ANSI_APPLY(ANSI_EFFECT_BOLD, "Free: ") "%{type: int} pages\n",
          PRINT_FLAG_BOTH, get_free_page_count());
 
-  dtb_dostuff();
+  // dtb_dostuff();
 
   panic_loc("end of main");
 }

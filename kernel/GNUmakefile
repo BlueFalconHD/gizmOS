@@ -6,7 +6,7 @@ MAKEFLAGS += -rR
 # Change as needed.
 override OUTPUT := kernel
 
-# DEBUG := 1
+DEBUG := 1
 
 # Target architecture to build for. Default to x86_64.
 ARCH := riscv64

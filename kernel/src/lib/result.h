@@ -35,3 +35,6 @@ static inline uint64_t result_unwrap(result_t result) {
   }
   return result.data.value;
 }
+
+// add inline comment after result_t type to show actual type
+#define RESULT_TYPE(T) result_t /* T */

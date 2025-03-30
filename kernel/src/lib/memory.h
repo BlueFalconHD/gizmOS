@@ -1,8 +1,7 @@
-#ifndef MEMORY_H
-#define MEMORY_H
+#pragma once
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 /**
  * Copies n bytes from memory area src to memory area dest.
@@ -15,7 +14,8 @@
 void *memcpy(void *dest, const void *src, size_t n);
 
 /**
- * Sets the first n bytes of the block of memory pointed by ptr to the specified value.
+ * Sets the first n bytes of the block of memory pointed by ptr to the specified
+ * value.
  *
  * @param dest Pointer to the block of memory to fill.
  * @param value Value to be set.
@@ -24,7 +24,8 @@ void *memcpy(void *dest, const void *src, size_t n);
 void *memset(void *s, int t, size_t n);
 
 /**
- * Copies n bytes from memory area src to memory area dest. The memory areas may overlap.
+ * Copies n bytes from memory area src to memory area dest. The memory areas may
+ * overlap.
  *
  * @param dest Pointer to the destination memory area.
  * @param src Pointer to the source memory area.
@@ -39,11 +40,11 @@ void *memmove(void *dest, const void *src, size_t n);
  * @param ptr1 Pointer to the first memory block.
  * @param ptr2 Pointer to the second memory block.
  * @param n Number of bytes to compare.
- * @return 0 if the contents of both memory blocks are equal, non-zero otherwise.
+ * @return 0 if the contents of both memory blocks are equal, non-zero
+ * otherwise.
  */
 
 int memcmp(const void *s1, const void *s2, size_t n);
-
 
 /**
  * Swaps the endianness of a 16-bit integer.
@@ -65,7 +66,3 @@ uint32_t swap_uint32(uint32_t val);
  * @param value The value to swap.
  */
 uint64_t swap_uint64(uint64_t val);
-
-
-
-#endif /* MEMORY_H */

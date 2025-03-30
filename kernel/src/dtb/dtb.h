@@ -2,7 +2,7 @@
 #define DTB_H 1
 
 #include <extern/smoldtb/smoldtb.h>
-#include <memory.h>
+#include <lib/memory.h>
 #include <stdbool.h>
 #include <stdint.h>
 

@@ -1,6 +1,5 @@
 #include "math.h"
-#include "device/rtc.h"
-#include <stdint.h>
+#include <device/rtc.h>
 
 /**
  * sqrt(n)

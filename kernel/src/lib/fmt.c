@@ -6,7 +6,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-#include <device/term.h>
+#include <device/console.h>
 
 enum format_type {
   FORMAT_TYPE_INT,
@@ -676,17 +676,4 @@ char *format(const char *fmt, ...) {
 
   va_end(args);
   return ret_buf; // caller can free_page(ret_buf) if desired
-}
-
-void pf(const char *fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-
-  char *buf = format(fmt, args);
-  if (buf) {
-    term_puts(buf);
-    free_page(buf);
-  }
-
-  va_end(args);
 }

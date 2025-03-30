@@ -1,8 +1,8 @@
-#ifndef PAGING_MODE_H
-#define PAGING_MODE_H
+// #ifndef PAGING_MODE_H
+// #define PAGING_MODE_H
 
-#include <stdint.h>
+// #include <stdint.h>
 
-void paging_mode_init();
+// void paging_mode_init();
 
-#endif /* PAGING_MODE_H */
+// #endif /* PAGING_MODE_H */

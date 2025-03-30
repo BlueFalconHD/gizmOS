@@ -93,31 +93,31 @@ static bool test_stress_alloc() {
   }
 
   // Randomly allocate and free pages
-  // for (int i = 0; i < 1000; i++) {
-  //     uint64_t index = read_cntpct() % MAX_TEST_PAGES;  // Use timer as
-  //     random source
+  for (int i = 0; i < 1000; i++) {
+    uint64_t index = goldfish_get_time() % MAX_TEST_PAGES; // Use timer as
+                                                           // random source
 
-  //     if (!allocations[index].allocated) {
-  //         // Allocate new page
-  //         allocations[index].ptr = alloc_page();
-  //         if (allocations[index].ptr != NULL) {
-  //             allocations[index].allocated = true;
-  //             allocated_count++;
-  //             *(uint64_t*)allocations[index].ptr = TEST_PATTERN + index;
-  //         }
-  //     } else {
-  //         // Verify and free existing page
-  //         if (*(uint64_t*)allocations[index].ptr != TEST_PATTERN + index) {
-  //             term_puts("Pattern verification failed during stress test\n");
-  //             success = false;
-  //             break;
-  //         }
-  //         free_page(allocations[index].ptr);
-  //         allocations[index].ptr = NULL;
-  //         allocations[index].allocated = false;
-  //         allocated_count--;
-  //     }
-  // }
+    if (!allocations[index].allocated) {
+      // Allocate new page
+      allocations[index].ptr = alloc_page();
+      if (allocations[index].ptr != NULL) {
+        allocations[index].allocated = true;
+        allocated_count++;
+        *(uint64_t *)allocations[index].ptr = TEST_PATTERN + index;
+      }
+    } else {
+      // Verify and free existing page
+      if (*(uint64_t *)allocations[index].ptr != TEST_PATTERN + index) {
+        term_puts("Pattern verification failed during stress test\n");
+        success = false;
+        break;
+      }
+      free_page(allocations[index].ptr);
+      allocations[index].ptr = NULL;
+      allocations[index].allocated = false;
+      allocated_count--;
+    }
+  }
 
   // Clean up any remaining allocations
   for (int i = 0; i < MAX_TEST_PAGES; i++) {

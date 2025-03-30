@@ -18,8 +18,8 @@ void initialize_pages(struct limine_memmap_entry **entries,
     struct limine_memmap_entry *entry = entries[i];
 
     // Consider usable and bootloader-reclaimable memory regions
-    if ((entry->type == LIMINE_MEMMAP_USABLE /*||
-         entry->type == LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE*/) &&
+    if ((entry->type == LIMINE_MEMMAP_USABLE ||
+         entry->type == LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE) &&
         entry->length >= PAGE_SIZE) {
 
       // Align the start address to the next page boundary

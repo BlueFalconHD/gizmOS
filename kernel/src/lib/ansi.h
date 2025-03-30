@@ -22,5 +22,10 @@
 #define ANSI_EFFECT_BLINK ANSI_BASE "5" ANSI_END
 #define ANSI_EFFECT_REVERSE ANSI_BASE "7" ANSI_END
 #define ANSI_EFFECT_CONCEAL ANSI_BASE "8" ANSI_END
+#define ANSI_EFFECT_CLEARLINE ANSI_BASE "9" ANSI_END
+#define ANSI_EFFECT_CLEARSCREEN ANSI_BASE "2J" ANSI_END
 
 #define ANSI_RGB_COLOR(r, g, b) "\033[38;2;" r ";" g ";" b "m"
+
+// Use a provided ansi code and append reset code to string
+#define ANSI_APPLY(an, str) an str ANSI_EFFECT_RESET

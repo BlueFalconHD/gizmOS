@@ -1,6 +1,7 @@
 #include "hhdm.h"
 #include "device/term.h"
 #include "hcf.h"
+#include "lib/panic.h"
 #include "limine.h"
 #include "memory.h"
 
@@ -27,8 +28,7 @@ __attribute__((used, section(".limine_requests"))) static volatile struct
 void hhdm_init() {
   struct limine_hhdm_response *hhdm_response = hhdm_request.response;
   if (hhdm_response == NULL) {
-    print_error("Response to HHDM request to Limine was null\n");
-    hcf();
+    panic("Response to HHDM request to Limine was null\n");
   } else {
     hhdm_offset = hhdm_response->offset;
   }
@@ -38,8 +38,7 @@ void executable_address_init() {
   struct limine_executable_address_response *executable_address_response =
       executable_address_request.response;
   if (executable_address_response == NULL) {
-    print_error("Response to executable address request was null\n");
-    hcf();
+    panic("Response to executable address request was null\n");
   } else {
     executable_physical_base = executable_address_response->physical_base;
     executable_virtual_base = executable_address_response->virtual_base;
@@ -57,8 +56,7 @@ void executable_file_init() {
   struct limine_executable_file_response *executable_file_response =
       executable_file_request.response;
   if (executable_file_response == NULL) {
-    print_error("Response to executable file request was null\n");
-    hcf();
+    panic("Response to executable file request was null\n");
   } else {
     executable_size = executable_file_response->executable_file->size;
   }

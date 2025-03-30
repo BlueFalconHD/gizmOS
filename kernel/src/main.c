@@ -1,11 +1,15 @@
 #include "boot_time.h"
 #include "device/framebuffer.h"
+#include "device/framebuffera.h"
 #include "device/rtc.h"
 #include "device/term.h"
+#include "device/uarta.h"
 #include "dtb/dtb.h"
 #include "hcf.h"
 #include "hhdm.h"
+#include "lib/device.h"
 #include "lib/fmt.h"
+#include "lib/result.h"
 #include "lib/time.h"
 #include "mem_layout.h"
 #include "page_table.h"
@@ -13,6 +17,7 @@
 #include "physical_alloc.h"
 #include "tests/physical_alloc_test.h"
 #include <device/uart.h>
+#include <lib/ansi.h>
 #include <lib/mmio.h>
 #include <lib/panic.h>
 #include <lib/print.h>
@@ -21,6 +26,7 @@
 #include <math.h>
 #include <memory_map.h>
 #include <stdbool.h>
+#include <tests/trap_test.h>
 
 #define VERSION "0.0.1"
 
@@ -47,9 +53,6 @@ extern char kend[]; // first address after kernel.
                     // defined by linker script.
 
 void main() {
-  if (LIMINE_BASE_REVISION_SUPPORTED == false) {
-    hcf();
-  }
 
   char buffer[128];
 
@@ -77,8 +80,9 @@ void main() {
   if (!physical_alloc_test_results) {
     panic("Physical allocation tests failed");
   } else {
-    print("Physical allocation tests passed\n");
-    printf("Free pages: %{type: int}\n", get_free_page_count());
+    print("Physical allocation tests passed\n", PRINT_FLAG_BOTH);
+    printf("Free pages: %{type: int}\n", PRINT_FLAG_BOTH,
+           get_free_page_count());
   }
 #endif
 
@@ -116,9 +120,11 @@ void main() {
 
   mmio_map *mmap = alloc_mmio_map();
 
+  // UART (ns16550a)
   mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                uart_mmio_callback);
 
+  // RTC (goldfish)
   mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                rtc_mmio_callback);
 
@@ -126,12 +132,20 @@ void main() {
   activate_page_table(root_page_table);
   mmio_map_was_activated(mmap);
 
+  printf("*. gizmOS %{type: str}\n", PRINT_FLAG_UART, VERSION);
+
+  // Current Time
   time_t initial_complete_time;
   unix_time_ns_to_time(goldfish_get_time(), &initial_complete_time);
-
   char buf2[128];
   time_to_string(&initial_complete_time, buf2);
-  printf("\n%{type: str}\n\n", PRINT_FLAG_BOTH, buf2);
+  printf("%{type: str}\n", PRINT_FLAG_BOTH, buf2);
 
-  panic("working as intended");
+  // Print unallocated memory
+  printf(ANSI_APPLY(ANSI_EFFECT_BOLD, "Free: ") "%{type: int} pages\n",
+         PRINT_FLAG_BOTH, get_free_page_count());
+
+  dtb_dostuff();
+
+  panic_loc("end of main");
 }

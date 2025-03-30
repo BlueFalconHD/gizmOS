@@ -29,4 +29,5 @@ bool mmio_map_remove(mmio_map *map, uint64_t base);
 bool mmio_map_pages(mmio_map *map, page_table_t *pt);
 bool mmio_map_contains(mmio_map *map, uint64_t addr);
 
+// Runs callbacks for all entries in the map that have been activated.
 void mmio_map_was_activated(mmio_map *map);

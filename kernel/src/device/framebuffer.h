@@ -1,12 +1,16 @@
 #ifndef FB_H
 #define FB_H
 
-#include  <stdint.h>
-#include  "../limine.h"
+#include "../limine.h"
+#include <stdint.h>
 
-struct limine_framebuffer *get_framebuffer(void);
+typedef struct limine_framebuffer os_framebuffer_t;
 
-void write_rgb256_pixel(struct limine_framebuffer *fb, uint32_t x, uint32_t y, uint8_t pixel[3]);
-void draw_rgb256_map(struct limine_framebuffer *fb, uint32_t x_res, uint32_t y_res, uint8_t *rgb_map);
+os_framebuffer_t *get_framebuffer(void);
+
+void write_rgb256_pixel(os_framebuffer_t *fb, uint32_t x, uint32_t y,
+                        uint8_t pixel[3]);
+void draw_rgb256_map(os_framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
+                     uint8_t *rgb_map);
 
 #endif /* FB_H */

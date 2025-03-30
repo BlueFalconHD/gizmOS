@@ -1,6 +1,7 @@
 #include "paging_mode.h"
 #include "device/term.h"
 #include "hcf.h"
+#include "lib/panic.h"
 #include "limine.h"
 #include "memory.h"
 
@@ -15,8 +16,7 @@ __attribute__((
 void paging_mode_init() {
 
   if (paging_mode_request.response == NULL) {
-    print_error("Response to paging mode request was null\n");
-    hcf();
+    panic("Response to paging mode request was null\n");
   } else {
     // get response from paging mode request
     struct limine_paging_mode_response *paging_mode_response =
@@ -24,8 +24,7 @@ void paging_mode_init() {
 
     // ensure mode value is correct
     if (paging_mode_response->mode != LIMINE_PAGING_MODE_RISCV_SV39) {
-      print_error("Paging mode not set to AArch64 4-level paging\n");
-      hcf();
+      panic("Paging mode not set to AArch64 4-level paging\n");
     }
   }
 }

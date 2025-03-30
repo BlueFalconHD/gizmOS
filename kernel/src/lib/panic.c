@@ -11,8 +11,16 @@ void panic(const char *msg) {
   panic_msg(msg);
 
   for (;;) {
-    // hcf loop, noop
-    asm("nop");
+    asm("wfi");
+  }
+}
+
+void panic_location_internal(const char *msg, const char *file, int line) {
+  printf("[%{type: str}:%{type: int}] ", PRINT_FLAG_BOTH, file, line);
+  panic_msg(msg);
+
+  for (;;) {
+    asm("wfi");
   }
 }
 

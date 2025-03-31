@@ -1,4 +1,7 @@
 #include "trap_handler.h"
+#include "device/plic.h"
+#include "device/shared.h"
+#include "lib/time.h"
 #include "physical_alloc.h"
 #include <lib/ansi.h>
 #include <lib/print.h>
@@ -59,7 +62,8 @@ void trap_handler() {
 
   if (scause & (1ULL << 63)) {
     // Handle interrupt
-    print("Interrupt occurred\n", PRINT_FLAG_BOTH);
+    uint64_t interrupt_code = scause & 0x7FFFFFFF;
+    handle_interrupt(interrupt_code, sepc);
   } else {
     // Handle exception
     exception_handler(scause, sepc, stval, sstatus);
@@ -124,5 +128,58 @@ void exception_handler(uint64_t scause, uint64_t sepc, uint64_t stval,
   print("System halted.\n", PRINT_FLAG_BOTH);
   for (;;) {
     asm volatile("wfi");
+  }
+}
+
+void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
+  switch (interrupt_code) {
+  case 1: // Supervisor software interrupt
+    print("Supervisor software interrupt\n", PRINT_FLAG_BOTH);
+    break;
+  case 5: // Supervisor timer interrupt
+    print("Supervisor timer interrupt\n", PRINT_FLAG_BOTH);
+    break;
+  case 9: // Supervisor external interrupt
+    handle_external_interrupt();
+    break;
+  default:
+    printf("Unknown interrupt: %{type: int}\n", PRINT_FLAG_BOTH,
+           interrupt_code);
+    break;
+  }
+}
+
+void handle_external_interrupt() {
+  uint32_t irq = shared_plic_claim(0, PLIC_CONTEXT_SUPERVISOR);
+
+  // Handle based on IRQ number
+  switch (irq) {
+  case 10: // UART IRQ
+    sleep_ns(10);
+    // Read data from UART to clear the interrupt
+    if (shared_uart_initialized) {
+      while (true) {
+        char c = uart_getc(shared_uart);
+        if (c == 0)
+          break; // No more data
+
+        // convert char to null terminated string
+        char str[2] = {c, '\0'};
+        print(str, PRINT_FLAG_BOTH);
+      }
+    }
+    break;
+  default:
+    printf("Unknown external interrupt: %{type: int}\n", PRINT_FLAG_BOTH, irq);
+    break;
+  }
+
+  // Complete the interrupt handling
+  // TODO: active hart id
+  if (irq != 0) {
+    if (!shared_plic_complete(0, PLIC_CONTEXT_SUPERVISOR, irq)) {
+      printf("Failed to complete PLIC interrupt\n", PRINT_FLAG_BOTH);
+      panic("Failed to complete PLIC interrupt");
+    }
   }
 }

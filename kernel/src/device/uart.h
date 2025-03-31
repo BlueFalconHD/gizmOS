@@ -31,3 +31,5 @@ g_bool uart_init(uart_t *uart);
 void uart_putc(uart_t *uart, g_char c);
 g_char uart_getc(uart_t *uart);
 void uart_puts(uart_t *uart, const char *);
+void uart_enable_interrupts(uart_t *uart);
+void uart_disable_interrupts(uart_t *uart);

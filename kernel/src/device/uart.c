@@ -84,3 +84,21 @@ unsigned char uart_getc(uart_t *uart) {
 
   return u[0];
 }
+
+void uart_enable_interrupts(uart_t *uart) {
+  if (!uart->is_initialized) {
+    return;
+  }
+
+  volatile uint8_t *u = (volatile uint8_t *)uart->base;
+  u[INTERRUPT_ENABLE_REGISTER] = 0x1;
+}
+
+void uart_disable_interrupts(uart_t *uart) {
+  if (!uart->is_initialized) {
+    return;
+  }
+
+  volatile uint8_t *u = (volatile uint8_t *)uart->base;
+  u[INTERRUPT_ENABLE_REGISTER] = 0x0;
+}

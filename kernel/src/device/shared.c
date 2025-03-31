@@ -1,4 +1,5 @@
 #include "shared.h"
+#include "device/plic.h"
 #include <device/console.h>
 #include <device/framebuffer.h>
 #include <device/rtc.h>
@@ -14,6 +15,8 @@ framebuffer_t *shared_framebuffer = NULL;
 g_bool shared_framebuffer_initialized = false;
 rtc_t *shared_rtc = NULL;
 g_bool shared_rtc_initialized = false;
+plic_t *shared_plic = NULL;
+g_bool shared_plic_initialized = false;
 
 void set_shared_uart(uart_t *uart) {
   shared_uart = uart;
@@ -35,9 +38,7 @@ void set_shared_rtc(rtc_t *rtc) {
   shared_rtc_initialized = true;
 };
 
-uint64_t shared_rtc_get_time() {
-  if (!shared_rtc_initialized) {
-    return 0;
-  }
-  return rtc_get_time(shared_rtc);
-}
+void set_shared_plic(plic_t *plic) {
+  shared_plic = plic;
+  shared_plic_initialized = true;
+};

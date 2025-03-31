@@ -1,5 +1,6 @@
 #include "device/console.h"
 #include "device/framebuffer.h"
+#include "device/plic.h"
 #include "device/rtc.h"
 #include "device/shared.h"
 #include "dtb/dtb.h"
@@ -29,7 +30,23 @@ extern char kstart[]; // kernel start
                       // defined by linker script.
 
 extern char kend[]; // first address after kernel.
-                    // defined by linker script.
+// defined by linker script.
+
+void enable_interrupts() {
+  // Enable global interrupts
+  uint64_t sstatus;
+  asm volatile("csrr %0, sstatus" : "=r"(sstatus));
+  sstatus |= (1 << 1); // Set SIE bit (Supervisor Interrupt Enable)
+  asm volatile("csrw sstatus, %0" : : "r"(sstatus));
+
+  // Enable specific interrupt types
+  uint64_t sie;
+  asm volatile("csrr %0, sie" : "=r"(sie));
+  sie |= (1 << 9); // Enable external interrupts (SEIE)
+  asm volatile("csrw sie, %0" : : "r"(sie));
+
+  printf("Interrupts enabled\n", PRINT_FLAG_BOTH);
+}
 
 void main() {
 
@@ -97,8 +114,9 @@ void main() {
   }
 
   mmio_map *mmap = alloc_mmio_map();
-  mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V);
-  mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V);
+  mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V, 1);
+  mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V, 1);
+  mmio_map_add(mmap, 0x0C000000, 0x00600000, PTE_R | PTE_W | PTE_X | PTE_V, 1);
 
   mmio_map_pages(mmap, root_page_table);
   activate_page_table(root_page_table);
@@ -123,6 +141,22 @@ void main() {
   }
   set_shared_rtc(rtc);
 
+  result_t rplic = make_plic(0x0C000000);
+  plic_t *plic = (plic_t *)result_unwrap(rplic);
+  if (!plic_init(plic)) {
+    panic("Failed to initialize PLIC");
+  }
+  set_shared_plic(plic);
+
+  plic_set_priority(plic, 10, 1);
+
+  plic_set_threshold(plic, 0, PLIC_CONTEXT_SUPERVISOR, 0);
+
+  plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 10);
+
+  enable_interrupts();
+  uart_enable_interrupts(uart);
+
   printf("*. gizmOS %{type: str}\n", PRINT_FLAG_UART, VERSION);
 
   // Print unallocated memory
@@ -131,5 +165,9 @@ void main() {
 
   // dtb_dostuff();
 
-  panic_loc("end of main");
+  for (;;) {
+    asm volatile("wfi");
+  }
+
+  // panic_loc("end of main");
 }

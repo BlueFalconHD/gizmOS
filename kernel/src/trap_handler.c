@@ -155,17 +155,16 @@ void handle_external_interrupt() {
   // Handle based on IRQ number
   switch (irq) {
   case 10: // UART IRQ
-    sleep_ns(10);
     // Read data from UART to clear the interrupt
     if (shared_uart_initialized) {
+      sleep_ns(10);
       while (true) {
         char c = uart_getc(shared_uart);
         if (c == 0)
           break; // No more data
 
-        // convert char to null terminated string
-        char str[2] = {c, '\0'};
-        print(str, PRINT_FLAG_BOTH);
+        char buffer[16];
+        printf("0x%{type: hex}, ", PRINT_FLAG_BOTH, c);
       }
     }
     break;

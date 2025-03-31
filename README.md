@@ -1,51 +1,99 @@
 # gizmOS
-## minimal aarch64 kernel in C
 
-Features:
-- [x] PL011 UART (Note: use DTB parsing to get address eventually)
-- [x] Framebuffer support (formerly rawfb only, now supports any framebuffer backed by Limine)
-- [ ] Memory allocation (kinda, not really sure if it works very well)
-  - [ ] Physical allocator
-    - [x] Page setup
-    - [ ] Allocation
-    - [ ] Freeing
-- [x] Real time clock
-- [x] DTB parsing
-  - [x] Initial loading
-  - [x] Parsing (smoldtb https://github.com/deanoburrito/smoldtb)
-- [ ] Interrupts
-- [ ] Timers
-- [ ] Keyboard input
+## A RISC-V 64-bit kernel written in C
+
+gizmOS is a minimal RISC-V 64 kernel that provides foundational OS capabilities with a focus on hardware abstraction and memory management.
+
+### Features
+
+- [x] Hardware interfaces
+
+  - [x] UART for serial communication
+  - [x] Framebuffer support with flanterm terminal emulation
+  - [x] Real-time clock (RTC)
+  - [x] Platform-Level Interrupt Controller (PLIC)
+
+- [x] Memory management
+
+  - [x] Physical page allocator
+  - [x] Virtual memory with SV39 paging
+  - [x] MMIO mapping
+
+- [x] System facilities
+
+  - [x] Formatted output (printf-like functionality)
+  - [x] String manipulation
+  - [x] Time functions with sleep capabilities
+  - [x] Basic math functions
+
+- [x] Exception and interrupt handling
+
+  - [x] Trap framework
+  - [x] External interrupts
+
+- [x] Device Tree Blob (DTB) parsing
+
+  - [x] Initial loading and parsing via smoldtb
+  - [x] Hardware detection support
+
+- [x] Testing framework
+  - [x] Physical allocator tests
+  - [x] Trap/exception tests
 
 ### Building
 
-> [!WARNING]
-> You need to change the path to the compiler in kernel/GNUmakefile (CC = ...), as it is hardcoded for my system currently.
+**Prerequisites**
 
-First, `cd` into `kernel/` and `chmod u+x get-deps` and then `./get-deps` to download dependencies.
+- LLVM/Clang toolchain (with RISC-V support)
+- GNU Make
+- LLD linker
 
-To build the kernel, run the following command:
+First, download the dependencies:
+
+```bash
+cd kernel/
+chmod u+x get-deps
+./get-deps
+```
+
+> [!NOTE]
+> You may need to adjust the compiler path in `kernel/GNUmakefile` to match your system configuration.
+
+To build the kernel:
+
 ```bash
 make
 ```
 
-To build **AND** run the kernel in QEMU, run the following command:
+To build the kernel and run it in QEMU:
+
 ```bash
 make run
 ```
 
+If you desire to enable debugging features, uncomment the `DEBUG := 1` line in `kernel/GNUmakefile` and `GNUmakefile`. Then, you can use `make run` and also use `./dbg.sh` to automatically attach LLDB to gizmOS and set a breakpoint on the trap handler.
+
+### Project Structure
+
+- `kernel/` - Kernel source code
+  - `src/` - Main source files
+    - `device/` - Device drivers (UART, framebuffer, console, PLIC, RTC)
+    - `dtb/` - Device Tree Blob parsing
+    - `lib/` - Core libraries (memory, strings, time, math, formatting)
+    - `extern/` - External libraries
+      - `flanterm/` - Framebuffer terminal
+      - `smoldtb/` - Device tree parser
+    - `tests/` - Test suites for various components
+    - `*.c/*.h` - Core kernel implementation (memory management, paging, etc.)
+
 ### Development
-I have been trying to keep source files organized in the source code. Here is a brief overview of the directories in the project:
-- `kernel/` - Contains the kernel source code
-  - `src/` - Contains the source files for the kernel
-    - `device/` - Contains handling for individual devices. Things like the UART, framebuffer, etc.
-    - `dtb/` - Contains DTB parsing code, currently only loads the DTB into memory
-    - `flanterm/` - Contains the framebuffer terminal code, https://github.com/mintsuki/flanterm/
-    - `font/` - Contains the font used for raw drawing to framebuffer, not used in flanterm
-    - `qemu/` - Contains code specific to running the kernel in QEMU
-    - `main.c` - The main entry point for the kernel
-    - `memory.*` - Memory allocation code
-    - `time.*` - Time parsing code, from/to Unix time
-    - `string.*` - String manipulation code, like strlen, strcmp, etc.
-    - `limine.h` - Limine framebuffer support, automatically downloaded by the Makefile
-    - ~~`math.*` - Math functions, like pow, sqrt, etc.~~ Currently commented out, because floating point registers are disabled as of now
+
+gizmOS is a work in progress. Key areas for future development include:
+
+- Advanced memory allocation (beyond basic page allocation)
+- Process management
+- Filesystem support
+- More comprehensive device drivers
+- User-space support
+
+Contributions are welcome!

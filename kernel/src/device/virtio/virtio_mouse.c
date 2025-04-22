@@ -1,4 +1,5 @@
 #include "virtio_mouse.h"
+#include "device/shared.h"
 #include <lib/memory.h>
 #include <lib/panic.h>
 #include <lib/print.h>
@@ -111,8 +112,14 @@ void virtio_mouse_handle_irq(virtio_mouse_t *m) {
       else if (ev->code == REL_WHEEL)
         m->wheel += (int32_t)ev->value;
 
-      printf("[mouse] %s %+d\n", PRINT_FLAG_BOTH, rel_code_str(ev->code),
-             (int)ev->value);
+      // printf("[mouse] %{type: str} %{type: int}\n", PRINT_FLAG_BOTH,
+      //        rel_code_str(ev->code), (int)ev->value);
+
+      if (shared_cursor_initialized && (m->rel_x != 0 || m->rel_y != 0)) {
+        cursor_move(shared_cursor, m->rel_x, m->rel_y);
+        m->rel_x = m->rel_y = 0; /* consumed */
+      }
+
       break;
 
     case EV_KEY: { /* buttons */
@@ -128,8 +135,8 @@ void virtio_mouse_handle_irq(virtio_mouse_t *m) {
       else
         m->buttons &= ~mask; /* release */
 
-      printf("[mouse] %s %s\n", PRINT_FLAG_BOTH, btn_code_str(ev->code),
-             ev->value ? "down" : "up");
+      // printf("[mouse] %{type: str} %{type: str}\n", PRINT_FLAG_BOTH,
+      //        btn_code_str(ev->code), ev->value ? "down" : "up");
       break;
     }
 

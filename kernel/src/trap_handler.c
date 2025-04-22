@@ -140,6 +140,7 @@ void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
     break;
   case 5: // Supervisor timer interrupt
     print("Supervisor timer interrupt\n", PRINT_FLAG_BOTH);
+    break;
   case 9: // Supervisor external interrupt
     handle_external_interrupt();
     break;
@@ -158,6 +159,7 @@ void handle_external_interrupt() {
 
   case 10: // UART IRQ
     if (shared_uart_initialized) {
+      plic_disable_interrupt(shared_plic, 0, PLIC_CONTEXT_SUPERVISOR, 10);
       volatile uint8_t *u = (uint8_t *)shared_uart->base;
 
       (void)u[2]; // read IIR ‑‑ clears the IRQ source
@@ -169,8 +171,8 @@ void handle_external_interrupt() {
           break;
         char c = u[0];
         char s[2] = {c, '\0'};
-        printf("UART: %{type: str}\n", PRINT_FLAG_BOTH, s);
       }
+      plic_enable_interrupt(shared_plic, 0, PLIC_CONTEXT_SUPERVISOR, 10);
     }
     break;
   case 1:

@@ -1,6 +1,8 @@
 #include "physical_alloc.h"
 
 #include "lib/panic.h"
+#include "lib/print.h"
+#include "lib/str.h"
 #include "limine.h"
 #include "limine_requests.h"
 #include <stddef.h>
@@ -17,9 +19,7 @@ void initialize_pages(struct limine_memmap_entry **entries,
   for (uint64_t i = 0; i < entry_count; i++) {
     struct limine_memmap_entry *entry = entries[i];
 
-    if ((entry->type == LIMINE_MEMMAP_USABLE ||
-         entry->type == LIMINE_MEMMAP_BOOTLOADER_RECLAIMABLE) &&
-        entry->length >= PAGE_SIZE) {
+    if ((entry->type == LIMINE_MEMMAP_USABLE) && entry->length >= PAGE_SIZE) {
 
       uint64_t start = (entry->base + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
       uint64_t end = entry->base + entry->length;
@@ -52,6 +52,19 @@ void free_page(void *ptr) {
   if (free_pages_count >= MAX_PAGES) {
     panic_msg("Free pages list overflow");
   }
-  uint64_t addr = (uint64_t)ptr;
-  free_pages[free_pages_count++] = addr;
+
+  uint64_t virt = (uint64_t)ptr;
+
+  // Convert back to physical
+  if (virt < hhdm_offset) {
+    panic_msg_no_cr("free_page: address is not in HHDM range: ");
+    char buffer[128];
+    hexstrfuint(virt, buffer);
+    print(buffer, PRINT_FLAG_BOTH);
+    print("\n", PRINT_FLAG_BOTH);
+    return;
+  }
+  uint64_t phys = virt - hhdm_offset;
+
+  free_pages[free_pages_count++] = phys;
 }

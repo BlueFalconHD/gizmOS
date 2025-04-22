@@ -27,6 +27,14 @@ enum format_type {
 enum format_type format_type_from_str(const char *str);
 const char *format_type_to_str(enum format_type type);
 
+static inline uint64_t get_uint_arg(va_list *ap) {
+  return va_arg(*ap, uint64_t);
+}
+static inline int64_t get_int_arg(va_list *ap) { return va_arg(*ap, int64_t); }
+static inline char get_char_arg(va_list *ap) { return (char)va_arg(*ap, int); }
+static inline char *get_str_arg(va_list *ap) { return va_arg(*ap, char *); }
+static inline void *get_ptr_arg(va_list *ap) { return va_arg(*ap, void *); }
+
 enum format_case {
   FORMAT_CASE_LOWER,
   FORMAT_CASE_UPPER,
@@ -526,31 +534,43 @@ char *format_ptr(struct format *format, char *buf, const void *val) {
 }
 
 char *apply_format_generic(struct format *format, char *ret_buf,
-                           size_t ret_buf_len, void *val) {
+                           size_t ret_buf_len, va_list args) {
   // 1) Make a temp buffer for the raw numeric/string data (before
   // justification).
   //    Let's assume 256 is large enough for your typical usage.
   char temp[256];
   temp[0] = '\0';
 
+  int64_t arg_i;
+  uint64_t arg_u;
+  char arg_c;
+  char *arg_s;
+  void *arg_p;
+
   switch (format->format_type) {
   case FORMAT_TYPE_INT:
-    format_int(format, temp, (int64_t)val);
+    arg_i = get_int_arg(&args);
+    format_int(format, temp, arg_i);
     break;
   case FORMAT_TYPE_UINT:
-    format_uint(format, temp, (uint64_t)val);
+    arg_u = get_uint_arg(&args);
+    format_uint(format, temp, arg_u);
     break;
   case FORMAT_TYPE_HEX:
-    format_hex(format, temp, (uint64_t)val);
+    arg_u = get_uint_arg(&args);
+    format_hex(format, temp, arg_u);
     break;
   case FORMAT_TYPE_CHAR:
-    format_char(format, temp, (char)(uintptr_t)val); // cast pointer -> char
+    arg_c = get_char_arg(&args);
+    format_char(format, temp, arg_c);
     break;
   case FORMAT_TYPE_STR:
-    format_str(format, temp, (const char *)val);
+    arg_s = get_str_arg(&args);
+    format_str(format, temp, arg_s);
     break;
   case FORMAT_TYPE_PTR:
-    format_ptr(format, temp, (const void *)val);
+    arg_p = get_ptr_arg(&args);
+    format_ptr(format, temp, arg_p);
     break;
   default:
     // invalid
@@ -655,12 +675,9 @@ char *format(const char *fmt, ...) {
         format.format_precision = (uint64_t)va_arg(args, int);
       }
 
-      // get actual argument
-      void *arg = va_arg(args, void *);
-
       // apply
       fmt_buf[0] = '\0';
-      apply_format_generic(&format, fmt_buf, sizeof(fmt_buf), arg);
+      apply_format_generic(&format, fmt_buf, sizeof(fmt_buf), args);
 
       // concatenate the formatted piece
       strcat(ret_buf, fmt_buf);

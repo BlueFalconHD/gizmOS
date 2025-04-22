@@ -8,6 +8,7 @@
 #include <device/plic.h>
 #include <device/rtc.h>
 #include <device/uart.h>
+#include <device/cursor.h>
 
 #include <lib/macros.h>
 #include <lib/types.h>
@@ -29,6 +30,8 @@ extern virtio_keyboard_t *shared_virtio_keyboard;
 extern g_bool shared_virtio_keyboard_initialized;
 extern virtio_mouse_t *shared_virtio_mouse;
 extern g_bool shared_virtio_mouse_initialized;
+extern cursor_t *shared_cursor;
+extern g_bool shared_cursor_initialized;
 
 void set_shared_uart(uart_t *uart);
 void set_shared_console(console_t *console);
@@ -38,6 +41,7 @@ void set_shared_plic(plic_t *plic);
 void set_shared_clint(clint_t *clint);
 void set_shared_virtio_keyboard(virtio_keyboard_t *virtio_keyboard);
 void set_shared_virtio_mouse(virtio_mouse_t *virtio_mouse);
+void set_shared_cursor(cursor_t *cursor);
 
 G_INLINE uint64_t shared_rtc_get_time(void) {
   if (!shared_rtc_initialized) {

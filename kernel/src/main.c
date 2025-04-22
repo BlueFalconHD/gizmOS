@@ -1,3 +1,4 @@
+#include "lib/macros.h"
 #include <device/clint.h>
 #include <device/console.h>
 #include <device/framebuffer.h>
@@ -27,6 +28,7 @@
 // #define TESTS
 
 extern void trap_vector();
+extern char trap_stack_top; /* provided by trap.s */
 
 extern char kstart[]; // kernel start
                       // defined by linker script.
@@ -48,7 +50,17 @@ void enable_interrupts() {
   sie |= (1 << 1); // Enable software interrupts (SSIE)
   asm volatile("csrw sie, %0" : : "r"(sie));
 
-  // printf("Interrupts enabled\n", PRINT_FLAG_BOTH);
+  // print("Enabled interrupts\n", PRINT_FLAG_BOTH);
+}
+
+G_INLINE void init_trap_vector(void) {
+  /* point stvec at trap_vector … */
+  uintptr_t base = ((uintptr_t)&trap_vector) & ~0x3UL;
+  asm volatile("csrw stvec, %0" ::"r"(base));
+
+  /* …and preload sscratch with &trap_stack_top so the vector can
+     switch to it immediately. */
+  asm volatile("csrw sscratch, %0" ::"r"(&trap_stack_top));
 }
 
 void main() {
@@ -79,10 +91,9 @@ void main() {
   }
   set_shared_console(console);
 
-  printf("*. gizmOS %{type: str}\n", PRINT_FLAG_BOTH, VERSION);
-
-  // set trap vector
   asm volatile("csrw stvec, %0" ::"r"(&trap_vector));
+
+  printf("*. gizmOS %{type: str}\n", PRINT_FLAG_BOTH, VERSION);
 
 #ifdef TESTS
 
@@ -159,6 +170,17 @@ void main() {
 
   set_shared_plic(plic);
 
+  result_t rcursor = make_cursor(fb);
+  if (!result_is_ok(rcursor)) {
+    panic("Failed to create cursor");
+  }
+  cursor_t *cursor = (cursor_t *)result_unwrap(rcursor);
+  if (!cursor_init(cursor, (int32_t)(lfb->width / 2),
+                   (int32_t)(lfb->height / 2))) {
+    panic("Failed to initialise cursor");
+  }
+  set_shared_cursor(cursor);
+
   plic_set_priority(plic, 10, 1);
   plic_set_threshold(plic, 0, PLIC_CONTEXT_SUPERVISOR, 0);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 10);
@@ -191,7 +213,9 @@ void main() {
   }
   set_shared_virtio_mouse(mouse);
 
-  print("here\n", PRINT_FLAG_BOTH);
+  init_trap_vector();
+
+  print("HEREjkjl;kjl;jk", PRINT_FLAG_BOTH);
 
   enable_interrupts();
   uart_enable_interrupts(uart);

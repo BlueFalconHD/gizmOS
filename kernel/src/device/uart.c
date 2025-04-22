@@ -55,6 +55,9 @@ void uart_putc(uart_t *uart, g_char c) {
 
   volatile uint8_t *u = (volatile uint8_t *)uart->base;
   u[0] = c;
+
+  // clear the interrupt
+  (void)u[LINE_STATUS_REGISTER];
 }
 
 void uart_puts(uart_t *uart, const char *s) {
@@ -92,6 +95,10 @@ void uart_enable_interrupts(uart_t *uart) {
 
   volatile uint8_t *u = (volatile uint8_t *)uart->base;
   u[INTERRUPT_ENABLE_REGISTER] = 0x1;
+
+  (void)u[LINE_STATUS_REGISTER];
+  (void)u[INTERRUPT_ENABLE_REGISTER];
+  (void)u[LINE_STATUS_REGISTER];
 }
 
 void uart_disable_interrupts(uart_t *uart) {

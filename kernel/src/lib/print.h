@@ -21,5 +21,6 @@ void print(const char *str, print_flags_t flags);
     char *buf = format(fmt, ##__VA_ARGS__);                                    \
     if (buf) {                                                                 \
       print(buf, flags);                                                       \
+      free_page(buf);                                                     \
     }                                                                          \
   } while (0)

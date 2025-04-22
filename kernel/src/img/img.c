@@ -16,6 +16,48 @@ void draw_image(framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
   }
 }
 
+void draw_image_no_palette(framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
+                           uint32_t *image) {
+  for (uint32_t x = 0; x < x_res; x++) {
+    for (uint32_t y = 0; y < y_res; y++) {
+      uint32_t pixel = image[y * x_res + x];
+      uint8_t pixel_data[3];
+      pixel_data[0] = (pixel >> 16) & 0xFF; // Red
+      pixel_data[1] = (pixel >> 8) & 0xFF;  // Green
+      pixel_data[2] = pixel & 0xFF;         // Blue
+      framebuffer_put_pixel(fb, x, y, pixel_data);
+    }
+  }
+}
+
+void draw_image_no_palette_location(framebuffer_t *fb, uint32_t x_res,
+                                    uint32_t y_res, uint32_t *image, uint32_t x,
+                                    uint32_t y) {
+  for (uint32_t i = 0; i < x_res; i++) {
+    for (uint32_t j = 0; j < y_res; j++) {
+      uint32_t pixel = image[j * x_res + i];
+      uint8_t pixel_data[3];
+      pixel_data[0] = (pixel >> 16) & 0xFF; // Red
+      pixel_data[1] = (pixel >> 8) & 0xFF;  // Green
+      pixel_data[2] = pixel & 0xFF;         // Blue
+      framebuffer_put_pixel(fb, x + i, y + j, pixel_data);
+    }
+  }
+}
+
+void fill_area(framebuffer_t *fb, uint32_t x, uint32_t y, uint32_t width,
+               uint32_t height, uint32_t color) {
+  for (uint32_t i = 0; i < width; i++) {
+    for (uint32_t j = 0; j < height; j++) {
+      uint8_t pixel_data[3];
+      pixel_data[0] = (color >> 16) & 0xFF; // Red
+      pixel_data[1] = (color >> 8) & 0xFF;  // Green
+      pixel_data[2] = color & 0xFF;         // Blue
+      framebuffer_put_pixel(fb, x + i, y + j, pixel_data);
+    }
+  }
+}
+
 void draw_image_aligned(framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
                         uint32_t *palette, uint8_t *image,
                         uint8_t align_horizontal, uint8_t align_vertical) {

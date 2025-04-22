@@ -8,6 +8,7 @@
 #include <device/rtc.h>
 #include <device/uart.h>
 
+#include <device/cursor.h>
 #include <lib/macros.h>
 #include <lib/types.h>
 
@@ -27,6 +28,8 @@ virtio_keyboard_t *shared_virtio_keyboard = NULL;
 g_bool shared_virtio_keyboard_initialized = false;
 virtio_mouse_t *shared_virtio_mouse = NULL;
 g_bool shared_virtio_mouse_initialized = false;
+cursor_t *shared_cursor = NULL;
+g_bool shared_cursor_initialized = false;
 
 void set_shared_uart(uart_t *uart) {
   shared_uart = uart;
@@ -66,4 +69,9 @@ void set_shared_virtio_keyboard(virtio_keyboard_t *keyboard) {
 void set_shared_virtio_mouse(virtio_mouse_t *mouse) {
   shared_virtio_mouse = mouse;
   shared_virtio_mouse_initialized = true;
+};
+
+void set_shared_cursor(cursor_t *cursor) {
+  shared_cursor = cursor;
+  shared_cursor_initialized = true;
 };

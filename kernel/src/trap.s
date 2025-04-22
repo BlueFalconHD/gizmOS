@@ -1,6 +1,28 @@
-.global trap_vector
+/* gizmOS/kernel/src/trap.s
+ * ---------- TRAP / IRQ ENTRY ----------
+ * Uses a private 8 KiB stack per‑hart (only one hart for now).
+ */
+    .section .bss
+    .align   16
+    .global  trap_stack_bottom
+    .global  trap_stack_top
+trap_stack_bottom:
+    .skip    8192           /* 8 KiB */
+trap_stack_top:
 
-# Save all registers to the stack
+    .section .text
+    .global  trap_vector
+
+.macro switch_to_trap_stack
+    mv      t0, sp
+    la      sp, trap_stack_top
+    csrw    sscratch, t0
+.endm
+
+.macro restore_caller_stack
+    csrr    sp, sscratch
+.endm
+
 .macro save_regs
     addi sp, sp, -256
     sd ra, 0(sp)
@@ -31,12 +53,10 @@
     sd t4, 200(sp)
     sd t5, 208(sp)
     sd t6, 216(sp)
-    # Save tp and gp if needed
     sd tp, 224(sp)
     sd gp, 232(sp)
 .endm
 
-# Restore all registers from the stack
 .macro restore_regs
     ld ra, 0(sp)
     ld t0, 8(sp)
@@ -66,19 +86,17 @@
     ld t4, 200(sp)
     ld t5, 208(sp)
     ld t6, 216(sp)
-    # Restore tp and gp if needed
     ld tp, 224(sp)
     ld gp, 232(sp)
     addi sp, sp, 256
 .endm
 
 trap_vector:
+    switch_to_trap_stack
 
-    csrrci t0, sstatus, 0x2 # avoid interrupts
     save_regs
-
-    call trap_handler
-
+    call   trap_handler
     restore_regs
-    csrrsi t0, sstatus, 0x2
+
+    restore_caller_stack
     sret

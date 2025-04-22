@@ -14,6 +14,16 @@
 void draw_image(framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
                 uint32_t *palette, uint8_t *image);
 
+void draw_image_no_palette(framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
+                           uint32_t *image);
+
+void draw_image_no_palette_location(framebuffer_t *fb, uint32_t x_res,
+                                    uint32_t y_res, uint32_t *image, uint32_t x,
+                                    uint32_t y);
+
+void fill_area(framebuffer_t *fb, uint32_t x, uint32_t y, uint32_t width,
+               uint32_t height, uint32_t color);
+
 void draw_image_aligned(framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
                         uint32_t *palette, uint8_t *image,
                         uint8_t align_horizontal, uint8_t align_vertical);

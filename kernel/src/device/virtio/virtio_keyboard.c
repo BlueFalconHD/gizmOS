@@ -76,16 +76,19 @@ void virtio_keyboard_handle_irq(virtio_keyboard_t *kbd) {
 
   virtio_ack_irq(&kbd->vdev);
 
-  /* drain queue 0 */
   while (kbd->q_events.last_used_idx != kbd->q_events.used->idx) {
     uint16_t pos = kbd->q_events.last_used_idx % kbd->q_events.size;
     uint16_t id = kbd->q_events.used->ring[pos].id;
+    __sync_synchronize();
     struct virtio_input_event *ev = &kbd->events[id];
 
-    printf("[kbd] type=%{type:str} code=%{type:uint} value=%{type:uint}\n",
+    printf("[kbd] type=%{type: str} code=%{type: hex} value=%{type: hex}\n",
            PRINT_FLAG_BOTH, ev_type_str(ev->type), ev->code, ev->value);
 
-    /* recycle */
+    // try and read value pointed to by ev->code
+    // uint64_t *val = (uint64_t *)((uint8_t *)kbd->events + ev->code);
+    // printf("[kbd] value=%{type:uint}\n", PRINT_FLAG_BOTH, *val);
+
     kbd->q_events.avail->ring[kbd->q_events.avail->idx % kbd->q_events.size] =
         id;
     kbd->q_events.avail->idx++;

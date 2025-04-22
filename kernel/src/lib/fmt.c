@@ -534,7 +534,7 @@ char *format_ptr(struct format *format, char *buf, const void *val) {
 }
 
 char *apply_format_generic(struct format *format, char *ret_buf,
-                           size_t ret_buf_len, va_list args) {
+                           size_t ret_buf_len, va_list *args) {
   // 1) Make a temp buffer for the raw numeric/string data (before
   // justification).
   //    Let's assume 256 is large enough for your typical usage.
@@ -549,37 +549,28 @@ char *apply_format_generic(struct format *format, char *ret_buf,
 
   switch (format->format_type) {
   case FORMAT_TYPE_INT:
-    arg_i = get_int_arg(&args);
-    format_int(format, temp, arg_i);
+    format_int(format, temp, get_int_arg(args));
     break;
   case FORMAT_TYPE_UINT:
-    arg_u = get_uint_arg(&args);
-    format_uint(format, temp, arg_u);
+    format_uint(format, temp, get_uint_arg(args));
     break;
   case FORMAT_TYPE_HEX:
-    arg_u = get_uint_arg(&args);
-    format_hex(format, temp, arg_u);
+    format_hex(format, temp, get_uint_arg(args));
     break;
   case FORMAT_TYPE_CHAR:
-    arg_c = get_char_arg(&args);
-    format_char(format, temp, arg_c);
+    format_char(format, temp, get_char_arg(args));
     break;
   case FORMAT_TYPE_STR:
-    arg_s = get_str_arg(&args);
-    format_str(format, temp, arg_s);
+    format_str(format, temp, get_str_arg(args));
     break;
   case FORMAT_TYPE_PTR:
-    arg_p = get_ptr_arg(&args);
-    format_ptr(format, temp, arg_p);
+    format_ptr(format, temp, get_ptr_arg(args));
     break;
   default:
-    // invalid
     ret_buf[0] = '\0';
     return ret_buf;
   }
 
-  // 2) Now apply width, justification, left padding, etc. into ret_buf.
-  //    Carefully avoid overflows.
   size_t data_len = strlen(temp);
   size_t width = format->format_width; // e.g. 10
   if (width < data_len)
@@ -677,7 +668,7 @@ char *format(const char *fmt, ...) {
 
       // apply
       fmt_buf[0] = '\0';
-      apply_format_generic(&format, fmt_buf, sizeof(fmt_buf), args);
+      apply_format_generic(&format, fmt_buf, sizeof(fmt_buf), &args);
 
       // concatenate the formatted piece
       strcat(ret_buf, fmt_buf);

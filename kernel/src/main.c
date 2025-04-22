@@ -215,8 +215,6 @@ void main() {
 
   init_trap_vector();
 
-  print("HEREjkjl;kjl;jk", PRINT_FLAG_BOTH);
-
   enable_interrupts();
   uart_enable_interrupts(uart);
 

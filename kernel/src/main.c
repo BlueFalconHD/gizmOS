@@ -1,4 +1,3 @@
-#include "device/virtio/virtio_kbd.h"
 #include <device/clint.h>
 #include <device/console.h>
 #include <device/framebuffer.h>
@@ -6,6 +5,7 @@
 #include <device/rtc.h>
 #include <device/shared.h>
 #include <device/uart.h>
+#include <device/virtio/virtio_keyboard.h>
 #include <dtb/dtb.h>
 #include <lib/ansi.h>
 #include <lib/mmio.h>
@@ -48,7 +48,7 @@ void enable_interrupts() {
   sie |= (1 << 1); // Enable software interrupts (SSIE)
   asm volatile("csrw sie, %0" : : "r"(sie));
 
-  printf("Interrupts enabled\n", PRINT_FLAG_BOTH);
+  // printf("Interrupts enabled\n", PRINT_FLAG_BOTH);
 }
 
 void main() {
@@ -157,9 +157,6 @@ void main() {
     panic("Failed to initialize PLIC");
   }
 
-  // 0xC000000
-  // 0x2000000
-
   set_shared_plic(plic);
 
   plic_set_priority(plic, 10, 1);
@@ -170,11 +167,31 @@ void main() {
   plic_set_priority(plic, 1, 1);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 1);
 
+  result_t rkbd = make_virtio_keyboard(0x10001000, 1);
+  if (!result_is_ok(rkbd)) {
+    panic("Failed to create virtio keyboard");
+  }
+  virtio_keyboard_t *kbd = (virtio_keyboard_t *)result_unwrap(rkbd);
+  if (!virtio_keyboard_init(kbd)) {
+    panic("Failed to initialize virtio keyboard");
+  }
+  set_shared_virtio_keyboard(kbd);
+
   // enable virtio mouse interrupt
   plic_set_priority(plic, 2, 1);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 2);
 
-  virtio_keyboard_init();
+  result_t rmouse = make_virtio_mouse(0x10002000, 2);
+  if (!result_is_ok(rmouse)) {
+    panic("Failed to create virtio mouse");
+  }
+  virtio_mouse_t *mouse = (virtio_mouse_t *)result_unwrap(rmouse);
+  if (!virtio_mouse_init(mouse)) {
+    panic("Failed to initialize virtio mouse");
+  }
+  set_shared_virtio_mouse(mouse);
+
+  print("here\n", PRINT_FLAG_BOTH);
 
   enable_interrupts();
   uart_enable_interrupts(uart);

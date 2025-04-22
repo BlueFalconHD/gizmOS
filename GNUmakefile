@@ -8,7 +8,7 @@ ARCH := riscv64
 # Uncomment following line to enable debugging.
 # NOTE TO SELF: IF I NEED TO DEBUG STRUCT VALUES, SET OPTIMIZE TO -O0
 DEBUG := 1
-# MONITOR := 1
+MONITOR := 1
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
 # -m 2G: 2 GiB of RAM.
@@ -102,6 +102,7 @@ run-riscv64: ovmf/ovmf-code-$(ARCH).fd $(IMAGE_NAME).iso
 		-global virtio-mmio.force-legacy=false \
 		-device ramfb \
 		-device virtio-keyboard-device,bus=virtio-mmio-bus.0 \
+		-device virtio-mouse-device,bus=virtio-mmio-bus.1 \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(ARCH).fd,readonly=on \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)

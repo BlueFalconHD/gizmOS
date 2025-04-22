@@ -1,9 +1,10 @@
 #include "trap_handler.h"
 #include "device/plic.h"
 #include "device/shared.h"
-#include "device/virtio/virtio_kbd.h"
+#include "device/virtio/virtio_mouse.h"
 #include "lib/time.h"
 #include "physical_alloc.h"
+#include <device/virtio/virtio_keyboard.h>
 #include <lib/ansi.h>
 #include <lib/print.h>
 #include <lib/str.h>
@@ -156,21 +157,27 @@ void handle_external_interrupt() {
   switch (irq) {
 
   case 10: // UART IRQ
-    // Read data from UART to clear the interrupt
     if (shared_uart_initialized) {
-      sleep_ns(10);
-      while (true) {
-        char c = uart_getc(shared_uart);
-        if (c == 0)
-          break; // No more data
+      volatile uint8_t *u = (uint8_t *)shared_uart->base;
 
+      (void)u[2]; // read IIR ‑‑ clears the IRQ source
+      // NOTE: IIR bits 0‑3 give the reason (0b010 = Rx, 0b001 = Tx‑empty, …)
+
+      /* drain any pending RX data so the line doesn’t re‑assert immediately */
+      while (true) {
+        if (!(u[5] & 0x01)) // LSR bit0: Data‑Ready?
+          break;
+        char c = u[0];
         char s[2] = {c, '\0'};
         printf("UART: %{type: str}\n", PRINT_FLAG_BOTH, s);
       }
     }
     break;
   case 1:
-    handle_virtio_keyboard_irq();
+    virtio_keyboard_handle_irq(shared_virtio_keyboard);
+    break;
+  case 2:
+    virtio_mouse_handle_irq(shared_virtio_mouse);
     break;
   default:
     printf("Unknown external interrupt: %{type: int}\n", PRINT_FLAG_BOTH, irq);

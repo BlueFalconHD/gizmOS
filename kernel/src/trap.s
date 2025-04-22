@@ -73,14 +73,12 @@
 .endm
 
 trap_vector:
-    # Save registers
+
+    csrrci t0, sstatus, 0x2 # avoid interrupts
     save_regs
 
-    # Call C trap handler
     call trap_handler
 
-    # Restore registers (though we likely won't return if it's a fatal exception)
     restore_regs
-
-    # Return from trap (if applicable)
+    csrrsi t0, sstatus, 0x2
     sret

@@ -1,6 +1,7 @@
 #include "trap_handler.h"
 #include "device/plic.h"
 #include "device/shared.h"
+#include "device/virtio/virtio_kbd.h"
 #include "lib/time.h"
 #include "physical_alloc.h"
 #include <lib/ansi.h>
@@ -138,7 +139,6 @@ void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
     break;
   case 5: // Supervisor timer interrupt
     print("Supervisor timer interrupt\n", PRINT_FLAG_BOTH);
-    break;
   case 9: // Supervisor external interrupt
     handle_external_interrupt();
     break;
@@ -154,6 +154,7 @@ void handle_external_interrupt() {
 
   // Handle based on IRQ number
   switch (irq) {
+
   case 10: // UART IRQ
     // Read data from UART to clear the interrupt
     if (shared_uart_initialized) {
@@ -163,10 +164,13 @@ void handle_external_interrupt() {
         if (c == 0)
           break; // No more data
 
-        char buffer[16];
-        printf("0x%{type: hex}, ", PRINT_FLAG_BOTH, c);
+        char s[2] = {c, '\0'};
+        printf("UART: %{type: str}\n", PRINT_FLAG_BOTH, s);
       }
     }
+    break;
+  case 1:
+    handle_virtio_keyboard_irq();
     break;
   default:
     printf("Unknown external interrupt: %{type: int}\n", PRINT_FLAG_BOTH, irq);

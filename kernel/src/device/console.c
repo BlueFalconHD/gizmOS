@@ -50,7 +50,12 @@ void console_putc(console_t *console, g_char c) {
     return;
   }
 
+  // ignore errors on next line
+#pragma GCC diagnostic push
+#pragma clang diagnostic push
   flanterm_write(console->flanterm_ctx, &c, 1);
+#pragma GCC diagnostic pop
+#pragma clang diagnostic pop
 }
 
 void console_puts(console_t *console, const char *s) {

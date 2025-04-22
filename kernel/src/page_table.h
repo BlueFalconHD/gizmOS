@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lib/macros.h"
+#include "lib/panic.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -101,3 +103,18 @@ bool map_range(page_table_t *root_table, uint64_t virtual_start,
  * @param root_table Pointer to the root page table to activate.
  */
 void activate_page_table(page_table_t *root_table);
+
+extern page_table_t *shared_page_table;
+
+G_INLINE uint64_t V2P(uint64_t va) {
+  uint64_t res = 0;
+  if (get_physical_address(shared_page_table, va, &res) == true) {
+    if (res != 0) {
+      return res;
+    }
+
+    panic_loc("pa is 0, very unlikely");
+  }
+
+  panic_loc("get_physical_address failed");
+}

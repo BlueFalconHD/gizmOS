@@ -1,12 +1,12 @@
-#include "device/console.h"
-#include "device/framebuffer.h"
-#include "device/plic.h"
-#include "device/rtc.h"
-#include "device/shared.h"
-#include "dtb/dtb.h"
-#include "page_table.h"
-#include "physical_alloc.h"
+#include "device/virtio/virtio_kbd.h"
+#include <device/clint.h>
+#include <device/console.h>
+#include <device/framebuffer.h>
+#include <device/plic.h>
+#include <device/rtc.h>
+#include <device/shared.h>
 #include <device/uart.h>
+#include <dtb/dtb.h>
 #include <lib/ansi.h>
 #include <lib/mmio.h>
 #include <lib/panic.h>
@@ -17,6 +17,8 @@
 #include <limine.h>
 #include <limine_requests.h>
 #include <memory_map.h>
+#include <page_table.h>
+#include <physical_alloc.h>
 #include <stdbool.h>
 #include <tests/trap_test.h>
 
@@ -43,6 +45,7 @@ void enable_interrupts() {
   uint64_t sie;
   asm volatile("csrr %0, sie" : "=r"(sie));
   sie |= (1 << 9); // Enable external interrupts (SEIE)
+  sie |= (1 << 1); // Enable software interrupts (SSIE)
   asm volatile("csrw sie, %0" : : "r"(sie));
 
   printf("Interrupts enabled\n", PRINT_FLAG_BOTH);
@@ -107,19 +110,27 @@ void main() {
   }
 
   success = map_range(root_page_table, hhdm_offset + 0xc0000000, 0xc0000000,
-                      0xffffffff, PTE_R | PTE_W | PTE_X | PTE_V);
+                      0x100000000, PTE_R | PTE_W | PTE_X | PTE_V);
 
   if (!success) {
     panic("Failed to set up ram mapping");
   }
 
   mmio_map *mmap = alloc_mmio_map();
-  mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V, 1);
-  mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V, 1);
-  mmio_map_add(mmap, 0x0C000000, 0x00600000, PTE_R | PTE_W | PTE_X | PTE_V, 1);
+  mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
+               1); // UART
+  mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V, 1); // RTC
+  mmio_map_add(mmap, 0x0C000000, 0x00600000, PTE_R | PTE_W | PTE_X | PTE_V,
+               1); // PLIC
+  mmio_map_add(mmap, 0x10001000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
+               1); // Virtio keyboard
+  mmio_map_add(mmap, 0x10002000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
+               1); // Virtio mouse
 
   mmio_map_pages(mmap, root_page_table);
   activate_page_table(root_page_table);
+
+  shared_page_table = root_page_table;
 
   result_t ruart = make_uart(0x10000000);
   if (!result_is_ok(ruart)) {
@@ -140,19 +151,30 @@ void main() {
     panic("Failed to initialize RTC");
   }
   set_shared_rtc(rtc);
-
   result_t rplic = make_plic(0x0C000000);
   plic_t *plic = (plic_t *)result_unwrap(rplic);
   if (!plic_init(plic)) {
     panic("Failed to initialize PLIC");
   }
+
+  // 0xC000000
+  // 0x2000000
+
   set_shared_plic(plic);
 
   plic_set_priority(plic, 10, 1);
-
   plic_set_threshold(plic, 0, PLIC_CONTEXT_SUPERVISOR, 0);
-
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 10);
+
+  // enable virtio keyboard interrupt
+  plic_set_priority(plic, 1, 1);
+  plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 1);
+
+  // enable virtio mouse interrupt
+  plic_set_priority(plic, 2, 1);
+  plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 2);
+
+  virtio_keyboard_init();
 
   enable_interrupts();
   uart_enable_interrupts(uart);
@@ -163,11 +185,5 @@ void main() {
   printf(ANSI_APPLY(ANSI_EFFECT_BOLD, "Free: ") "%{type: int} pages\n",
          PRINT_FLAG_BOTH, get_free_page_count());
 
-  // dtb_dostuff();
-
-  for (;;) {
-    asm volatile("wfi");
-  }
-
-  // panic_loc("end of main");
+  panic_loc("end of main");
 }

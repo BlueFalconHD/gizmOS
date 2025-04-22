@@ -26,3 +26,11 @@ bool mmio_map_add(mmio_map *map, uint64_t base, uint64_t size, uint64_t flags,
 bool mmio_map_remove(mmio_map *map, uint64_t base);
 bool mmio_map_pages(mmio_map *map, page_table_t *pt);
 bool mmio_map_contains(mmio_map *map, uint64_t addr);
+
+/**
+ * Checks if a given virtual address is mapped in the MMIO map.
+ * @param map The MMIO map to check.
+ * @param vaddr The virtual address to check.
+ * @return The ID of the mapped entry if found, otherwise 0.
+ */
+uint16_t mmio_is_mapped(mmio_map *map, uint64_t vaddr);

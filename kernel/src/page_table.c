@@ -1,10 +1,14 @@
 #include "page_table.h"
+#include "lib/macros.h"
 #include <lib/memory.h> // For memset
 #include <lib/panic.h>
 #include <lib/print.h>
 #include <lib/str.h>
 #include <limine_requests.h>
 #include <physical_alloc.h> // For alloc_page and free_page
+#include <stdbool.h>
+
+page_table_t *shared_page_table;
 
 /**
  * @brief Helper function to convert a physical address to a virtual address.

@@ -1,11 +1,13 @@
 #pragma once
 
-#include "device/plic.h"
-#include "device/rtc.h"
-#include "lib/macros.h"
+#include <device/clint.h>
 #include <device/console.h>
 #include <device/framebuffer.h>
+#include <device/plic.h>
+#include <device/rtc.h>
 #include <device/uart.h>
+
+#include <lib/macros.h>
 #include <lib/types.h>
 #include <stdint.h>
 
@@ -19,12 +21,15 @@ extern rtc_t *shared_rtc;
 extern g_bool shared_rtc_initialized;
 extern plic_t *shared_plic;
 extern g_bool shared_plic_initialized;
+extern clint_t *shared_clint;
+extern g_bool shared_clint_initialized;
 
 void set_shared_uart(uart_t *uart);
 void set_shared_console(console_t *console);
 void set_shared_framebuffer(framebuffer_t *framebuffer);
 void set_shared_rtc(rtc_t *rtc);
 void set_shared_plic(plic_t *plic);
+void set_shared_clint(clint_t *clint);
 
 G_INLINE uint64_t shared_rtc_get_time(void) {
   if (!shared_rtc_initialized) {
@@ -160,6 +165,51 @@ G_INLINE g_bool shared_plic_is_pending(uint32_t irq) {
   }
   return plic_is_pending(shared_plic, irq);
 }
+
+// CLINT
+
+G_INLINE g_bool shared_clint_init(void) {
+  if (!shared_clint_initialized) {
+    return false;
+  }
+  return clint_init(shared_clint);
+}
+
+G_INLINE uint64_t shared_clint_get_mtime(void) {
+  if (!shared_clint_initialized) {
+    return 0;
+  }
+  return clint_get_mtime(shared_clint);
+}
+
+G_INLINE g_bool shared_clint_set_mtimecmp(uint64_t value) {
+  if (!shared_clint_initialized) {
+    return false;
+  }
+  return clint_set_mtimecmp(shared_clint, value);
+}
+
+G_INLINE uint64_t shared_clint_get_mtimecmp() {
+  if (!shared_clint_initialized) {
+    return 0;
+  }
+  return clint_get_mtimecmp(shared_clint);
+}
+
+G_INLINE uint32_t shared_clint_get_msip() {
+  if (!shared_clint_initialized) {
+    return 0;
+  }
+  return clint_get_msip(shared_clint);
+}
+
+G_INLINE g_bool shared_clint_set_msip(uint32_t value) {
+  if (!shared_clint_initialized) {
+    return false;
+  }
+  return clint_set_msip(shared_clint, value);
+}
+
 
 // UTILITIES
 

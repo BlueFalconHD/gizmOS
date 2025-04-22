@@ -1,9 +1,11 @@
 #include "shared.h"
 #include "device/plic.h"
+#include <device/clint.h>
 #include <device/console.h>
 #include <device/framebuffer.h>
 #include <device/rtc.h>
 #include <device/uart.h>
+
 #include <lib/macros.h>
 #include <lib/types.h>
 
@@ -17,6 +19,8 @@ rtc_t *shared_rtc = NULL;
 g_bool shared_rtc_initialized = false;
 plic_t *shared_plic = NULL;
 g_bool shared_plic_initialized = false;
+clint_t *shared_clint = NULL;
+g_bool shared_clint_initialized = false;
 
 void set_shared_uart(uart_t *uart) {
   shared_uart = uart;
@@ -41,4 +45,9 @@ void set_shared_rtc(rtc_t *rtc) {
 void set_shared_plic(plic_t *plic) {
   shared_plic = plic;
   shared_plic_initialized = true;
+};
+
+void set_shared_clint(clint_t *clint) {
+  shared_clint = clint;
+  shared_clint_initialized = true;
 };

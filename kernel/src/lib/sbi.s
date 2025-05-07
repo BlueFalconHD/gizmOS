@@ -1,0 +1,18 @@
+.section .text
+.global sbicall
+sbicall:
+    mv      t0, a0
+    mv      t1, a1
+
+    mv      a0, a2
+    mv      a1, a3
+    mv      a2, a4
+    mv      a3, a5
+    li      a4, 0
+    li      a5, 0
+
+    mv      a6, t1
+    mv      a7, t0
+
+    ecall
+    ret

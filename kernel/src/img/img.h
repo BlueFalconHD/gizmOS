@@ -30,3 +30,7 @@ void draw_image_aligned(framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
 
 void draw_image_scaled(framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
                        uint32_t *palette, uint8_t *image, uint32_t scale);
+
+void draw_image_location(framebuffer_t *fb, uint32_t x_res, uint32_t y_res,
+                         uint32_t *palette, uint8_t *image, uint32_t x,
+                         uint32_t y);

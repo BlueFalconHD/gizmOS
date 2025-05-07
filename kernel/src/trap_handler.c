@@ -2,12 +2,20 @@
 #include "device/plic.h"
 #include "device/shared.h"
 #include "device/virtio/virtio_mouse.h"
+#include "lib/sbi.h"
 #include "lib/time.h"
+#include "lib/timer.h"
 #include "physical_alloc.h"
+#include "proc.h"
 #include <device/virtio/virtio_keyboard.h>
 #include <lib/ansi.h>
 #include <lib/print.h>
 #include <lib/str.h>
+#include <platform/registers.h>
+#include <stdint.h>
+
+#define TICK_INTERVAL_CYCLES 1000000
+static uint64_t next_deadline = 0;
 
 // Function to get a human-readable cause string
 const char *get_exception_cause_str(uint64_t cause) {
@@ -54,13 +62,10 @@ const char *get_exception_cause_str(uint64_t cause) {
 }
 
 void trap_handler() {
-  // Read exception registers
-  uint64_t sepc, scause, stval, sstatus;
-
-  asm volatile("csrr %0, sepc" : "=r"(sepc));
-  asm volatile("csrr %0, scause" : "=r"(scause));
-  asm volatile("csrr %0, stval" : "=r"(stval));
-  asm volatile("csrr %0, sstatus" : "=r"(sstatus));
+  uint64_t sepc = PS_get_exception_pc();
+  uint64_t scause = PS_get_exception_cause();
+  uint64_t stval = PS_get_exception_value();
+  uint64_t sstatus = PS_get_status();
 
   if (scause & (1ULL << 63)) {
     // Handle interrupt
@@ -134,12 +139,31 @@ void exception_handler(uint64_t scause, uint64_t sepc, uint64_t stval,
 }
 
 void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
+  uint64_t sstatus_on_entry;
+  asm volatile(
+      "csrr %0, sstatus"
+      : "=r"(sstatus_on_entry)); // Read sstatus as it is upon handler entry
+
+  // --- Debug: Check if interrupts were enabled *before* this trap ---
+  uint64_t spie =
+      (sstatus_on_entry >> 5) & 1; // Supervisor Previous Interrupt Enable
+  uint64_t spp =
+      (sstatus_on_entry >> 8) & 1; // Supervisor Previous Privilege (0=U, 1=S)
+
+  if (!spie) {
+    printf(ANSI_APPLY(ANSI_COLOR_YELLOW,
+                      "WARNING: Interrupt occurred while SIE was disabled "
+                      "(SPIE=0)! sret will restore disabled state.\n"),
+           PRINT_FLAG_BOTH);
+  }
+
   switch (interrupt_code) {
   case 1: // Supervisor software interrupt
     print("Supervisor software interrupt\n", PRINT_FLAG_BOTH);
     break;
   case 5: // Supervisor timer interrupt
-    print("Supervisor timer interrupt\n", PRINT_FLAG_BOTH);
+    // print("Supervisor timer interrupt\n", PRINT_FLAG_BOTH);
+    sbi_set_timer(get_csrr_time() + TICK_INTERVAL_CYCLES);
     break;
   case 9: // Supervisor external interrupt
     handle_external_interrupt();
@@ -153,6 +177,11 @@ void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
 
 void handle_external_interrupt() {
   uint32_t irq = shared_plic_claim(0, PLIC_CONTEXT_SUPERVISOR);
+
+  if (irq == 0) { /* spurious or already-handled source   */
+    shared_plic_complete(0, PLIC_CONTEXT_SUPERVISOR, 0);
+    return;
+  }
 
   // Handle based on IRQ number
   switch (irq) {
@@ -190,8 +219,7 @@ void handle_external_interrupt() {
   // TODO: active hart id
   if (irq != 0) {
     if (!shared_plic_complete(0, PLIC_CONTEXT_SUPERVISOR, irq)) {
-      printf("Failed to complete PLIC interrupt\n", PRINT_FLAG_BOTH);
-      panic("Failed to complete PLIC interrupt");
+      panic_msg("Failed to complete PLIC interrupt");
     }
   }
 }

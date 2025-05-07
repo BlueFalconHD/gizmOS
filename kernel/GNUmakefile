@@ -6,7 +6,7 @@ MAKEFLAGS += -rR
 # Change as needed.
 override OUTPUT := kernel
 
-# DEBUG := 1
+DEBUG := 1
 
 # Target architecture to build for. Default to x86_64.
 ARCH := riscv64
@@ -43,7 +43,7 @@ endif
 CFLAGS += -pipe -I src
 
 # User controllable C preprocessor flags. We set none by default.
-CPPFLAGS :=
+CPPFLAGS := -fno-omit-frame-pointer
 
 ifeq ($(ARCH),x86_64)
     # User controllable nasm flags.
@@ -63,6 +63,9 @@ endif
 # Check if CC is Clang.
 override CC_IS_CLANG := $(shell ! $(CC) --version 2>/dev/null | grep 'clang' >/dev/null 2>&1; echo $$?)
 
+GENHDR_DIR := gen-$(ARCH)
+GENHDR     := $(GENHDR_DIR)/context_offsets_static.h
+
 # Internal C flags that should not be changed by the user.
 override CFLAGS += \
     -Wall \
@@ -81,6 +84,7 @@ override CFLAGS += \
 # Internal C preprocessor flags that should not be changed by the user.
 override CPPFLAGS := \
     -I src \
+    -I $(GENHDR_DIR) \
     -isystem freestnd-c-hdrs-0bsd \
     $(CPPFLAGS) \
     -DLIMINE_API_REVISION=2 \
@@ -184,10 +188,37 @@ override HEADER_DEPS := $(addprefix obj-$(ARCH)/,$(CFILES:.c=.c.d) $(ASFILES:.S=
 
 # Default target. This must come first, before header dependencies.
 .PHONY: all
-all: bin-$(ARCH)/$(OUTPUT)
+all: $(GENHDR) bin-$(ARCH)/$(OUTPUT)
 
 # Include header dependencies.
 -include $(HEADER_DEPS)
+
+# ---------------------------------------------------------------------------
+# Produce a plain-numeric header so assembly can #include it safely.
+# ---------------------------------------------------------------------------
+# $(GENHDR): src/lib/context_offsets.h src/lib/gizmo.h GNUmakefile
+# 	mkdir -p "$(GENHDR_DIR)"
+# 	( \
+# 		echo '#include <lib/context_offsets.h>'; \
+# 		echo '#define GEN(sym) asm volatile("\\n#define " #sym " %0" :: "i"(sym))'; \
+# 		echo 'void _gen(void) {'; \
+# 		echo '  GEN(CTX_OFF_RA);  GEN(CTX_OFF_SP);  GEN(CTX_OFF_GP);  GEN(CTX_OFF_TP);'; \
+# 		echo '  GEN(CTX_OFF_T0);  GEN(CTX_OFF_T1);  GEN(CTX_OFF_T2);  GEN(CTX_OFF_T3);'; \
+# 		echo '  GEN(CTX_OFF_T4);  GEN(CTX_OFF_T5);  GEN(CTX_OFF_T6);'; \
+# 		echo '  GEN(CTX_OFF_S0);  GEN(CTX_OFF_S1);  GEN(CTX_OFF_S2);  GEN(CTX_OFF_S3);'; \
+# 		echo '  GEN(CTX_OFF_S4);  GEN(CTX_OFF_S5);  GEN(CTX_OFF_S6);  GEN(CTX_OFF_S7);'; \
+# 		echo '  GEN(CTX_OFF_S8);  GEN(CTX_OFF_S9);  GEN(CTX_OFF_S10); GEN(CTX_OFF_S11);'; \
+# 		echo '  GEN(CTX_OFF_A0);  GEN(CTX_OFF_A1);  GEN(CTX_OFF_A2);  GEN(CTX_OFF_A3);'; \
+# 		echo '  GEN(CTX_OFF_A4);  GEN(CTX_OFF_A5);  GEN(CTX_OFF_A6);  GEN(CTX_OFF_A7);'; \
+# 		echo '  GEN(CTX_OFF_SATP); GEN(CTX_OFF_PC); GEN(CTX_SIZE);'; \
+# 		echo '}'; \
+# 	) > $(GENHDR_DIR)/gen_offsets.c
+
+# 	$(CC) $(CFLAGS) $(CPPFLAGS) -S $(GENHDR_DIR)/gen_offsets.c -o - \
+#     | awk '/^[[:space:]]*#define/ { sub(/^[[:space:]]+/, ""); print }' \
+#     > $(GENHDR)
+
+# 	rm $(GENHDR_DIR)/gen_offsets.c
 
 # Link rules for building the C compiler runtime.
 cc-runtime-$(ARCH)/cc-runtime.a: GNUmakefile cc-runtime/*

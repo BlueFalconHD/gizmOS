@@ -1,5 +1,6 @@
 #include "virtio_mouse.h"
 #include "device/shared.h"
+#include "lib/sbi.h"
 #include <lib/memory.h>
 #include <lib/panic.h>
 #include <lib/print.h>
@@ -135,8 +136,10 @@ void virtio_mouse_handle_irq(virtio_mouse_t *m) {
       else
         m->buttons &= ~mask; /* release */
 
-      // printf("[mouse] %{type: str} %{type: str}\n", PRINT_FLAG_BOTH,
-      //        btn_code_str(ev->code), ev->value ? "down" : "up");
+      if (ev->code == BTN_LEFT && ev->value) {
+        sbi_system_reset(SBI_SRST_TYPE_COLD_REBOOT, SBI_SRST_REASON_NONE);
+      }
+
       break;
     }
 

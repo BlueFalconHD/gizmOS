@@ -1,4 +1,5 @@
 #include "virtio_keyboard.h"
+#include "device/virtio/virtio_keycode.h"
 #include <lib/memory.h>
 #include <lib/panic.h>
 #include <lib/print.h>
@@ -70,6 +71,21 @@ static const char *ev_type_str(uint16_t t) {
   }
 }
 
+// value: indicates key state (pressed/released)
+#define KEY_PRESSED 1
+#define KEY_RELEASED 0
+
+static const char *key_state_str(uint16_t state) {
+  switch (state) {
+  case KEY_PRESSED:
+    return "KEY_PRESSED";
+  case KEY_RELEASED:
+    return "KEY_RELEASED";
+  default:
+    return "UNKNOWN";
+  }
+}
+
 void virtio_keyboard_handle_irq(virtio_keyboard_t *kbd) {
   if (!kbd || !kbd->vdev.is_initialized)
     return;
@@ -82,12 +98,20 @@ void virtio_keyboard_handle_irq(virtio_keyboard_t *kbd) {
     __sync_synchronize();
     struct virtio_input_event *ev = &kbd->events[id];
 
-    printf("[kbd] type=%{type: str} code=%{type: hex} value=%{type: hex}\n",
-           PRINT_FLAG_BOTH, ev_type_str(ev->type), ev->code, ev->value);
+    // printf("[kbd] type=%{type: str} code=%{type: hex} value=%{type: hex}\n",
+    //        PRINT_FLAG_BOTH, ev_type_str(ev->type), ev->code, ev->value);
 
-    // try and read value pointed to by ev->code
-    // uint64_t *val = (uint64_t *)((uint8_t *)kbd->events + ev->code);
-    // printf("[kbd] value=%{type:uint}\n", PRINT_FLAG_BOTH, *val);
+    // check if it's a key event
+    if (ev->type == EV_KEY &&
+        (ev->value == KEY_PRESSED || ev->value == KEY_RELEASED)) {
+      const char *kc = virtio_keycode_to_string(ev->code);
+
+      if (ev->value == KEY_PRESSED) {
+        printf("v %{type: str}, ", PRINT_FLAG_BOTH, kc);
+      } else {
+        printf("^ %{type: str}, ", PRINT_FLAG_BOTH, kc);
+      }
+    }
 
     kbd->q_events.avail->ring[kbd->q_events.avail->idx % kbd->q_events.size] =
         id;

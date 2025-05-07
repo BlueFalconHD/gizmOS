@@ -4,7 +4,7 @@
 #include "img/img.h"
 #include <physical_alloc.h>
 
-#define CURSOR_SZ LOGINUI_CURSOR_2X_WIDTH
+#define CURSOR_SZ IMG_CURSOR_WIDTH
 
 RESULT_TYPE(cursor_t *) make_cursor(framebuffer_t *fb) {
   cursor_t *c = (cursor_t *)alloc_page();
@@ -52,10 +52,9 @@ void cursor_move(cursor_t *c, int32_t dx, int32_t dy) {
     c->y = (int32_t)c->fb->framebuffer->height - (int32_t)c->size;
 
   /* erase old cursor */
-  fill_area(shared_framebuffer, c->px, c->py, LOGINUI_CURSOR_2X_WIDTH,
-            LOGINUI_CURSOR_2X_HEIGHT, 0);
+  fill_area(shared_framebuffer, c->px, c->py, IMG_CURSOR_WIDTH,
+            IMG_CURSOR_HEIGHT, 0);
 
-  draw_image_no_palette_location(shared_framebuffer, LOGINUI_CURSOR_2X_WIDTH,
-                                 LOGINUI_CURSOR_2X_HEIGHT, loginui_cursor_2x,
-                                 c->x, c->y);
+  draw_image_no_palette_location(shared_framebuffer, IMG_CURSOR_WIDTH,
+                                 IMG_CURSOR_HEIGHT, img_cursor, c->x, c->y);
 }

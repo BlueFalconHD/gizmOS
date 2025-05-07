@@ -2,6 +2,7 @@
 
 #include "lib/macros.h"
 #include "lib/panic.h"
+#include "lib/types.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -36,12 +37,15 @@ enum page_entry_flags {
  */
 typedef uint64_t pte_t;
 
+
 /**
  * @brief Definition of a page table, consisting of 512 entries.
  */
 typedef struct page_table {
   pte_t entries[512]; /**< Array of page table entries */
 } page_table_t;
+
+extern page_table_t *shared_page_table;
 
 /**
  * @brief Initialize a new page table.
@@ -97,6 +101,9 @@ bool identity_map(page_table_t *root_table, uint64_t start_address,
 bool map_range(page_table_t *root_table, uint64_t virtual_start,
                uint64_t physical_start, uint64_t size, uint64_t flags);
 
+bool unmap_range(page_table_t *root_table, uint64_t virtual_start,
+                 uint64_t size);
+
 /**
  * @brief Activate the given page table by writing its physical address to the
  * `satp` register.
@@ -105,6 +112,9 @@ bool map_range(page_table_t *root_table, uint64_t virtual_start,
 void activate_page_table(page_table_t *root_table);
 
 extern page_table_t *shared_page_table;
+
+
+g_bool is_addr_mapped(page_table_t *root_table, uint64_t virtual_address);
 
 G_INLINE uint64_t V2P(uint64_t va) {
   uint64_t res = 0;

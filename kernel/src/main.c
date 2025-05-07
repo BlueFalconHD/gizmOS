@@ -1,5 +1,12 @@
+#include "device/virtio/virtio_gpu.h"
+#include "img/gizmOS_logo.h"
+#include "img/img.h"
 #include "lib/macros.h"
-#include <device/clint.h>
+#include "lib/sbi.h"
+#include "lib/timer.h"
+#include "mem_layout.h"
+#include "platform/interrupts.h"
+#include "proc.h"
 #include <device/console.h>
 #include <device/framebuffer.h>
 #include <device/plic.h>
@@ -20,6 +27,7 @@
 #include <memory_map.h>
 #include <page_table.h>
 #include <physical_alloc.h>
+#include <platform/registers.h>
 #include <stdbool.h>
 #include <tests/trap_test.h>
 
@@ -36,27 +44,17 @@ extern char kstart[]; // kernel start
 extern char kend[]; // first address after kernel.
 // defined by linker script.
 
+extern char trampoline[];
+
 void enable_interrupts() {
-  // Enable global interrupts
-  uint64_t sstatus;
-  asm volatile("csrr %0, sstatus" : "=r"(sstatus));
-  sstatus |= (1 << 1); // Set SIE bit (Supervisor Interrupt Enable)
-  asm volatile("csrw sstatus, %0" : : "r"(sstatus));
-
-  // Enable specific interrupt types
-  uint64_t sie;
-  asm volatile("csrr %0, sie" : "=r"(sie));
-  sie |= (1 << 9); // Enable external interrupts (SEIE)
-  sie |= (1 << 1); // Enable software interrupts (SSIE)
-  asm volatile("csrw sie, %0" : : "r"(sie));
-
-  // print("Enabled interrupts\n", PRINT_FLAG_BOTH);
+  PS_enable_interrupts();
+  PS_enable_all_interrupt_types();
 }
 
 G_INLINE void init_trap_vector(void) {
   /* point stvec at trap_vector … */
   uintptr_t base = ((uintptr_t)&trap_vector) & ~0x3UL;
-  asm volatile("csrw stvec, %0" ::"r"(base));
+  PS_set_trap_vector(base);
 
   /* …and preload sscratch with &trap_stack_top so the vector can
      switch to it immediately. */
@@ -127,21 +125,59 @@ void main() {
     panic("Failed to set up ram mapping");
   }
 
+  uint64_t phys_lo = RAM_START; /* 0x8000_0000                       */
+  uint64_t phys_hi = 0;         /* will become last byte of RAM      */
+  for (uint64_t i = 0; i < memory_map_entry_count; i++) {
+    struct limine_memmap_entry *e = memory_map_entries[i];
+    if (e->type == LIMINE_MEMMAP_USABLE) {
+      uint64_t end = e->base + e->length;
+      if (end > phys_hi)
+        phys_hi = end;
+    }
+  }
+  uint64_t ram_bytes = phys_hi - phys_lo;
+
+  success =
+      map_range(root_page_table, hhdm_offset + phys_lo, /* virtual start */
+                phys_lo,                                /* physical start */
+                ram_bytes,                              /* length in bytes */
+                PTE_R | PTE_W | PTE_X | PTE_V);
+
+  if (!success) {
+    panic("Failed to set up ram mapping full");
+  }
+
   mmio_map *mmap = alloc_mmio_map();
   mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // UART
-  mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V, 1); // RTC
+  mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
+               1); // RTC
   mmio_map_add(mmap, 0x0C000000, 0x00600000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // PLIC
+  // mmio_map_add(mmap, 0x2000000, 0x8000, PTE_R | PTE_W | PTE_X | PTE_V,
+  // 1); // CLINT
   mmio_map_add(mmap, 0x10001000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // Virtio keyboard
   mmio_map_add(mmap, 0x10002000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // Virtio mouse
+  mmio_map_add(mmap, 0x10003000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
+               1); // Virtio gpu
 
   mmio_map_pages(mmap, root_page_table);
   activate_page_table(root_page_table);
 
   shared_page_table = root_page_table;
+
+  // secondary page table resolution
+
+  success = map_page(root_page_table, TRAMPOLINE, V2P((uint64_t)trampoline),
+                     PTE_R | PTE_W | PTE_X | PTE_V);
+
+  if (!success) {
+    panic("Failed to set up trampoline mapping");
+  }
+
+  activate_page_table(root_page_table);
 
   result_t ruart = make_uart(0x10000000);
   if (!result_is_ok(ruart)) {
@@ -181,6 +217,7 @@ void main() {
   }
   set_shared_cursor(cursor);
 
+  // uart interrupt
   plic_set_priority(plic, 10, 1);
   plic_set_threshold(plic, 0, PLIC_CONTEXT_SUPERVISOR, 0);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 10);
@@ -213,16 +250,38 @@ void main() {
   }
   set_shared_virtio_mouse(mouse);
 
+  // enable virtio gpu interrup
+  // plic_set_priority(plic, 3, 1);
+  // plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 3);
+
+  // result_t rgpu = make_virtio_gpu(0x10003000, 3);
+  // if (!result_is_ok(rgpu)) {
+  //   panic("Failed to create virtio gpu");
+  // }
+  // virtio_gpu_t *gpu = (virtio_gpu_t *)result_unwrap(rgpu);
+  // if (!virtio_gpu_init(gpu)) {
+  //   panic("Failed to initialize virtio gpu");
+  // }
+  // set_shared_virtio_gpu(gpu);
+
   init_trap_vector();
+
+  sbi_set_timer(UINT64_MAX);
 
   enable_interrupts();
   uart_enable_interrupts(uart);
 
   printf("*. gizmOS %{type: str}\n", PRINT_FLAG_UART, VERSION);
 
-  // Print unallocated memory
-  printf(ANSI_APPLY(ANSI_EFFECT_BOLD, "Free: ") "%{type: int} pages\n",
-         PRINT_FLAG_BOTH, get_free_page_count());
+  initialize_processes();
 
-  panic_loc("end of main");
+  printf("(uint64_t)trampoline = %{type: hex}\n", PRINT_FLAG_BOTH,
+         (uint64_t)trampoline);
+  printf("V2P((uint64_t)trampoline) = %{type: hex}\n", PRINT_FLAG_BOTH,
+         V2P((uint64_t)trampoline));
+
+  first_process();
+  scheduler();
+
+  panic("hi");
 }

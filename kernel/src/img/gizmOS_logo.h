@@ -1,13 +1,12 @@
-#ifndef PIXEL_ART_H
-#define PIXEL_ART_H
+#pragma once
 
 #include <stdint.h>
 
-#define IMAGE_WIDTH 87
-#define IMAGE_HEIGHT 32
-#define IMAGE_LENGTH (87 * 32)
+#define IMAGE_GIZMOS_LOGO_WIDTH 87
+#define IMAGE_GIZMOS_LOGO_HEIGHT 32
+#define IMAGE_GIZMOS_LOGO_LENGTH (87 * 32)
 
-static const uint32_t color_palette[] = {
+static const uint32_t image_gizmos_logo_color_palette[] = {
     0x000000,
     0x202020,
     0x8F8F8F,
@@ -33,7 +32,7 @@ static const uint32_t color_palette[] = {
     0x5F5F5F,
 };
 
-static const uint8_t bitmap[IMAGE_LENGTH] = {
+static const uint8_t image_gizmos_logo_bitmap[IMAGE_GIZMOS_LOGO_LENGTH] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -499,5 +498,3 @@ static const uint8_t bitmap[IMAGE_LENGTH] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 
 };
-
-#endif // PIXEL_ART_H

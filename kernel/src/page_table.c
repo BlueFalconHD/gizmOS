@@ -1,5 +1,6 @@
 #include "page_table.h"
 #include "lib/macros.h"
+#include "lib/types.h"
 #include <lib/memory.h> // For memset
 #include <lib/panic.h>
 #include <lib/print.h>
@@ -200,6 +201,29 @@ bool map_range(page_table_t *root_table, uint64_t virtual_start,
   return true;
 }
 
+bool unmap_range(page_table_t *root_table, uint64_t virtual_start,
+                 uint64_t size) {
+  if (!root_table) {
+    return false;
+  }
+
+  uint64_t addr_offset = 0;
+  while (addr_offset < size) {
+    uint64_t va = virtual_start + addr_offset;
+
+    if (!unmap_page(root_table, va)) {
+      panic_msg_no_cr("Failed to unmap page at virtual address ");
+      char buffer[128];
+      hexstrfuint(va, buffer);
+      print(buffer, PRINT_FLAG_BOTH);
+      print("\n", PRINT_FLAG_BOTH);
+      return false;
+    }
+    addr_offset += PAGE_SIZE;
+  }
+  return true;
+}
+
 void activate_page_table(page_table_t *root_table) {
   uint64_t root_table_pa = va_to_pa((uint64_t)root_table);
   uint64_t root_table_ppn = root_table_pa >> 12;
@@ -207,4 +231,61 @@ void activate_page_table(page_table_t *root_table) {
   satp_value |= root_table_ppn;
   asm volatile("csrw satp, %0" ::"r"(satp_value));
   asm volatile("sfence.vma");
+}
+
+g_bool is_addr_mapped(page_table_t *root_table, uint64_t virtual_address) {
+  if (!root_table) {
+    return false;
+  }
+
+  uint16_t vpn[SV39_LEVELS];
+  get_vpn_indices(virtual_address, vpn);
+
+  page_table_t *current_table = root_table;
+
+  for (int level = SV39_LEVELS - 1; level >= 0; level--) {
+    uint16_t index = vpn[level];
+    pte_t entry = current_table->entries[index];
+
+    if (!(entry & PTE_V)) {
+      return false; // Entry not valid
+    }
+
+    if (level == 0) {
+
+      // We are at level == 0. 'entry' has PTE_V set (checked before this
+      // block).
+      if ((entry & (PTE_R | PTE_W | PTE_X)) != 0) {
+        // It's a leaf PTE (4KB page), so the page is mapped.
+        uint64_t ppn = entry >> 10;
+        uint64_t page_offset =
+            virtual_address & 0xFFF; // Mask for 4KiB page offset
+        uint64_t physical_address = (ppn << 12) | page_offset;
+
+        // Debug print: <virt> -> <phys>
+        char va_buf[20]; // Sufficient for "0x" + 16 hex digits + null
+        char pa_buf[20];
+        hexstrfuint(virtual_address, va_buf);
+        hexstrfuint(physical_address, pa_buf);
+
+        print(va_buf, PRINT_FLAG_BOTH);
+        print(" -> ", PRINT_FLAG_BOTH);
+        print(pa_buf, PRINT_FLAG_BOTH);
+        print("\n", PRINT_FLAG_BOTH);
+
+        return true;
+      } else {
+        // V is set, but R,W,X are all zero. This is a pointer PTE according to
+        // RISC-V spec. At level 0, a pointer PTE means the address is not
+        // mapped to a final page.
+        return false;
+      }
+    }
+
+    uint64_t next_table_pa = (entry >> 10) << 12;
+    uint64_t next_table_va = pa_to_va(next_table_pa);
+    current_table = (page_table_t *)next_table_va;
+  }
+
+  return false;
 }

@@ -29,3 +29,10 @@
 
 // Use a provided ansi code and append reset code to string
 #define ANSI_APPLY(an, str) an str ANSI_EFFECT_RESET
+
+#define ANSI_BOLD(str) ANSI_APPLY(ANSI_EFFECT_BOLD, str)
+#define ANSI_UNDERLINE(str) ANSI_APPLY(ANSI_EFFECT_UNDERLINE, str)
+#define ANSI_ITALIC(str) ANSI_APPLY(ANSI_EFFECT_ITALIC, str)
+#define ANSI_BLINK(str) ANSI_APPLY(ANSI_EFFECT_BLINK, str)
+#define ANSI_REVERSE(str) ANSI_APPLY(ANSI_EFFECT_REVERSE, str)
+#define ANSI_CONCEAL(str) ANSI_APPLY(ANSI_EFFECT_CONCEAL, str)

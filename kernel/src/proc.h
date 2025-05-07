@@ -1,6 +1,9 @@
-#include "lib/cpu.h"
+#pragma once
+
 #include "lib/spinlock.h"
 #include <page_table.h>
+#include <lib/result.h>
+#include <lib/context.h>
 
 #define NPROC 64 /* maximum number of processes */
 
@@ -60,7 +63,7 @@ struct proc {
 
   /* kernel context / stack */
   uint64_t kstack;
-  struct context context;
+  context_t context;
 
   uint64_t sz;
   page_table_t *pagetable;
@@ -74,4 +77,9 @@ extern proc_t proc[NPROC];
 
 g_bool initialize_processes();
 void first_process();
+RESULT_TYPE(proc_t *) make_proc();
 void scheduler();
+void yield(void);
+g_bool proc_grow(proc_t *p, uint64_t n);
+g_bool proc_shrink(proc_t *p, uint64_t n);
+RESULT_TYPE(void) proc_resize(int n);

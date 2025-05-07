@@ -8,7 +8,7 @@ struct cpu *current_cpu(void) {
   return &cpus[tp];
 };
 
-struct proc *current_proc(void) {
+proc_t *current_proc(void) {
   struct cpu *c = current_cpu();
   return c->proc;
 }

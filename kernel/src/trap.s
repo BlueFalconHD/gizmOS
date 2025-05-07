@@ -101,7 +101,7 @@ trap_vector:
     csrr a1, sepc
     csrr a2, stval
     csrr a3, sstatus
-    call trap_handler
+    call kernel_trap_handler
     restore_regs
     .cfi_def_cfa sp, 0
     restore_caller_stack

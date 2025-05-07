@@ -1,6 +1,3 @@
-#include "device/virtio/virtio_gpu.h"
-#include "img/gizmOS_logo.h"
-#include "img/img.h"
 #include "lib/macros.h"
 #include "lib/sbi.h"
 #include "lib/timer.h"
@@ -281,6 +278,9 @@ void main() {
          V2P((uint64_t)trampoline));
 
   first_process();
+
+  sbi_set_timer(get_csrr_time() + 1000000);
+
   scheduler();
 
   panic("hi");

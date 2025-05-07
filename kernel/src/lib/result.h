@@ -11,6 +11,7 @@ typedef enum {
   RESULT_INVALID,
   RESULT_BUSY,
   RESULT_NOTIMPL,
+  RESULT_NOT_FOUND,
 } result_code_t;
 
 typedef struct {

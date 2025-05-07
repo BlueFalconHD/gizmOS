@@ -1,9 +1,11 @@
 #include "proc.h"
+#include "lib/context.h"
 #include "lib/cpu.h"
 #include "lib/print.h"
 #include "lib/result.h"
 #include "lib/spinlock.h"
 #include "lib/str.h"
+#include "lib/usermem.h"
 #include "limine_requests.h"
 #include "platform/interrupts.h"
 #include "platform/registers.h"
@@ -23,13 +25,82 @@ proc_t proc[NPROC];
 uint64_t pid = 0;
 struct spinlock pid_lock;
 
+struct spinlock wait_lock;
+
 extern char trampoline[];
 extern char uservec[];
 extern char userret[];
 
 extern void trap_vector();
 
-extern void swtch(struct context *, struct context *);
+extern void swtch(context_t *, context_t *);
+
+proc_t *init_proc;
+
+#define PGROUNDUP(sz) (((sz) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
+#define PGROUNDDOWN(sz) ((sz) & ~(PAGE_SIZE - 1))
+
+g_bool uvmdealloc(proc_t *p, uint64_t oldsz, uint64_t newsz); /* fwd */
+
+/* grow from oldsz up to newsz (page-aligned) */
+g_bool uvmalloc(proc_t *p, uint64_t oldsz, uint64_t newsz) {
+  if (newsz < oldsz)
+    return true;
+
+  oldsz = PGROUNDUP(oldsz);
+  for (uint64_t a = oldsz; a < newsz; a += PAGE_SIZE) {
+    void *mem = alloc_page();
+    if (!mem)
+      return false;
+    memset(mem, 0, PAGE_SIZE);
+    if (!map_page(p->pagetable, a, V2P((uint64_t)mem),
+                  PTE_R | PTE_W | PTE_X | PTE_U | PTE_V)) {
+      free_page(mem);
+      uvmdealloc(p, a, oldsz); /* roll back */
+      return false;
+    }
+  }
+  p->sz = newsz;
+  return true;
+}
+
+/* shrink from oldsz down to newsz, freeing pages */
+g_bool uvmdealloc(proc_t *p, uint64_t oldsz, uint64_t newsz) {
+  if (newsz >= oldsz)
+    return true;
+
+  for (uint64_t a = PGROUNDUP(newsz); a < oldsz; a += PAGE_SIZE) {
+    uint64_t pa = 0;
+    if (!get_physical_address(p->pagetable, a, &pa))
+      continue;
+    if (!unmap_page(p->pagetable, a))
+      return false;
+    free_page((void *)(pa + hhdm_offset));
+  }
+  p->sz = newsz;
+  return true;
+}
+
+/* clone user memory from src to dst up to sz bytes */
+g_bool uvmcopy(page_table_t *src, page_table_t *dst, uint64_t sz) {
+  for (uint64_t a = 0; a < sz; a += PAGE_SIZE) {
+    uint64_t pa = 0;
+    if (!get_physical_address(src, a, &pa))
+      return false;
+
+    void *mem = alloc_page();
+    if (!mem)
+      return false;
+    memcpy(mem, (void *)(pa + hhdm_offset), PAGE_SIZE);
+
+    if (!map_page(dst, a, V2P((uint64_t)mem),
+                  PTE_R | PTE_W | PTE_X | PTE_U | PTE_V)) {
+      free_page(mem);
+      return false;
+    }
+  }
+  return true;
+}
 
 g_bool setup_process_kernel_stack(proc_t *p, uint8_t pidx) {
   if (!p)
@@ -187,7 +258,7 @@ page_table_t *allocate_process_page_table(proc_t *p) {
   return pt;
 }
 
-RESULT_TYPE(proc_t *) allocate_process() {
+RESULT_TYPE(proc_t *) make_proc() {
   proc_t *p = NULL;
 
   for (uint8_t i = 0; i < NPROC; i++) {
@@ -229,7 +300,7 @@ found:
   p->pagetable = pt;
 
   // zero out context
-  memset(&p->context, 0, sizeof(struct context));
+  memset(&p->context, 0, sizeof(context_t));
 
   // TODO: forkret
   p->context.ra = (uint64_t)forkret;
@@ -330,17 +401,31 @@ void yield(void) {
   release(&p->lock);
 }
 
-uint8_t initcode[] = {0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02, 0x97,
-                      0x05, 0x00, 0x00, 0x93, 0x85, 0x35, 0x02, 0x93, 0x08,
-                      0x70, 0x00, 0x73, 0x00, 0x00, 0x00, 0x93, 0x08, 0x20,
-                      0x00, 0x73, 0x00, 0x00, 0x00, 0xef, 0xf0, 0x9f, 0xff,
-                      0x2f, 0x69, 0x6e, 0x69, 0x74, 0x00, 0x00, 0x24, 0x00,
-                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+uint8_t initcode[] = {
+    // ... (first 24 bytes are unchanged) ...
+    0x17, 0x05, 0x00, 0x00, // 0x00: auipc a0, 0
+    0x13, 0x05, 0x45, 0x02, // 0x04: addi  a0, a0, 36
+    0x97, 0x05, 0x00, 0x00, // 0x08: auipc a1, 0
+    0x93, 0x85, 0x35, 0x02, // 0x0c: addi  a1, a1, 35
+    0x93, 0x08, 0x70, 0x00, // 0x10: li    a7, 7
+    0x73, 0x00, 0x00, 0x00, // 0x14: ecall
+
+    // Modified part starts here (index 24, address 0x18)
+    0x73, 0x00, 0x50, 0x10, // 0x18: wfi              (was li a7, 2)
+    0x6F, 0xF0, 0xFF, 0xFF, // 0x1c: j 0x18           (was ecall)
+    0x13, 0x00, 0x00, 0x00, // 0x20: nop              (was jal ra, -1028)
+
+    // Data section (unchanged)
+    0x2f, 0x69, 0x6e, 0x69, // 0x24: "/ini"
+    0x74, 0x00, 0x00, 0x24, // 0x28: "t\0\0$"
+    0x00, 0x00, 0x00, 0x00, // 0x2c: padding
+                            // End of 48-byte array
+};
 
 void first_process() {
   proc_t *p;
 
-  result_t rp = allocate_process();
+  result_t rp = make_proc();
   if (!result_is_ok(rp)) {
     panic("Failed to allocate first process");
   }
@@ -366,7 +451,53 @@ void first_process() {
 
   p->state = RUNNABLE;
 
+  init_proc = p;
+
   release(&p->lock);
+}
+
+void wakeup(void *chan) {
+  for (uint8_t i = 0; i < NPROC; i++) {
+    proc_t *p = &proc[i];
+    acquire(&p->lock);
+    if (p->state == SLEEPING && p->chan == chan) {
+      p->state = RUNNABLE;
+    }
+    release(&p->lock);
+  }
+}
+
+void reparent(proc_t *p) {
+  proc_t *pp = current_proc();
+
+  for (uint8_t i = 0; i < NPROC; i++) {
+    proc_t *child = &proc[i];
+    if (child->parent == p) {
+      child->parent = init_proc;
+      wakeup(init_proc);
+    }
+  }
+}
+
+void exit(uint64_t status) {
+  proc_t *p = current_proc();
+
+  if (p == init_proc)
+    panic("init proc exiting");
+
+  acquire(&wait_lock);
+
+  reparent(p);
+  wakeup(p->parent);
+
+  acquire(&p->lock);
+  p->xstate = status;
+  p->state = ZOMBIE;
+
+  release(&wait_lock);
+
+  sched();
+  panic("zombie exit");
 }
 
 void usertrap(void) {
@@ -381,6 +512,8 @@ void usertrap(void) {
 
   // save user program counter.
   p->trapframe->epc = PS_get_exception_pc();
+
+  // c
 
   if (PS_get_exception_cause() == 8) {
     // system call
@@ -397,11 +530,25 @@ void usertrap(void) {
 
     // TODO: actual syscall handling
 
-    printf("syscall (from pid=%{type: int}), # = %{type: int}\n",
-           PRINT_FLAG_BOTH, p->pid, p->trapframe->a7);
+    int callnum = p->trapframe->a7;
+
+    // printf("syscall (from pid=%{type: int}), # = %{type: int}\n",
+    // PRINT_FLAG_BOTH, p->pid, p->trapframe->a7);
+
+    if (callnum == 2) {
+      // exit
+      // int exitcode = p->trapframe->a0;
+      // exit(exitcode);
+    } else if (callnum == 7) {
+      printf("syscall: pid=%{type: int}, syscall = %{type: int}\n",
+             PRINT_FLAG_BOTH, p->pid, callnum);
+    } else if (callnum == 8) {
+      printf("syscall: pid=%{type: int}, syscall = %{type: int}\n",
+             PRINT_FLAG_BOTH, p->pid, callnum);
+    }
 
     // default ignore
-    p->trapframe->a0 = -1;
+    // p->trapframe->a0 = -1;
   }
   // } else if((which_dev = devintr()) != 0){
   //   // ok
@@ -415,8 +562,187 @@ void usertrap(void) {
   //   exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if (which_dev == 2)
+  if (PS_get_exception_cause() == 0x8000000000000005) {
     yield();
+  }
 
   user_trap_ret();
+}
+
+g_bool killed(proc_t *p) {
+  g_bool killed = false;
+
+  acquire(&p->lock);
+  if (p->killed) {
+    killed = true;
+  }
+  release(&p->lock);
+
+  return killed;
+}
+
+void sleep(void *chan, struct spinlock *lk) {
+  proc_t *p = current_proc();
+
+  acquire(&p->lock);
+  release(lk);
+
+  p->chan = chan;
+  p->state = SLEEPING;
+
+  sched();
+
+  p->chan = NULL;
+
+  release(&p->lock);
+  acquire(lk);
+}
+
+uint64_t wait(uint64_t address) {
+  proc_t *pp;
+  g_bool has_children = false;
+  uint64_t pid;
+  proc_t *p = current_proc();
+
+  acquire(&wait_lock);
+
+  for (;;) {
+    has_children = 0;
+
+    for (uint8_t i = 0; i < NPROC; i++) {
+      pp = &proc[i];
+      if (pp->parent == p) {
+
+        acquire(&pp->lock);
+        has_children = 1;
+
+        if (pp->state == ZOMBIE) {
+          pid = pp->pid;
+          if (address != 0 &&
+              !result_is_ok(copyout(p->pagetable, address, (void *)&p->xstate,
+                                    sizeof(p->xstate)))) {
+            release(&pp->lock);
+            release(&wait_lock);
+            return -1;
+          }
+
+          free_process(pp);
+          release(&pp->lock);
+          release(&wait_lock);
+          return pid;
+        }
+
+        release(&pp->lock);
+      }
+
+      if (!has_children || killed(p)) {
+        release(&wait_lock);
+        return -1;
+      }
+
+      sleep(p, &wait_lock);
+    }
+  }
+}
+
+RESULT_TYPE(void) kill(uint64_t pid) {
+  proc_t *p;
+
+  for (uint8_t i = 0; i < NPROC; i++) {
+    p = &proc[i];
+    acquire(&p->lock);
+    if (p->pid == pid) {
+      p->killed = 1;
+      if (p->state == SLEEPING) {
+        p->state = RUNNABLE;
+      }
+      release(&p->lock);
+      return RESULT_SUCCESS(0);
+    }
+    release(&p->lock);
+  }
+
+  return RESULT_FAILURE(RESULT_NOT_FOUND);
+}
+
+void setkilled(proc_t *p) {
+  acquire(&p->lock);
+  p->killed = 1;
+  release(&p->lock);
+}
+
+g_bool proc_grow(proc_t *p, uint64_t bytes) {
+  if (!p || bytes == 0)
+    return false;
+  uint64_t oldsz = p->sz;
+  uint64_t newsz = oldsz + bytes;
+  newsz = PGROUNDUP(newsz);
+  return uvmalloc(p, oldsz, newsz);
+}
+
+g_bool proc_shrink(proc_t *p, uint64_t bytes) {
+  if (!p || bytes == 0)
+    return false;
+  uint64_t oldsz = p->sz;
+  uint64_t newsz = (bytes >= oldsz) ? 0 : oldsz - bytes;
+  newsz = PGROUNDDOWN(newsz);
+  return uvmdealloc(p, oldsz, newsz);
+}
+
+uint64_t fork(void) {
+  uint64_t pid;
+
+  proc_t *p = current_proc();
+
+  result_t rnew_proc = make_proc();
+  if (!result_is_ok(rnew_proc)) {
+    return -1;
+  }
+
+  proc_t *new_proc = (proc_t *)result_unwrap(rnew_proc);
+
+  if (!uvmcopy(p->pagetable, new_proc->pagetable, p->sz)) {
+    free_process(new_proc);
+    return -1;
+  }
+
+  new_proc->sz = p->sz;
+
+  *(new_proc->trapframe) = *(p->trapframe);
+
+  new_proc->trapframe->a0 = 0; // child returns 0
+
+  pid = new_proc->pid;
+
+  release(&new_proc->lock);
+
+  acquire(&wait_lock);
+  new_proc->parent = p;
+  release(&wait_lock);
+
+  acquire(&new_proc->lock);
+  new_proc->state = RUNNABLE;
+  release(&new_proc->lock);
+
+  return pid;
+}
+
+RESULT_TYPE(void) proc_resize(int n) {
+  uint64_t sz;
+  proc_t *p = current_proc();
+
+  sz = p->sz;
+  if (n > 0) {
+    if (proc_grow(p, n) == false) {
+      return RESULT_FAILURE(RESULT_ERROR);
+    }
+  } else if (n < 0) {
+    if (proc_shrink(p, -n) == false) {
+      return RESULT_FAILURE(RESULT_ERROR);
+    }
+  } else {
+    return RESULT_FAILURE(RESULT_ERROR);
+  }
+  p->sz = sz;
+  return RESULT_SUCCESS(0);
 }

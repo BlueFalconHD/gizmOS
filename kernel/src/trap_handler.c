@@ -9,13 +9,18 @@
 #include "proc.h"
 #include <device/virtio/virtio_keyboard.h>
 #include <lib/ansi.h>
+#include <lib/cpu.h>
 #include <lib/print.h>
 #include <lib/str.h>
+#include <platform/interrupts.h>
 #include <platform/registers.h>
 #include <stdint.h>
 
-#define TICK_INTERVAL_CYCLES 1000000
+// #define TICK_INTERVAL_CYCLES 1000000
+#define TICK_INTERVAL_CYCLES 100000
 static uint64_t next_deadline = 0;
+
+extern void trap_vector();
 
 // Function to get a human-readable cause string
 const char *get_exception_cause_str(uint64_t cause) {
@@ -61,7 +66,7 @@ const char *get_exception_cause_str(uint64_t cause) {
   }
 }
 
-void trap_handler() {
+void kernel_trap_handler() {
   uint64_t sepc = PS_get_exception_pc();
   uint64_t scause = PS_get_exception_cause();
   uint64_t stval = PS_get_exception_value();
@@ -162,7 +167,8 @@ void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
     print("Supervisor software interrupt\n", PRINT_FLAG_BOTH);
     break;
   case 5: // Supervisor timer interrupt
-    // print("Supervisor timer interrupt\n", PRINT_FLAG_BOTH);
+          // print("Supervisor timer interrupt\n", PRINT_FLAG_BOTH);
+    // print("Kenrnel encountered a timer interrupt\n", PRINT_FLAG_BOTH);
     sbi_set_timer(get_csrr_time() + TICK_INTERVAL_CYCLES);
     break;
   case 9: // Supervisor external interrupt

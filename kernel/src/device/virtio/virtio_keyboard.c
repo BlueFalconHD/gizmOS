@@ -1,5 +1,6 @@
 #include "virtio_keyboard.h"
 #include "device/virtio/virtio_keycode.h"
+#include <lib/keyboard.h>
 #include <lib/memory.h>
 #include <lib/panic.h>
 #include <lib/print.h>
@@ -104,13 +105,52 @@ void virtio_keyboard_handle_irq(virtio_keyboard_t *kbd) {
     // check if it's a key event
     if (ev->type == EV_KEY &&
         (ev->value == KEY_PRESSED || ev->value == KEY_RELEASED)) {
-      const char *kc = virtio_keycode_to_string(ev->code);
+      // const char *kc = virtio_keycode_to_string(ev->code);
 
-      if (ev->value == KEY_PRESSED) {
-        printf("v %{type: str}, ", PRINT_FLAG_BOTH, kc);
-      } else {
-        printf("^ %{type: str}, ", PRINT_FLAG_BOTH, kc);
-      }
+      switch (ev->code) {
+      case KEY_CAPSLOCK:
+        KEYPRESS_MODIFIER_SET(kbd->modifiers, KEYPRESS_MODIFIER_CAPSLOCK,
+                              ev->value == KEY_PRESSED);
+        break;
+      case KEY_LEFTALT:
+        KEYPRESS_MODIFIER_SET(kbd->modifiers, KEYPRESS_MODIFIER_LALT,
+                              ev->value == KEY_PRESSED);
+        break;
+      case KEY_RIGHTALT:
+        KEYPRESS_MODIFIER_SET(kbd->modifiers, KEYPRESS_MODIFIER_RALT,
+                              ev->value == KEY_PRESSED);
+        break;
+      case KEY_LEFTCTRL:
+        KEYPRESS_MODIFIER_SET(kbd->modifiers, KEYPRESS_MODIFIER_LCTRL,
+                              ev->value == KEY_PRESSED);
+        break;
+      case KEY_RIGHTCTRL:
+        KEYPRESS_MODIFIER_SET(kbd->modifiers, KEYPRESS_MODIFIER_RCTRL,
+                              ev->value == KEY_PRESSED);
+        break;
+      case KEY_LEFTSHIFT:
+        KEYPRESS_MODIFIER_SET(kbd->modifiers, KEYPRESS_MODIFIER_LSHIFT,
+                              ev->value == KEY_PRESSED);
+        break;
+      case KEY_RIGHTSHIFT:
+        KEYPRESS_MODIFIER_SET(kbd->modifiers, KEYPRESS_MODIFIER_RSHIFT,
+                              ev->value == KEY_PRESSED);
+        break;
+      case KEY_LEFTMETA:
+        KEYPRESS_MODIFIER_SET(kbd->modifiers, KEYPRESS_MODIFIER_LMETA,
+                              ev->value == KEY_PRESSED);
+        break;
+      case KEY_RIGHTMETA:
+        KEYPRESS_MODIFIER_SET(kbd->modifiers, KEYPRESS_MODIFIER_RMETA,
+                              ev->value == KEY_PRESSED);
+        break;
+
+      default:
+        printf("[kbd] keycode=%{type: hex} modifiers=%{type: hex} "
+               "state=%{type: str}\n",
+               PRINT_FLAG_BOTH, ev->code, kbd->modifiers,
+               key_state_str(ev->value));
+      };
     }
 
     kbd->q_events.avail->ring[kbd->q_events.avail->idx % kbd->q_events.size] =

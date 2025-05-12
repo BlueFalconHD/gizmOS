@@ -1,4 +1,5 @@
 #include "proc.h"
+#include "lib/ansi.h"
 #include "lib/context.h"
 #include "lib/cpu.h"
 #include "lib/print.h"
@@ -160,6 +161,10 @@ void usertrap(void);
 void user_trap_ret(void) {
   proc_t *p = current_proc();
 
+  // printf("user_trap_ret: p->pid = %{type: int}\n", PRINT_FLAG_BOTH, p->pid);
+  // printf("user_trap_ret: p->name = %{type: str}\n", PRINT_FLAG_BOTH,
+  // p->name);
+
   PS_disable_interrupts();
 
   // printf("user_trap_ret: p->trapframe->epc = %{type: hex}\n",
@@ -195,8 +200,8 @@ void user_trap_ret(void) {
 
   uint64_t trampoline_userret = TRAMPOLINE + (userret - trampoline);
 
-  // printf("In user_trap_ret: about to call trampoline_userret (at %{type:
-  // hex}) "
+  // printf("In user_trap_ret: about to call trampoline_userret (at %{type:hex})
+  // "
   //        "with satp_value = %{type: hex}\n",
   //        PRINT_FLAG_BOTH, trampoline_userret, satp_value);
 
@@ -354,10 +359,10 @@ void scheduler() {
         p->state = RUNNING;
         c->proc = p;
 
-        printf("Switching to process %{type: str} (pid %{type: int})\n",
-               PRINT_FLAG_BOTH, p->name, p->pid);
-        printf("Will jump to %{type: hex}\n", PRINT_FLAG_BOTH,
-               (uint64_t)p->context.ra);
+        // printf("Switching to process %{type: str} (pid %{type: int})\n",
+        // PRINT_FLAG_BOTH, p->name, p->pid);
+        // printf("Will jump to %{type: hex}\n", PRINT_FLAG_BOTH,
+        // (uint64_t)p->context.ra);
 
         swtch(&c->context, &p->context);
 
@@ -456,6 +461,67 @@ void first_process() {
   release(&p->lock);
 }
 
+RESULT_TYPE(proc_t *)
+proc_from_code(uint8_t code[], uint64_t size, const char *name) {
+  proc_t *p = NULL;
+
+  result_t rp = make_proc();
+  if (!result_is_ok(rp)) {
+    return RESULT_FAILURE(RESULT_NOMEM);
+  }
+
+  p = (proc_t *)result_unwrap(rp);
+
+  /* Allocate user memory, copy code, and set up process state */
+  uint64_t newsz = PGROUNDUP(size);
+  for (uint64_t a = 0; a < newsz; a += PAGE_SIZE) {
+    /* allocate a physical page */
+    void *mem = alloc_page();
+    if (!mem) {
+      /* roll-back any pages we already mapped */
+      uvmdealloc(p, a, 0);
+      free_process(p);
+      release(&p->lock);
+      return RESULT_FAILURE(RESULT_NOMEM);
+    }
+
+    /* zero page before use */
+    memset(mem, 0, PAGE_SIZE);
+
+    /* map into the new process's page table */
+    if (!map_page(p->pagetable, a, V2P((uint64_t)mem),
+                  PTE_V | PTE_R | PTE_W | PTE_X | PTE_U)) {
+      free_page(mem);
+      uvmdealloc(p, a, 0);
+      free_process(p);
+      release(&p->lock);
+      return RESULT_FAILURE(RESULT_ERROR);
+    }
+
+    /* copy the corresponding slice of code[] into this page */
+    uint64_t copy_sz = (size - a < PAGE_SIZE) ? (size - a) : PAGE_SIZE;
+    if (copy_sz > 0)
+      memcpy(mem, code + a, copy_sz);
+  }
+
+  /* record the size of the process's memory image */
+  p->sz = newsz;
+
+  /* initialise trapframe for entry to user mode */
+  p->trapframe->epc = 0;    /* first instruction */
+  p->trapframe->sp = newsz; /* stack pointer just above program */
+
+  /* give the process a name, if provided */
+  if (name != NULL)
+    strncopy(p->name, name, sizeof(p->name));
+
+  /* mark runnable and release the lock so scheduler can pick it up */
+  p->state = RUNNABLE;
+  release(&p->lock);
+
+  return RESULT_SUCCESS(p);
+}
+
 void wakeup(void *chan) {
   for (uint8_t i = 0; i < NPROC; i++) {
     proc_t *p = &proc[i];
@@ -510,11 +576,52 @@ void usertrap(void) {
 
   proc_t *p = current_proc();
 
+  // printf("p->pid = %{type: int}\n", PRINT_FLAG_BOTH, p->pid);
+  // printf("usertrap: p->name = %{type: str}\n", PRINT_FLAG_BOTH, p->name);
+
+  // uint64_t pa_code_start = 0;
+  // if (get_physical_address(p->pagetable, 0, &pa_code_start)) {
+  //   uint64_t kernel_va_code_start = pa_code_start + hhdm_offset;
+  //   printf("usertrap: kernel_va_for_proc_code_start = %{type: hex}\n",
+  //          PRINT_FLAG_BOTH, kernel_va_code_start);
+  // } else {
+  //   printf("usertrap: failed to get physical address for proc_code_start\n",
+  //          PRINT_FLAG_BOTH);
+  // }
+
+  // printf("usertrap: p->sz = %{type: hex}\n", PRINT_FLAG_BOTH, p->sz);
+
+  // // parse scause to determine if it is an interrupt or exception
+  // if (PS_get_exception_cause() & 0x8000000000000000) {
+  //   // interrupt
+  //   printf(ANSI_APPLY(ANSI_COLOR_GREEN, "scause %{type: hex}\n"),
+  //          PRINT_FLAG_BOTH, PS_get_exception_cause() & 0x7FFFFFFFFFFFFFFF);
+  // } else {
+  //   printf(ANSI_APPLY(ANSI_COLOR_RED, "scause %{type: hex}\n"),
+  //   PRINT_FLAG_BOTH,
+  //          PS_get_exception_cause());
+  // }
+
+  if (PS_get_exception_cause() == 0x2) {
+    // print out faulting address and the data there
+    uint64_t faulting_address = PS_get_exception_pc();
+    uint64_t fault_pa = 0;
+
+    if (get_physical_address(p->pagetable, faulting_address, &fault_pa)) {
+      uint64_t fault_va = fault_pa + hhdm_offset;
+      printf("Faulting address: %{type: hex}\n", PRINT_FLAG_BOTH, fault_va);
+      printf("Data at faulting address: 0x%{type: hex}\n", PRINT_FLAG_BOTH,
+             *(uint64_t *)fault_va);
+    } else {
+      printf("Failed to get physical address for faulting address\n",
+             PRINT_FLAG_BOTH);
+    }
+  }
+
   // save user program counter.
   p->trapframe->epc = PS_get_exception_pc();
 
-  // c
-
+  // scause == 8 means a system call (ecall from user mode)
   if (PS_get_exception_cause() == 8) {
     // system call
     // if (killed(p))
@@ -540,11 +647,9 @@ void usertrap(void) {
       // int exitcode = p->trapframe->a0;
       // exit(exitcode);
     } else if (callnum == 7) {
-      printf("syscall: pid=%{type: int}, syscall = %{type: int}\n",
-             PRINT_FLAG_BOTH, p->pid, callnum);
+      // print("proc a\n", PRINT_FLAG_BOTH);
     } else if (callnum == 8) {
-      printf("syscall: pid=%{type: int}, syscall = %{type: int}\n",
-             PRINT_FLAG_BOTH, p->pid, callnum);
+      // print("proc b\n", PRINT_FLAG_BOTH);
     }
 
     // default ignore
@@ -561,8 +666,9 @@ void usertrap(void) {
   // if(killed(p))
   //   exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
+  // // give up the CPU if this is a timer interrupt.
   if (PS_get_exception_cause() == 0x8000000000000005) {
+    // print(ANSI_APPLY(ANSI_COLOR_BLUE, "yielding\n"), PRINT_FLAG_BOTH);
     yield();
   }
 

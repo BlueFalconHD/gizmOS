@@ -58,6 +58,11 @@ G_INLINE void init_trap_vector(void) {
   asm volatile("csrw sscratch, %0" ::"r"(&trap_stack_top));
 }
 
+extern uint8_t proc_ecall7_start[];
+extern uint8_t proc_ecall7_end[];
+extern uint8_t proc_ecall8_start[];
+extern uint8_t proc_ecall8_end[];
+
 void main() {
 
   char buffer[128];
@@ -277,7 +282,15 @@ void main() {
   printf("V2P((uint64_t)trampoline) = %{type: hex}\n", PRINT_FLAG_BOTH,
          V2P((uint64_t)trampoline));
 
-  first_process();
+  // first_process();
+
+  uint64_t size_ecall7 =
+      (uint64_t)proc_ecall7_end - (uint64_t)proc_ecall7_start;
+  proc_from_code(proc_ecall7_start, size_ecall7, "e7");
+
+  uint64_t size_ecall8 =
+      (uint64_t)proc_ecall8_end - (uint64_t)proc_ecall8_start;
+  proc_from_code(proc_ecall8_start, size_ecall8, "e8");
 
   sbi_set_timer(get_csrr_time() + 1000000);
 

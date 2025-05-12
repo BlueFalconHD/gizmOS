@@ -21,9 +21,12 @@ typedef struct {
   virtio_queue_t  q_events;
   struct virtio_input_event events[VIRTIO_KEYBOARD_EVENT_NUM];
 
-  /* ➜ NEW: Control queue 1 */
+  /* Control queue 1 */
   virtio_queue_t  q_ctl;
   struct virtio_keyboard_status_pkt status_pkt;
+
+  /* Current keyboard modifier state */
+  uint16_t modifiers;
 } virtio_keyboard_t;
 
 RESULT_TYPE(virtio_keyboard_t *) make_virtio_keyboard(uint64_t base, uint32_t irq);

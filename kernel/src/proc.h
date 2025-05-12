@@ -83,3 +83,5 @@ void yield(void);
 g_bool proc_grow(proc_t *p, uint64_t n);
 g_bool proc_shrink(proc_t *p, uint64_t n);
 RESULT_TYPE(void) proc_resize(int n);
+RESULT_TYPE(proc_t *)
+proc_from_code(uint8_t code[], uint64_t size, const char *name);

@@ -4,11 +4,11 @@
 #include "device/virtio/virtio_keyboard.h"
 #include "device/virtio/virtio_mouse.h"
 #include <device/console.h>
+#include <device/cursor.h>
 #include <device/framebuffer.h>
 #include <device/plic.h>
 #include <device/rtc.h>
 #include <device/uart.h>
-#include <device/cursor.h>
 
 #include <lib/macros.h>
 #include <lib/types.h>
@@ -180,6 +180,13 @@ G_INLINE g_bool shared_plic_is_pending(uint32_t irq) {
 }
 
 // UTILITIES
+
+G_INLINE framebuffer_t *get_shared_framebuffer(void) {
+  if (!shared_framebuffer_initialized) {
+    return NULL;
+  }
+  return shared_framebuffer;
+}
 
 G_INLINE g_bool is_shared_char_available() {
   g_bool available = false;

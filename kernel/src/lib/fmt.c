@@ -14,6 +14,7 @@ enum format_type {
   FORMAT_TYPE_CHAR,
   FORMAT_TYPE_STR,
   FORMAT_TYPE_PTR,
+  FORMAT_TYPE_BINARY,
   FORMAT_TYPE_INVALID,
 };
 
@@ -23,6 +24,7 @@ enum format_type {
 #define FORMAT_TYPE_CHAR_STR "char"
 #define FORMAT_TYPE_STR_STR "str"
 #define FORMAT_TYPE_PTR_STR "ptr"
+#define FORMAT_TYPE_BINARY_STR "binary"
 
 enum format_type format_type_from_str(const char *str);
 const char *format_type_to_str(enum format_type type);
@@ -163,6 +165,8 @@ enum format_type format_type_from_str(const char *str) {
     return FORMAT_TYPE_STR;
   else if (strcmp(str, FORMAT_TYPE_PTR_STR))
     return FORMAT_TYPE_PTR;
+  else if (strcmp(str, FORMAT_TYPE_BINARY_STR))
+    return FORMAT_TYPE_BINARY;
   return FORMAT_TYPE_INVALID;
 }
 
@@ -180,6 +184,8 @@ const char *format_type_to_str(enum format_type type) {
     return FORMAT_TYPE_STR_STR;
   case FORMAT_TYPE_PTR:
     return FORMAT_TYPE_PTR_STR;
+  case FORMAT_TYPE_BINARY:
+    return FORMAT_TYPE_BINARY_STR;
   default:
     return "INVALID_FORMAT_TYPE";
   }
@@ -533,6 +539,25 @@ char *format_ptr(struct format *format, char *buf, const void *val) {
   return buf;
 }
 
+/* Binary format: 0101001010001 */
+char *format_binary(struct format *format, char *buf, uint64_t val) {
+  buf[0] = '\0';
+
+  // Optional sign
+  if (format->format_sign == FORMAT_SIGN_FORCE) {
+    strcat(buf, "+");
+  } else if (format->format_sign == FORMAT_SIGN_SPACE) {
+    strcat(buf, " ");
+  }
+
+  // Convert number to binary string
+  char num_buf[64];
+  binstrfuint(val, num_buf); // user-provided
+  strcat(buf, num_buf);
+
+  return buf;
+}
+
 char *apply_format_generic(struct format *format, char *ret_buf,
                            size_t ret_buf_len, va_list *args) {
   // 1) Make a temp buffer for the raw numeric/string data (before
@@ -565,6 +590,9 @@ char *apply_format_generic(struct format *format, char *ret_buf,
     break;
   case FORMAT_TYPE_PTR:
     format_ptr(format, temp, get_ptr_arg(args));
+    break;
+  case FORMAT_TYPE_BINARY:
+    format_binary(format, temp, get_uint_arg(args));
     break;
   default:
     ret_buf[0] = '\0';

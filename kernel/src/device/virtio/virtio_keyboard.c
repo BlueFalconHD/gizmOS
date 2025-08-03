@@ -1,5 +1,7 @@
 #include "virtio_keyboard.h"
 #include "device/virtio/virtio_keycode.h"
+#include "lib/result.h"
+#include "physical_alloc.h"
 #include <lib/keyboard.h>
 #include <lib/memory.h>
 #include <lib/panic.h>
@@ -146,10 +148,18 @@ void virtio_keyboard_handle_irq(virtio_keyboard_t *kbd) {
         break;
 
       default:
-        printf("[kbd] keycode=%{type: hex} modifiers=%{type: hex} "
-               "state=%{type: str}\n",
-               PRINT_FLAG_BOTH, ev->code, kbd->modifiers,
-               key_state_str(ev->value));
+        result_t rkp = make_keypress(ev->code, kbd->modifiers, ev->value);
+
+        if (!result_is_ok(rkp)) {
+          printf("[kbd] failed to create keypress\n", PRINT_FLAG_BOTH);
+          return;
+        }
+
+        keypress_t *kp = (keypress_t *)result_unwrap(rkp);
+
+        keypress_debug(kp);
+
+        free_page(kp);
       };
     }
 

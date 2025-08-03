@@ -94,6 +94,22 @@ uint64_t uintfstr(const char *str);
 void hexstrfint(int64_t value, char *buffer);
 
 /**
+ * Converts an usigned integer to a string in binary format.
+ *
+ * @param value The integer.
+ * @param buffer The buffer to store the string.
+ */
+void binstrfuint(uint64_t value, char *buffer);
+
+/**
+ * Converts a signed integer to a string in binary format.
+ *
+ * @param value The integer.
+ * @param buffer The buffer to store the string.
+ */
+void binstrfint(int64_t value, char *buffer);
+
+/**
  * Converts a signed integer to a string.
  *
  * @param value The integer.

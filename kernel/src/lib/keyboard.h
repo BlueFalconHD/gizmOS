@@ -1,7 +1,9 @@
 #pragma once
 
 #include "lib/macros.h"
+#include "lib/result.h"
 #include "lib/types.h"
+#include "physical_alloc.h"
 #include <stdint.h>
 
 typedef uint8_t keypress_type_t;
@@ -72,3 +74,7 @@ G_INLINE g_bool keypress_rmeta(keypress_t *kp) {
 G_INLINE g_bool keypress_capslock(keypress_t *kp) {
     return KEYPRESS_MODIFIER_GET(kp->modifiers, KEYPRESS_MODIFIER_CAPSLOCK);
 }
+
+RESULT_TYPE(keypress_t *) make_keypress(uint8_t keycode, uint8_t modifiers, keypress_type_t type);
+
+void keypress_debug(keypress_t *kp);

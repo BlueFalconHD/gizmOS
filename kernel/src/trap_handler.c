@@ -18,6 +18,7 @@
 
 // #define TICK_INTERVAL_CYCLES 1000000
 #define TICK_INTERVAL_CYCLES 100000
+
 static uint64_t next_deadline = 0;
 
 extern void trap_vector();

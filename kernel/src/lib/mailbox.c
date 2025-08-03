@@ -4,16 +4,24 @@
 #include <lib/notification.h>
 #include <physical_alloc.h>
 
-RESULT_TYPE(mailbox_t *) make_mailbox(g_bool (*recieve)(notification_t *)) {
-  struct mailbox *mb = (struct mailbox *)alloc_page();
+#define MAILBOX_SIZE 8
+
+RESULT_TYPE(mailbox_t *) make_mailbox() {
+  mailbox_t *mb = (mailbox_t *)alloc_page();
   if (!mb) {
     return RESULT_FAILURE(RESULT_NOMEM);
   }
-  memset(mb, 0, sizeof(struct mailbox));
-  dyn_array_init(&mb->outgoing, sizeof(notification_t), 8);
+  memset(mb, 0, sizeof(mailbox_t));
 
-  mb->recieve = recieve;
+  result_t rout = make_dyn_array(sizeof(notification_t), MAILBOX_SIZE);
+  if (!result_is_ok(rout)) {
+    free_page(mb);
+    return RESULT_FAILURE(RESULT_NOMEM);
+  }
+
+  mb->incoming = (notification_queue_t *)result_unwrap(rout);
+
+  initlock(&mb->lock, "mailbox");
 
   return RESULT_SUCCESS(mb);
 }
-

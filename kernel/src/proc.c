@@ -2,6 +2,8 @@
 #include "lib/ansi.h"
 #include "lib/context.h"
 #include "lib/cpu.h"
+#include "lib/gfx.h"
+#include "lib/gizm_font.h"
 #include "lib/print.h"
 #include "lib/result.h"
 #include "lib/spinlock.h"
@@ -171,6 +173,12 @@ void user_trap_ret(void) {
   // PRINT_FLAG_BOTH,
   //        (uint64_t)p->trapframe->epc);
 
+  if (p->is_kernel) {
+    PS_set_trap_vector((uint64_t)trap_vector);
+    PS_enable_interrupts();
+    return; // run task code
+  }
+
   uint64_t trampoline_uservec = TRAMPOLINE + (uservec - trampoline);
   PS_set_trap_vector(trampoline_uservec);
 
@@ -282,6 +290,7 @@ found:
 
   p->pid = allocate_pid();
   p->state = USED;
+  p->priority = PROC_PRIORITY_NORMAL;
 
   // trapframe
   struct trapframe *tf = alloc_page();
@@ -307,11 +316,22 @@ found:
   // zero out context
   memset(&p->context, 0, sizeof(context_t));
 
-  // TODO: forkret
   p->context.ra = (uint64_t)forkret;
   p->context.sp = p->kstack + PAGE_SIZE;
 
   printf("alloc proc kstack = %{type: hex}\n", PRINT_FLAG_BOTH, p->kstack);
+
+  // setup mailbox
+  result_t rmb = make_mailbox();
+  if (!result_is_ok(rmb)) {
+    free_page(p->trapframe);
+    p->trapframe = NULL;
+    free_page(p->pagetable);
+    p->pagetable = NULL;
+    release(&p->lock);
+    return RESULT_FAILURE(RESULT_NOMEM);
+  }
+  p->mailbox = (mailbox_t *)result_unwrap(rmb);
 
   return RESULT_SUCCESS(p);
 }
@@ -344,35 +364,62 @@ void free_process(proc_t *p) {
 void scheduler() {
   proc_t *p = NULL;
   cpu_t *c = current_cpu();
+  static uint64_t schedule_count = 0;
 
   c->proc = 0;
 
   for (;;) {
     PS_enable_interrupts();
 
-    g_bool found = false;
+    proc_t *highest_priority_proc = NULL;
+    uint8_t highest_priority = 255; // Start with lowest possible priority
+    uint8_t runnable_count = 0;
 
+    // First pass: find the highest priority (lowest number) RUNNABLE process
     for (uint8_t i = 0; i < NPROC; i++) {
       p = &proc[i];
       acquire(&p->lock);
       if (p->state == RUNNABLE) {
-        p->state = RUNNING;
-        c->proc = p;
-
-        // printf("Switching to process %{type: str} (pid %{type: int})\n",
-        // PRINT_FLAG_BOTH, p->name, p->pid);
-        // printf("Will jump to %{type: hex}\n", PRINT_FLAG_BOTH,
-        // (uint64_t)p->context.ra);
-
-        swtch(&c->context, &p->context);
-
-        c->proc = 0;
-        found = true;
+        runnable_count++;
+        if (p->priority < highest_priority) {
+          if (highest_priority_proc) {
+            release(&highest_priority_proc->lock);
+          }
+          highest_priority_proc = p;
+          highest_priority = p->priority;
+          // Don't release lock yet - we'll need it for running the process
+        } else {
+          release(&p->lock);
+        }
+      } else {
+        release(&p->lock);
       }
-      release(&p->lock);
     }
 
-    if (!found) {
+    if (highest_priority_proc) {
+      // Run the highest priority process
+      highest_priority_proc->state = RUNNING;
+      c->proc = highest_priority_proc;
+
+      // Debug output every 1000 schedules
+      if (schedule_count % 1000 == 0) {
+        printf("Scheduler: running %{type: str} (pid %{type: int}, priority "
+               "%{type: int}) - %{type: int} runnable\n",
+               PRINT_FLAG_BOTH, highest_priority_proc->name,
+               highest_priority_proc->pid, highest_priority_proc->priority,
+               runnable_count);
+      }
+
+      swtch(&c->context, &highest_priority_proc->context);
+
+      c->proc = 0;
+      release(&highest_priority_proc->lock);
+      schedule_count++;
+    } else {
+      if (schedule_count % 5000 == 0) {
+        printf("Scheduler: no runnable processes, waiting...\n",
+               PRINT_FLAG_BOTH);
+      }
       PS_enable_interrupts();
       asm volatile("wfi");
     }
@@ -639,17 +686,17 @@ void usertrap(void) {
 
     int callnum = p->trapframe->a7;
 
-    // printf("syscall (from pid=%{type: int}), # = %{type: int}\n",
-    // PRINT_FLAG_BOTH, p->pid, p->trapframe->a7);
-
     if (callnum == 2) {
       // exit
       // int exitcode = p->trapframe->a0;
       // exit(exitcode);
+    } else if (callnum == 6) {
+      fill_screen_with_color(25, 25, 25);
     } else if (callnum == 7) {
-      // print("proc a\n", PRINT_FLAG_BOTH);
+      gizm_font_draw_text(20, 20, "Proc A", GIZM_COLOR_BLUE);
+      // fill_screen_with_color(25, 25, 25);
     } else if (callnum == 8) {
-      // print("proc b\n", PRINT_FLAG_BOTH);
+      gizm_font_draw_text(20, 20, "Proc B", GIZM_COLOR_RED);
     }
 
     // default ignore
@@ -851,4 +898,52 @@ RESULT_TYPE(void) proc_resize(int n) {
   }
   p->sz = sz;
   return RESULT_SUCCESS(0);
+}
+
+void kernel_task_wrapper(void) {
+  proc_t *p = current_proc();
+  void (*real_entry)(void *) = (void (*)(void *))p->context.s0;
+  void *arg = (void *)p->context.s1;
+
+  release(&p->lock); // Release the lock inherited from scheduler
+
+  real_entry(arg);
+
+  // If the task returns, mark it as zombie
+  p->state = ZOMBIE;
+  sched();
+}
+
+RESULT_TYPE(proc_t *)
+make_kernel_task(void (*entry)(void *), void *arg, const char *name) {
+  result_t r = make_proc();
+  if (!result_is_ok(r))
+    return RESULT_FAILURE(RESULT_NOMEM);
+
+  proc_t *p = (proc_t *)result_unwrap(r);
+
+  free_page(p->trapframe);
+  p->trapframe = NULL;
+
+  free_page(p->pagetable);
+  p->pagetable = shared_page_table; /* share kernel page table */
+
+  p->is_kernel = 1;
+  p->context.ra = (uint64_t)kernel_task_wrapper; /* kernel task entry point */
+  p->context.sp = p->kstack + PAGE_SIZE;         /* top of its kernel stack */
+  p->context.s0 = (uint64_t)entry;               /* optional argument */
+  p->context.s1 = (uint64_t)arg;
+
+  strncopy(p->name, name, sizeof(p->name));
+
+  /* Set priority based on task name */
+  if (name && strcmp(name, "framebufferd")) {
+    p->priority = PROC_PRIORITY_FLUSH; /* Framebuffer daemon runs last */
+  } else {
+    p->priority = PROC_PRIORITY_HIGH; /* Other kernel tasks get high priority */
+  }
+
+  p->state = RUNNABLE;
+  release(&p->lock);
+  return RESULT_SUCCESS(p);
 }

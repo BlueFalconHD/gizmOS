@@ -1,3 +1,6 @@
+#include "kprocs/cursor_daemon.h"
+#include "kprocs/wallpaper_daemon.h"
+#include "lib/dyn_array.h"
 #include "lib/macros.h"
 #include "lib/sbi.h"
 #include "lib/timer.h"
@@ -13,8 +16,8 @@
 #include <device/virtio/virtio_keyboard.h>
 #include <dtb/dtb.h>
 #include <lib/ansi.h>
+#include <lib/gizm_font.h>
 #include <lib/mmio.h>
-#include <lib/panic.h>
 #include <lib/print.h>
 #include <lib/result.h>
 #include <lib/str.h>
@@ -62,6 +65,9 @@ extern uint8_t proc_ecall7_start[];
 extern uint8_t proc_ecall7_end[];
 extern uint8_t proc_ecall8_start[];
 extern uint8_t proc_ecall8_end[];
+
+DYN_ARRAY_DECLARE(uint64_t);
+typedef DYN_ARRAY_TYPE(uint64_t) arr_test;
 
 void main() {
 
@@ -169,32 +175,6 @@ void main() {
   activate_page_table(root_page_table);
 
   shared_page_table = root_page_table;
-
-  // Test the buddy allocator
-  printf("Testing allocator functionality...\n", PRINT_FLAG_BOTH);
-  buddy_dump_state();
-  
-  // Test single page allocation (should use simple allocator)
-  void *page1 = alloc_page();
-  printf("Single page allocated at: %{type: ptr}\n", PRINT_FLAG_BOTH, page1);
-  
-  // Test multi-page allocation (should use buddy allocator)
-  void *pages4 = alloc_contiguous_pages(4);
-  printf("4 contiguous pages allocated at: %{type: ptr}\n", PRINT_FLAG_BOTH, pages4);
-  
-  void *pages16 = alloc_contiguous_pages(16);
-  printf("16 contiguous pages allocated at: %{type: ptr}\n", PRINT_FLAG_BOTH, pages16);
-  
-  buddy_dump_state();
-  
-  // Free the allocations
-  if (page1) free_page(page1);
-  if (pages4) free_contiguous_pages(pages4, 4);
-  if (pages16) free_contiguous_pages(pages16, 16);
-  
-  printf("After freeing:\n", PRINT_FLAG_BOTH);
-  buddy_dump_state();
-  printf("Allocator test completed!\n", PRINT_FLAG_BOTH);
 
   // secondary page table resolution
 
@@ -317,6 +297,25 @@ void main() {
   uint64_t size_ecall8 =
       (uint64_t)proc_ecall8_end - (uint64_t)proc_ecall8_start;
   proc_from_code(proc_ecall8_start, size_ecall8, "e8");
+
+  printf("Creating kernel tasks...\n", PRINT_FLAG_BOTH);
+
+  result_t rcursor_task = make_kernel_task(cursor_daemon, NULL, "cursord");
+  if (result_is_ok(rcursor_task)) {
+    printf("Created cursord task\n", PRINT_FLAG_BOTH);
+  } else {
+    printf("Failed to create cursord task\n", PRINT_FLAG_BOTH);
+  }
+
+  result_t rwallpaper_task =
+      make_kernel_task(wallpaper_daemon, NULL, "wallpaperd");
+  if (result_is_ok(rwallpaper_task)) {
+    printf("Created wallpaperd task\n", PRINT_FLAG_BOTH);
+  } else {
+    printf("Failed to create wallpaperd task\n", PRINT_FLAG_BOTH);
+  }
+
+  printf("Started kernel daemons with priority scheduling\n", PRINT_FLAG_BOTH);
 
   sbi_set_timer(get_csrr_time() + 1000000);
 

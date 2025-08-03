@@ -16,7 +16,7 @@
  *
  * `%{key: val, ...}`
  *  - type: The type of the value to format. Required. One of "int", "uint",
- * "hex", "char", "str", "ptr".
+ * "hex", "char", "str", "ptr", "binary".
  *  - case: The case of the output. Optional. One of "lower" (default), "upper".
  *  - justify: The justification of the output. Optional. One of "left", "right"
  * (default).
@@ -48,7 +48,7 @@ char *format(const char *main, ...);
  *
  * `%{key: val, ...}`
  *  - type: The type of the value to format. Required. One of "int", "uint",
- * "hex", "char", "str", "ptr".
+ * "hex", "char", "str", "ptr", "binary".
  *  - case: The case of the output. Optional. One of "lower" (default), "upper".
  *  - justify: The justification of the output. Optional. One of "left", "right"
  * (default).

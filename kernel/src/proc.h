@@ -1,9 +1,10 @@
 #pragma once
 
+#include "lib/mailbox.h"
 #include "lib/spinlock.h"
-#include <page_table.h>
-#include <lib/result.h>
 #include <lib/context.h>
+#include <lib/result.h>
+#include <page_table.h>
 
 #define NPROC 64 /* maximum number of processes */
 
@@ -50,10 +51,17 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+/* Process priorities - lower numbers = higher priority */
+#define PROC_PRIORITY_HIGH 0    /* High priority kernel tasks */
+#define PROC_PRIORITY_NORMAL 10 /* Normal processes */
+#define PROC_PRIORITY_LOW 20    /* Low priority background tasks */
+#define PROC_PRIORITY_FLUSH 30  /* Framebuffer flush daemon - runs last */
+
 struct proc {
   /* locks & scheduling */
   struct spinlock lock;
   enum procstate state;
+  uint8_t priority; /* Process priority (lower = higher priority) */
   void *chan;
   int killed;
   int xstate;
@@ -70,6 +78,10 @@ struct proc {
   struct trapframe *trapframe; /* TRAPFRAME page */
 
   char name[16];
+
+  g_bool is_kernel; /* true if this is a kernel task */
+
+  mailbox_t *mailbox; /* mailbox for notifications */
 };
 
 typedef struct proc proc_t;
@@ -85,3 +97,6 @@ g_bool proc_shrink(proc_t *p, uint64_t n);
 RESULT_TYPE(void) proc_resize(int n);
 RESULT_TYPE(proc_t *)
 proc_from_code(uint8_t code[], uint64_t size, const char *name);
+
+RESULT_TYPE(proc_t *)
+make_kernel_task(void (*entry)(void *), void *arg, const char *name);

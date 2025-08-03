@@ -20,6 +20,9 @@ RESULT_TYPE(cursor_t *) make_cursor(framebuffer_t *fb);
 /* place initial position */
 g_bool cursor_init(cursor_t *c, int32_t start_x, int32_t start_y);
 
+/* redraw the cursor at its current position */
+void cursor_redraw(cursor_t *c);
+
 /* move by a relative delta and immediately redraw */
 void cursor_move(cursor_t *c, int32_t dx, int32_t dy);
 void cursor_redraw(cursor_t *c);

@@ -8,8 +8,8 @@ ARCH := riscv64
 # Uncomment following line to enable debugging.
 # NOTE TO SELF: IF I NEED TO DEBUG STRUCT VALUES, SET OPTIMIZE TO -O0
 DEBUG := 1
-# MONITOR := 1
-# SHOW_INTERRUPT := 1
+MONITOR := 1
+SHOW_INTERRUPT := 1
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
 # -m 2G: 2 GiB of RAM.

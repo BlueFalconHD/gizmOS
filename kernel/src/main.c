@@ -1,5 +1,7 @@
+#include "buddy_allocator.h"
 #include "kprocs/cursor_daemon.h"
 #include "kprocs/wallpaper_daemon.h"
+#include "lib/canary.h"
 #include "lib/dyn_array.h"
 #include "lib/macros.h"
 #include "lib/sbi.h"
@@ -52,11 +54,11 @@ void enable_interrupts() {
 }
 
 G_INLINE void init_trap_vector(void) {
-  /* point stvec at trap_vector … */
+  /* point stvec at trap_vector */
   uintptr_t base = ((uintptr_t)&trap_vector) & ~0x3UL;
   PS_set_trap_vector(base);
 
-  /* …and preload sscratch with &trap_stack_top so the vector can
+  /* and preload sscratch with &trap_stack_top so the vector can
      switch to it immediately. */
   asm volatile("csrw sscratch, %0" ::"r"(&trap_stack_top));
 }
@@ -76,7 +78,10 @@ void main() {
   limine_requests_init();
 
   dtb_init();
-  initialize_pages(memory_map_entries, memory_map_entry_count);
+
+  // canary_dbg_val((uint64_t)initialize_pages);
+  // initialize_pages(memory_map_entries, memory_map_entry_count);
+  buddy_allocator_init(memory_map_entries, memory_map_entry_count);
 
   struct limine_framebuffer *lfb =
       limine_req_framebuffer.response->framebuffers[0];
@@ -280,6 +285,25 @@ void main() {
   uart_enable_interrupts(uart);
 
   printf("*. gizmOS %{type: str}\n", PRINT_FLAG_UART, VERSION);
+
+  buddy_print_stats();
+
+  void *tp[10];
+  for (int i = 0; i < 10; i++) {
+    tp[i] = buddy_alloc_page();
+    if (!tp[i]) {
+      panic("Failed to allocate test page");
+    }
+    printf("Allocated page %{type: hex}\n", PRINT_FLAG_BOTH, (uint64_t)tp[i]);
+  }
+
+  buddy_print_stats();
+
+  // free the test pages
+  for (int i = 0; i < 10; i++) {
+    buddy_free_page(tp[i]);
+    printf("Freed page %{type: hex}\n", PRINT_FLAG_BOTH, (uint64_t)tp[i]);
+  }
 
   initialize_processes();
 

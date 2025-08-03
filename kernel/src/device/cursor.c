@@ -31,6 +31,18 @@ g_bool cursor_init(cursor_t *c, int32_t start_x, int32_t start_y) {
   return true;
 }
 
+void cursor_redraw(cursor_t *c) {
+  if (!c || !c->is_initialized)
+    return;
+
+  /* erase old cursor */
+  fill_area(shared_framebuffer, c->px, c->py, IMG_CURSOR_WIDTH,
+            IMG_CURSOR_HEIGHT, 0);
+
+  draw_image_no_palette_location(shared_framebuffer, IMG_CURSOR_WIDTH,
+                                 IMG_CURSOR_HEIGHT, img_cursor, c->x, c->y);
+}
+
 void cursor_move(cursor_t *c, int32_t dx, int32_t dy) {
   if (!c || !c->is_initialized)
     return;
@@ -51,10 +63,5 @@ void cursor_move(cursor_t *c, int32_t dx, int32_t dy) {
   if (c->y > (int32_t)c->fb->framebuffer->height - (int32_t)c->size)
     c->y = (int32_t)c->fb->framebuffer->height - (int32_t)c->size;
 
-  /* erase old cursor */
-  fill_area(shared_framebuffer, c->px, c->py, IMG_CURSOR_WIDTH,
-            IMG_CURSOR_HEIGHT, 0);
-
-  draw_image_no_palette_location(shared_framebuffer, IMG_CURSOR_WIDTH,
-                                 IMG_CURSOR_HEIGHT, img_cursor, c->x, c->y);
+  cursor_redraw(c);
 }

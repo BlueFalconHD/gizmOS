@@ -170,6 +170,32 @@ void main() {
 
   shared_page_table = root_page_table;
 
+  // Test the buddy allocator
+  printf("Testing allocator functionality...\n", PRINT_FLAG_BOTH);
+  buddy_dump_state();
+  
+  // Test single page allocation (should use simple allocator)
+  void *page1 = alloc_page();
+  printf("Single page allocated at: %{type: ptr}\n", PRINT_FLAG_BOTH, page1);
+  
+  // Test multi-page allocation (should use buddy allocator)
+  void *pages4 = alloc_contiguous_pages(4);
+  printf("4 contiguous pages allocated at: %{type: ptr}\n", PRINT_FLAG_BOTH, pages4);
+  
+  void *pages16 = alloc_contiguous_pages(16);
+  printf("16 contiguous pages allocated at: %{type: ptr}\n", PRINT_FLAG_BOTH, pages16);
+  
+  buddy_dump_state();
+  
+  // Free the allocations
+  if (page1) free_page(page1);
+  if (pages4) free_contiguous_pages(pages4, 4);
+  if (pages16) free_contiguous_pages(pages16, 16);
+  
+  printf("After freeing:\n", PRINT_FLAG_BOTH);
+  buddy_dump_state();
+  printf("Allocator test completed!\n", PRINT_FLAG_BOTH);
+
   // secondary page table resolution
 
   success = map_page(root_page_table, TRAMPOLINE, V2P((uint64_t)trampoline),

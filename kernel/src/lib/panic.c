@@ -66,3 +66,9 @@ void panic_msg_no_cr(const char *msg) {
   print(ANSI_EFFECT_RESET, PRINT_FLAG_BOTH);
   print(msg, PRINT_FLAG_BOTH);
 }
+
+void panic_halt() {
+  for (;;) {
+    asm("wfi");
+  }
+}

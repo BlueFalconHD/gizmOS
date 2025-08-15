@@ -16,9 +16,6 @@ static void *alloc_block(g_usize elem_sz, g_usize cap) {
   return alloc_page();
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Constructors / life‑cycle                                                 */
-/* -------------------------------------------------------------------------- */
 RESULT_TYPE(dyn_array_t *)
 make_dyn_array(g_usize elem_size, g_usize initial_capacity) {
   dyn_array_t *a = (dyn_array_t *)alloc_page();

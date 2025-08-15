@@ -1,4 +1,5 @@
 #include "framebuffer.h"
+#include "lib/canary.h"
 #include <lib/memory.h>
 #include <lib/result.h>
 #include <physical_alloc.h>
@@ -6,6 +7,9 @@
 RESULT_TYPE(framebuffer_t *)
 make_framebuffer(struct limine_framebuffer *framebuffer) {
   framebuffer_t *fb = (framebuffer_t *)alloc_page();
+
+  canary_dbg_val((uint64_t)fb);
+
   if (!fb) {
     return RESULT_FAILURE(RESULT_NOMEM);
   }

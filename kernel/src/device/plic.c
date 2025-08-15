@@ -1,4 +1,5 @@
 #include "plic.h"
+#include "lib/canary.h"
 #include <lib/result.h>
 #include <physical_alloc.h>
 
@@ -97,6 +98,8 @@ g_bool plic_set_priority(plic_t *plic, uint32_t irq, uint32_t priority) {
   uint32_t *priority_addr =
       (uint32_t *)((uint64_t)plic->base + PLIC_PRIORITY_BASE + irq * 4);
   *priority_addr = priority;
+
+  canary_dbg_val((uint64_t)priority_addr);
 
   return true;
 }

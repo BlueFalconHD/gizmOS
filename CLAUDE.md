@@ -106,3 +106,7 @@ Tests are built into the kernel and run during boot when the `TESTS` macro is de
 - VirtIO drivers are implemented for QEMU virtualization compatibility
 - Memory management follows a buddy allocator design for physical pages
 - Device tree parsing is used for hardware discovery
+
+## Interaction Guidelines
+
+- Don't try to run the project yourself. Instead tell me to do it and get back to you with the proper logs and information.

@@ -3,6 +3,7 @@
 #include "kprocs/wallpaper_daemon.h"
 #include "lib/canary.h"
 #include "lib/dyn_array.h"
+#include "lib/kalloc.h"
 #include "lib/macros.h"
 #include "lib/sbi.h"
 #include "lib/timer.h"
@@ -77,11 +78,18 @@ void main() {
 
   limine_requests_init();
 
-  dtb_init();
+  // dtb_init();
 
-  // canary_dbg_val((uint64_t)initialize_pages);
-  // initialize_pages(memory_map_entries, memory_map_entry_count);
+  sbi_set_timer(UINT64_MAX);
+  init_trap_vector();
+  // sbi_set_timer(UINT64_MAX); // Disable timer interrupts initially
+
+// canary_dbg_val((uint64_t)initialize_pages);
+#ifndef NEW_ALLOC
+  initialize_pages(memory_map_entries, memory_map_entry_count);
+#else
   buddy_allocator_init(memory_map_entries, memory_map_entry_count);
+#endif
 
   struct limine_framebuffer *lfb =
       limine_req_framebuffer.response->framebuffers[0];
@@ -102,12 +110,9 @@ void main() {
   }
   set_shared_console(console);
 
-  asm volatile("csrw stvec, %0" ::"r"(&trap_vector));
-
   printf("*. gizmOS %{type: str}\n", PRINT_FLAG_BOTH, VERSION);
 
 #ifdef TESTS
-
   bool physical_alloc_test_results = run_physical_alloc_tests();
   if (!physical_alloc_test_results) {
     panic("Physical allocation tests failed");
@@ -127,6 +132,8 @@ void main() {
       root_page_table, executable_virtual_base, executable_physical_base,
       (uint64_t)kend - (uint64_t)kstart, PTE_R | PTE_W | PTE_X | PTE_V);
 
+  // bool success = true;
+
   if (!success) {
     panic("Failed to set up kernel mapping");
   }
@@ -142,7 +149,7 @@ void main() {
   uint64_t phys_hi = 0;         /* will become last byte of RAM      */
   for (uint64_t i = 0; i < memory_map_entry_count; i++) {
     struct limine_memmap_entry *e = memory_map_entries[i];
-    if (e->type == LIMINE_MEMMAP_USABLE) {
+    if (e->type != LIMINE_MEMMAP_RESERVED) {
       uint64_t end = e->base + e->length;
       if (end > phys_hi)
         phys_hi = end;
@@ -249,6 +256,8 @@ void main() {
   }
   set_shared_virtio_keyboard(kbd);
 
+  print_memory_map();
+
   // enable virtio mouse interrupt
   plic_set_priority(plic, 2, 1);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 2);
@@ -277,7 +286,7 @@ void main() {
   // }
   // set_shared_virtio_gpu(gpu);
 
-  init_trap_vector();
+  // init_trap_vector();
 
   sbi_set_timer(UINT64_MAX);
 
@@ -304,6 +313,17 @@ void main() {
     buddy_free_page(tp[i]);
     printf("Freed page %{type: hex}\n", PRINT_FLAG_BOTH, (uint64_t)tp[i]);
   }
+
+  // test kalloc
+  // void *kt = kalloc(128);
+  // if (!kt) {
+  //   panic("Failed to allocate kalloc test page");
+  // }
+  // printf("Allocated kalloc test page %{type: hex}\n", PRINT_FLAG_BOTH,
+  //        (uint64_t)kt);
+  // kfree(kt);
+  // printf("Freed kalloc test page %{type: hex}\n", PRINT_FLAG_BOTH,
+  //        (uint64_t)kt);
 
   initialize_processes();
 

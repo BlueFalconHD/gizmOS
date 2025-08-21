@@ -31,6 +31,7 @@ g_bool framebuffer_init(framebuffer_t *fb) {
     return false;
   }
 
+  fb->is_initialized = true;
   return true;
 }
 

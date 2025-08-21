@@ -1,4 +1,5 @@
 #include "math.h"
+#include "lib/timer.h"
 #include <device/rtc.h>
 
 /**
@@ -432,11 +433,11 @@ double hypot(double x, double y) { return sqrt(x * x + y * y); }
  * Generate pseudo-random numbers using a linear congruential generator.
  * @return A pseudo-random number between 0 and 1.
  */
-// double rand(void) {
-//     uint64_t static seed = 0;
-//     seed = read_cntpct() * 6364136223846793005ULL + 1;
-//     return (uint32_t)(seed >> 32) / (double)UINT32_MAX;
-// }
+double rand(void) {
+  uint64_t static seed = 0;
+  seed = get_time_in_cycles() * 6364136223846793005ULL + 1;
+  return (uint32_t)(seed >> 32) / (double)UINT32_MAX;
+}
 
 /**
  * expf(n)

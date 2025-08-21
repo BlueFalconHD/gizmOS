@@ -1,6 +1,6 @@
 #include "mem_layout.h"
 
-.section trampsec
+.section trampsec, "ax", @progbits
 .globl trampoline
 .globl usertrap
 trampoline:

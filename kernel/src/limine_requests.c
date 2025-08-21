@@ -1,4 +1,5 @@
 #include "limine_requests.h"
+#include "earlyinit.h"
 #include <lib/panic.h>
 #include <limine.h>
 
@@ -64,7 +65,7 @@ uint64_t executable_physical_base;
 uint64_t executable_virtual_base;
 uint64_t executable_size;
 
-result_t limine_requests_init() {
+EARLY_TEXT result_t limine_requests_init() {
   if (LIMINE_BASE_REVISION_SUPPORTED == false) {
     panic_msg("Limine base revision not supported. Please update Limine "
               "to the latest "

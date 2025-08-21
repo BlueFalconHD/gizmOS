@@ -63,5 +63,5 @@ void cursor_move(cursor_t *c, int32_t dx, int32_t dy) {
   if (c->y > (int32_t)c->fb->framebuffer->height - (int32_t)c->size)
     c->y = (int32_t)c->fb->framebuffer->height - (int32_t)c->size;
 
-  cursor_redraw(c);
+  // cursor_redraw(c);
 }

@@ -1,6 +1,5 @@
 #include "shared.h"
 #include "device/plic.h"
-#include "device/virtio/virtio_gpu.h"
 #include "device/virtio/virtio_keyboard.h"
 #include "device/virtio/virtio_mouse.h"
 #include <device/console.h>
@@ -28,8 +27,6 @@ virtio_mouse_t *shared_virtio_mouse = NULL;
 g_bool shared_virtio_mouse_initialized = false;
 cursor_t *shared_cursor = NULL;
 g_bool shared_cursor_initialized = false;
-virtio_gpu_t *shared_virtio_gpu = NULL;
-g_bool shared_virtio_gpu_initialized = false;
 
 void set_shared_uart(uart_t *uart) {
   shared_uart = uart;
@@ -69,9 +66,4 @@ void set_shared_virtio_mouse(virtio_mouse_t *mouse) {
 void set_shared_cursor(cursor_t *cursor) {
   shared_cursor = cursor;
   shared_cursor_initialized = true;
-};
-
-void set_shared_virtio_gpu(virtio_gpu_t *gpu) {
-  shared_virtio_gpu = gpu;
-  shared_virtio_gpu_initialized = true;
 };

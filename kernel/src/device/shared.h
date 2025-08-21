@@ -1,6 +1,5 @@
 #pragma once
 
-#include "device/virtio/virtio_gpu.h"
 #include "device/virtio/virtio_keyboard.h"
 #include "device/virtio/virtio_mouse.h"
 #include <device/console.h>
@@ -31,7 +30,6 @@ extern virtio_mouse_t *shared_virtio_mouse;
 extern g_bool shared_virtio_mouse_initialized;
 extern cursor_t *shared_cursor;
 extern g_bool shared_cursor_initialized;
-extern virtio_gpu_t *shared_virtio_gpu;
 extern g_bool shared_virtio_gpu_initialized;
 
 void set_shared_uart(uart_t *uart);
@@ -42,7 +40,6 @@ void set_shared_plic(plic_t *plic);
 void set_shared_virtio_keyboard(virtio_keyboard_t *virtio_keyboard);
 void set_shared_virtio_mouse(virtio_mouse_t *virtio_mouse);
 void set_shared_cursor(cursor_t *cursor);
-void set_shared_virtio_gpu(virtio_gpu_t *virtio_gpu);
 
 G_INLINE uint64_t shared_rtc_get_time(void) {
   if (!shared_rtc_initialized) {

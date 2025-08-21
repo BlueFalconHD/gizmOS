@@ -5,9 +5,6 @@
 #include <lib/panic.h>
 #include <lib/print.h>
 
-/* -------------------------------------------------------------------------- */
-/*  Constructor / initialisation                                              */
-/* -------------------------------------------------------------------------- */
 RESULT_TYPE(virtio_mouse_t *)
 make_virtio_mouse(uint64_t base, uint32_t irq) {
   virtio_mouse_t *m = (virtio_mouse_t *)alloc_page();
@@ -30,7 +27,6 @@ g_bool virtio_mouse_init(virtio_mouse_t *m) {
   if (!m)
     return false;
 
-  /* device‑level init + feature negotiation (we need none) */
   if (!virtio_device_init(&m->vdev, 0))
     return false;
 
@@ -60,9 +56,6 @@ g_bool virtio_mouse_init(virtio_mouse_t *m) {
   return true;
 }
 
-/* -------------------------------------------------------------------------- */
-/*  IRQ handler – drain queue 0 and update simple state                       */
-/* -------------------------------------------------------------------------- */
 #define EV_SYN 0x00
 #define EV_KEY 0x01
 #define EV_REL 0x02
@@ -135,10 +128,6 @@ void virtio_mouse_handle_irq(virtio_mouse_t *m) {
         m->buttons |= mask; /* press   */
       else
         m->buttons &= ~mask; /* release */
-
-      if (ev->code == BTN_LEFT && ev->value) {
-        sbi_system_reset(SBI_SRST_TYPE_COLD_REBOOT, SBI_SRST_REASON_NONE);
-      }
 
       break;
     }

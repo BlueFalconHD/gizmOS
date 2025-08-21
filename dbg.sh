@@ -1,1 +1,1 @@
-lldb -o "command script import lldb_init.py"
+lldb -o "command script import lldb/lldb_init.py"

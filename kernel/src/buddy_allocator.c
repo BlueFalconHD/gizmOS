@@ -16,36 +16,29 @@ extern char kend[];
 
 g_bool is_buddy_allocator_initialized = false;
 
-// Buddy allocator configuration
 #define BUDDY_MIN_ORDER 0  // 4KB minimum block
 #define BUDDY_MAX_ORDER 10 // 1MB maximum block
 #define BUDDY_NUM_ORDERS (BUDDY_MAX_ORDER + 1)
 #define BUDDY_PAGE_SIZE 4096
-#define BUDDY_MAX_PAGES (4096 * 1024) // Same as current allocator
+#define BUDDY_MAX_PAGES (4096 * 1024)
 
-// Each free block contains a linked list node
 struct buddy_block {
   struct buddy_block *next;
   struct buddy_block *prev;
 };
 
-// Free lists for each order
 static struct buddy_block *free_lists[BUDDY_NUM_ORDERS];
 
-// Bitmap to track allocated blocks (1 bit per min-size block)
 static uint64_t *allocation_bitmap;
 static uint64_t bitmap_size_words;
 
-// Memory region managed by buddy allocator
 static uint64_t buddy_base_addr; // Physical address of managed region
 static uint64_t buddy_total_pages;
 static uint64_t buddy_total_size;
 
-// Statistics
 static uint64_t buddy_free_pages_count;
 static uint64_t buddy_allocated_pages_count;
 
-// Helper macros
 #define BUDDY_BLOCK_SIZE(order) (BUDDY_PAGE_SIZE << (order))
 #define BUDDY_BLOCKS_PER_ORDER(order) (buddy_total_pages >> (order))
 #define BUDDY_VIRT_TO_PHYS(virt) ((uint64_t)(virt) - hhdm_offset)

@@ -4,17 +4,6 @@
 #include <limine.h>
 #include <stdint.h>
 
-/**
- * Buddy Allocator - Fast O(log n) allocation and deallocation
- *
- * Supports allocation orders 0-10:
- * - Order 0: 4KB (1 page)
- * - Order 1: 8KB (2 pages)
- * - Order 2: 16KB (4 pages)
- * - ...
- * - Order 10: 1MB (256 pages)
- */
-
 // Initialize buddy allocator with memory map
 void buddy_allocator_init(struct limine_memmap_entry **entries,
                           uint64_t entry_count);

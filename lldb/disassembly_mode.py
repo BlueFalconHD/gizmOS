@@ -1,7 +1,6 @@
 """ Adds the 'toggle-disassembly' command to switch you into a disassembly only mode """
 import lldb
 
-
 class DisassemblyMode:
     def __init__(self, debugger, unused):
         self.dbg = debugger
@@ -16,13 +15,13 @@ class DisassemblyMode:
         self.after_count = self.get_string_value("stop-line-count-after")
 
     def get_string_value(self, setting):
-        result = lldb.SBCommandReturnObject()
+        result = lldb.SBCommandReturnObject() # pyright: ignore
         self.interp.HandleCommand("settings show " + setting, result)
         value = result.GetOutput().split(" = ")[1].rstrip("\n")
         return value
 
     def set_value(self, setting, value):
-        result = lldb.SBCommandReturnObject()
+        result = lldb.SBCommandReturnObject() # pyright: ignore
         self.interp.HandleCommand("settings set " + setting + " " + value, result)
 
     def __call__(self, debugger, command, exe_ctx, result):

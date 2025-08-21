@@ -18,7 +18,6 @@ def trap_origin(debugger, command, exe_ctx, result, internal_dict):
         result.SetError("no running thread")
         return
 
-    # 1. locate the trap_vector frame ----------------------------------------
     trap_f = None
     for f in thread:
         name = f.GetFunctionName() or f.GetSymbol().GetName()
@@ -30,23 +29,21 @@ def trap_origin(debugger, command, exe_ctx, result, internal_dict):
         result.SetError("trap_vector frame not found in this thread")
         return
 
-    # 2. read sp and fetch the saved ra at 0(sp) ------------------------------
     sp_reg = trap_f.FindRegister("sp")
     if not sp_reg or not sp_reg.IsValid():
         result.SetError("could not read sp in trap_vector frame")
         return
 
     sp_val = sp_reg.GetValueAsUnsigned()
-    err    = lldb.SBError()
+    err    = lldb.SBError() # pyright: ignore
     saved_ra = process.ReadUnsignedFromMemory(sp_val, 8, err)
 
     if err.Fail():
         result.SetError(f"memory read failed: {err.GetCString()}")
         return
 
-    # 3. resolve the address to a symbol / line -------------------------------
     addr      = target.ResolveLoadAddress(saved_ra)
-    sym_ctx   = addr.GetSymbolContext(lldb.eSymbolContextEverything)
+    sym_ctx   = addr.GetSymbolContext(lldb.eSymbolContextEverything) # pyright: ignore
 
     # build nice output
     out  = f"saved ra  : 0x{saved_ra:016x}\n"

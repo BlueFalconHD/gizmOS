@@ -380,10 +380,6 @@ void scheduler() {
 
       rr_index = (uint8_t)((selected_index + 1) % NPROC);
     } else {
-      if (schedule_count % 5000 == 0) {
-        printf("Scheduler: no runnable processes, waiting...\n",
-               PRINT_FLAG_BOTH);
-      }
       PS_enable_interrupts();
       asm volatile("wfi");
     }
@@ -397,16 +393,16 @@ void sched(void) {
 
   if (!holding(&p->lock))
     panic("sched p->lock");
-  if (c->noff != 1)
+  if (c->intr_disable_depth != 1)
     panic("sched locks");
   if (p->state == RUNNING)
     panic("sched running");
   if (PS_get_interrupt_enabled())
     panic("sched interruptible");
 
-  intena = c->intena;
+  intena = c->prev_interrupts_enabled;
   swtch(&p->context, &c->context);
-  c->intena = intena;
+  c->prev_interrupts_enabled = intena;
 }
 
 void yield(void) {

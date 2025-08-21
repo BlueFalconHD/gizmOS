@@ -1,6 +1,5 @@
 #include "virtio_mouse.h"
 #include "device/shared.h"
-#include "lib/sbi.h"
 #include <lib/memory.h>
 #include <lib/panic.h>
 #include <lib/print.h>

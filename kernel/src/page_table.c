@@ -1,6 +1,9 @@
 #include "page_table.h"
+#include "earlyinit.h"
 #include "lib/macros.h"
 #include "lib/types.h"
+#include "platform/registers.h"
+#include "platform/tlb.h"
 #include <lib/memory.h> // For memset
 #include <lib/panic.h>
 #include <lib/print.h>
@@ -16,14 +19,18 @@ page_table_t *shared_page_table;
  * @param pa Physical address.
  * @return Corresponding virtual address.
  */
-static inline uint64_t pa_to_va(uint64_t pa) { return pa + hhdm_offset; }
+EARLY_TEXT static inline uint64_t pa_to_va(uint64_t pa) {
+  return pa + hhdm_offset;
+}
 
 /**
  * @brief Helper function to convert a virtual address to a physical address.
  * @param va Virtual address.
  * @return Corresponding physical address.
  */
-static inline uint64_t va_to_pa(uint64_t va) { return va - hhdm_offset; }
+EARLY_TEXT static inline uint64_t va_to_pa(uint64_t va) {
+  return va - hhdm_offset;
+}
 
 /**
  * @brief Extract the VPN (Virtual Page Number) indices from a virtual address
@@ -31,13 +38,13 @@ static inline uint64_t va_to_pa(uint64_t va) { return va - hhdm_offset; }
  * @param va The virtual address.
  * @param vpn Output array of indices [level2, level1, level0].
  */
-static void get_vpn_indices(uint64_t va, uint16_t vpn[SV39_LEVELS]) {
+EARLY_TEXT static void get_vpn_indices(uint64_t va, uint16_t vpn[SV39_LEVELS]) {
   vpn[0] = (va >> 12) & 0x1FF; /**< Level 0 index */
   vpn[1] = (va >> 21) & 0x1FF; /**< Level 1 index */
   vpn[2] = (va >> 30) & 0x1FF; /**< Level 2 index */
 }
 
-page_table_t *create_page_table() {
+EARLY_TEXT page_table_t *create_page_table() {
   page_table_t *pt = (page_table_t *)alloc_page();
   if (pt) {
     memset(pt, 0, PAGE_SIZE);
@@ -45,8 +52,8 @@ page_table_t *create_page_table() {
   return pt;
 }
 
-bool map_page(page_table_t *root_table, uint64_t virtual_address,
-              uint64_t physical_address, uint64_t flags) {
+EARLY_TEXT bool map_page(page_table_t *root_table, uint64_t virtual_address,
+                         uint64_t physical_address, uint64_t flags) {
   if (!root_table) {
     panic_msg("Root page table is NULL");
     return false;
@@ -90,7 +97,7 @@ bool map_page(page_table_t *root_table, uint64_t virtual_address,
   return false;
 }
 
-bool unmap_page(page_table_t *root_table, uint64_t virtual_address) {
+EARLY_TEXT bool unmap_page(page_table_t *root_table, uint64_t virtual_address) {
   if (!root_table) {
     return false;
   }
@@ -121,8 +128,9 @@ bool unmap_page(page_table_t *root_table, uint64_t virtual_address) {
   return false;
 }
 
-bool get_physical_address(page_table_t *root_table, uint64_t virtual_address,
-                          uint64_t *physical_address) {
+EARLY_TEXT bool get_physical_address(page_table_t *root_table,
+                                     uint64_t virtual_address,
+                                     uint64_t *physical_address) {
   if (!root_table || !physical_address) {
     return false;
   }
@@ -155,8 +163,8 @@ bool get_physical_address(page_table_t *root_table, uint64_t virtual_address,
   return false;
 }
 
-bool identity_map(page_table_t *root_table, uint64_t start_address,
-                  uint64_t size, uint64_t flags) {
+EARLY_TEXT bool identity_map(page_table_t *root_table, uint64_t start_address,
+                             uint64_t size, uint64_t flags) {
   uint64_t addr = start_address;
   uint64_t end_addr = start_address + size;
 
@@ -176,8 +184,9 @@ bool identity_map(page_table_t *root_table, uint64_t start_address,
   return true;
 }
 
-bool map_range(page_table_t *root_table, uint64_t virtual_start,
-               uint64_t physical_start, uint64_t size, uint64_t flags) {
+EARLY_TEXT bool map_range(page_table_t *root_table, uint64_t virtual_start,
+                          uint64_t physical_start, uint64_t size,
+                          uint64_t flags) {
   if (!root_table) {
     panic_msg("Root page table is NULL");
     return false;
@@ -224,13 +233,13 @@ bool unmap_range(page_table_t *root_table, uint64_t virtual_start,
   return true;
 }
 
-void activate_page_table(page_table_t *root_table) {
+EARLY_TEXT void activate_page_table(page_table_t *root_table) {
   uint64_t root_table_pa = va_to_pa((uint64_t)root_table);
   uint64_t root_table_ppn = root_table_pa >> 12;
   uint64_t satp_value = (uint64_t)8ULL << 60; // MODE field for SV39
   satp_value |= root_table_ppn;
-  asm volatile("csrw satp, %0" ::"r"(satp_value));
-  asm volatile("sfence.vma");
+  PS_set_atp(satp_value);
+  tlb_flush_all();
 }
 
 g_bool is_addr_mapped(page_table_t *root_table, uint64_t virtual_address) {

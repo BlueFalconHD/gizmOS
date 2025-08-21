@@ -6,3 +6,5 @@
 #define UINT32_MAX ((uint32_t)-1)
 #define UINT16_MAX ((uint16_t)-1)
 #define UINT8_MAX ((uint8_t)-1)
+
+#define NULL ((void *)0)

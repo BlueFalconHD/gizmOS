@@ -1,11 +1,12 @@
 #include "str.h"
+#include "earlyinit.h"
 #include <stdint.h>
 
 /****************************************
 Comparison, Copying, and Concatenation
 ****************************************/
 
-uint64_t strlen(const char *str) {
+EARLY_TEXT uint64_t strlen(const char *str) {
   unsigned int len = 0;
   while (*str++) {
     len++;
@@ -13,7 +14,7 @@ uint64_t strlen(const char *str) {
   return len;
 }
 
-bool strcmp(const char *s1, const char *s2) {
+EARLY_TEXT bool strcmp(const char *s1, const char *s2) {
   while (*s1 && *s2) {
     if (*s1 != *s2) {
       return false;
@@ -72,7 +73,7 @@ void strncat(char *dest, const char *src, size_t n) {
 Integer Conversion
 *********************************/
 
-void hexstrfuint(uint64_t value, char *buffer) {
+EARLY_TEXT void hexstrfuint(uint64_t value, char *buffer) {
   char temp[20];
   int i = 0;
   if (value == 0) {
@@ -92,7 +93,7 @@ void hexstrfuint(uint64_t value, char *buffer) {
   buffer[j] = '\0';
 }
 
-void strfuint(uint64_t value, char *buffer) {
+EARLY_TEXT void strfuint(uint64_t value, char *buffer) {
   char temp[20];
   int i = 0;
   if (value == 0) {
@@ -111,7 +112,7 @@ void strfuint(uint64_t value, char *buffer) {
   buffer[j] = '\0';
 }
 
-void binstrfuint(uint64_t value, char *buffer) {
+EARLY_TEXT void binstrfuint(uint64_t value, char *buffer) {
   char temp[65];
   int i = 0;
   if (value == 0) {
@@ -147,9 +148,11 @@ uint64_t uintfstr(const char *str) {
   return value;
 }
 
-void hexstrfint(int64_t value, char *buffer) { hexstrfuint(value, buffer); }
+EARLY_TEXT void hexstrfint(int64_t value, char *buffer) {
+  hexstrfuint(value, buffer);
+}
 
-void strfint(int64_t value, char *buffer) {
+EARLY_TEXT void strfint(int64_t value, char *buffer) {
   if (value < 0) {
     *buffer++ = '-';
     value = -value;
@@ -157,7 +160,7 @@ void strfint(int64_t value, char *buffer) {
   strfuint(value, buffer);
 }
 
-int64_t intfstr(const char *str) {
+EARLY_TEXT int64_t intfstr(const char *str) {
   int64_t value = 0;
   int sign = 1;
   if (*str == '-') {

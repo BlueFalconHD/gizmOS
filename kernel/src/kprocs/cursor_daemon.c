@@ -6,7 +6,7 @@
 void cursor_daemon(void *arg) {
   (void)arg;
   const uint64_t frame_us =
-      1000000 / 10; /* 10 Hz - cursor doesn't need constant redraw */
+      1000000 / 60; /* 10 Hz - cursor doesn't need constant redraw */
 
   while (1) {
     // Cursor is redrawn automatically when it moves via cursor_move()

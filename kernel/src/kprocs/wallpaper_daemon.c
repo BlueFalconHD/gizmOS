@@ -6,7 +6,7 @@
 
 void wallpaper_daemon(void *arg) {
   (void)arg;
-  const uint64_t frame_us = 1000000 / 30; /* 30 Hz */
+  const uint64_t frame_us = 1000000 / 60; /* 30 Hz */
 
   while (1) {
     if (shared_framebuffer_initialized)

@@ -111,23 +111,32 @@ g_bool setup_process_kernel_stack(proc_t *p, uint8_t pidx) {
 
   if (!p->kstack) {
 
-    void *kstack = alloc_page();
-
-    uint64_t kstackpaddr = V2P((uint64_t)kstack);
     uint64_t kstackvaddr = KSTACK(pidx);
 
 #ifdef DBG
 
-    printf("%{type: int}: %{type: hex} -> %{type: hex}\n", PRINT_FLAG_BOTH,
-           pidx, kstackvaddr, kstackpaddr);
+    printf("%{type: int}: %{type: hex} (kernel stack base)\n", PRINT_FLAG_BOTH,
+           pidx, kstackvaddr);
 
 #endif
 
-    if (!map_page(shared_page_table, kstackvaddr, kstackpaddr,
-                  PTE_R | PTE_W | PTE_X | PTE_V)) {
-      panic_msg("Kernel stack mapping failed");
-      printf("pidx: %{type: int}", PRINT_FLAG_BOTH, pidx);
-      panic_loc("setup_process_kernel_stack");
+    for (int i = 0; i < KSTACK_PAGES; i++) {
+      void *kpage = alloc_page();
+      if (!kpage) {
+        panic_msg("Kernel stack allocation failed");
+        printf("pidx: %{type: int}", PRINT_FLAG_BOTH, pidx);
+        panic_loc("setup_process_kernel_stack");
+      }
+
+      uint64_t kstackpaddr = V2P((uint64_t)kpage);
+      uint64_t vaddr = kstackvaddr + i * PAGE_SIZE;
+
+      if (!map_page(shared_page_table, vaddr, kstackpaddr,
+                    PTE_R | PTE_W | PTE_X | PTE_V)) {
+        panic_msg("Kernel stack mapping failed");
+        printf("pidx: %{type: int}", PRINT_FLAG_BOTH, pidx);
+        panic_loc("setup_process_kernel_stack");
+      }
     }
 
     p->kstack = kstackvaddr;
@@ -187,7 +196,7 @@ void user_trap_ret(void) {
   //        trampoline_uservec);
 
   p->trapframe->kernel_satp = PS_get_atp();
-  p->trapframe->kernel_sp = p->kstack + PAGE_SIZE;
+  p->trapframe->kernel_sp = p->kstack + KSTACK_PAGES * PAGE_SIZE;
   p->trapframe->kernel_trap = (uint64_t)usertrap;
   p->trapframe->kernel_hartid = P_get_thread_ptr();
 
@@ -317,7 +326,7 @@ found:
   memset(&p->context, 0, sizeof(context_t));
 
   p->context.ra = (uint64_t)forkret;
-  p->context.sp = p->kstack + PAGE_SIZE;
+  p->context.sp = p->kstack + KSTACK_PAGES * PAGE_SIZE;
 
   printf("alloc proc kstack = %{type: hex}\n", PRINT_FLAG_BOTH, p->kstack);
 
@@ -365,56 +374,56 @@ void scheduler() {
   proc_t *p = NULL;
   cpu_t *c = current_cpu();
   static uint64_t schedule_count = 0;
+  static uint8_t rr_index = 0;
 
   c->proc = 0;
 
   for (;;) {
     PS_enable_interrupts();
 
-    proc_t *highest_priority_proc = NULL;
-    uint8_t highest_priority = 255; // Start with lowest possible priority
     uint8_t runnable_count = 0;
+    uint8_t min_priority = 255;
+    int selected_index = -1;
+    proc_t *selected_proc = NULL;
 
-    // First pass: find the highest priority (lowest number) RUNNABLE process
-    for (uint8_t i = 0; i < NPROC; i++) {
+    for (uint8_t offset = 0; offset < NPROC; offset++) {
+      uint8_t i = (rr_index + offset) % NPROC;
       p = &proc[i];
       acquire(&p->lock);
       if (p->state == RUNNABLE) {
         runnable_count++;
-        if (p->priority < highest_priority) {
-          if (highest_priority_proc) {
-            release(&highest_priority_proc->lock);
-          }
-          highest_priority_proc = p;
-          highest_priority = p->priority;
-          // Don't release lock yet - we'll need it for running the process
-        } else {
-          release(&p->lock);
+        if (p->priority < min_priority) {
+          min_priority = p->priority;
         }
-      } else {
+      }
+      release(&p->lock);
+    }
+
+    if (runnable_count > 0) {
+      for (uint8_t offset = 0; offset < NPROC; offset++) {
+        uint8_t i = (rr_index + offset) % NPROC;
+        p = &proc[i];
+        acquire(&p->lock);
+        if (p->state == RUNNABLE && p->priority == min_priority) {
+          selected_proc = p;
+          selected_index = i;
+          break;
+        }
         release(&p->lock);
       }
     }
 
-    if (highest_priority_proc) {
-      // Run the highest priority process
-      highest_priority_proc->state = RUNNING;
-      c->proc = highest_priority_proc;
+    if (selected_proc) {
+      selected_proc->state = RUNNING;
+      c->proc = selected_proc;
 
-      // Debug output every 1000 schedules
-      if (schedule_count % 1000 == 0) {
-        printf("Scheduler: running %{type: str} (pid %{type: int}, priority "
-               "%{type: int}) - %{type: int} runnable\n",
-               PRINT_FLAG_BOTH, highest_priority_proc->name,
-               highest_priority_proc->pid, highest_priority_proc->priority,
-               runnable_count);
-      }
-
-      swtch(&c->context, &highest_priority_proc->context);
+      swtch(&c->context, &selected_proc->context);
 
       c->proc = 0;
-      release(&highest_priority_proc->lock);
+      release(&selected_proc->lock);
       schedule_count++;
+
+      rr_index = (uint8_t)((selected_index + 1) % NPROC);
     } else {
       if (schedule_count % 5000 == 0) {
         printf("Scheduler: no runnable processes, waiting...\n",
@@ -910,8 +919,10 @@ void kernel_task_wrapper(void) {
   real_entry(arg);
 
   // If the task returns, mark it as zombie
+  acquire(&p->lock);
   p->state = ZOMBIE;
   sched();
+  panic("kernel task returned from sched unexpectedly");
 }
 
 RESULT_TYPE(proc_t *)
@@ -930,8 +941,9 @@ make_kernel_task(void (*entry)(void *), void *arg, const char *name) {
 
   p->is_kernel = 1;
   p->context.ra = (uint64_t)kernel_task_wrapper; /* kernel task entry point */
-  p->context.sp = p->kstack + PAGE_SIZE;         /* top of its kernel stack */
-  p->context.s0 = (uint64_t)entry;               /* optional argument */
+  p->context.sp =
+      p->kstack + KSTACK_PAGES * PAGE_SIZE; /* top of its kernel stack */
+  p->context.s0 = (uint64_t)entry;          /* optional argument */
   p->context.s1 = (uint64_t)arg;
 
   strncopy(p->name, name, sizeof(p->name));

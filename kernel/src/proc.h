@@ -85,7 +85,7 @@ struct proc {
 };
 
 typedef struct proc proc_t;
-extern proc_t proc[NPROC];
+extern proc_t processes[NPROC];
 
 g_bool initialize_processes();
 void first_process();

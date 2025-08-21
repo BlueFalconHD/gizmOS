@@ -23,10 +23,10 @@
 
 // #define DBG
 
-proc_t proc[NPROC];
+proc_t processes[NPROC];
 
-uint64_t pid = 0;
-struct spinlock pid_lock;
+uint64_t current_pid = 0;
+struct spinlock current_pid_lock;
 
 struct spinlock wait_lock;
 
@@ -140,27 +140,6 @@ g_bool setup_process_kernel_stack(proc_t *p, uint8_t pidx) {
     }
 
     p->kstack = kstackvaddr;
-
-    // // set first byte of kstack to 0xAA
-    // *(uint8_t *)kstack = 0xAA;
-
-    // // read from kstackvaddr to verify
-    // uint8_t *kstack_check = (uint8_t *)kstackvaddr;
-    // if (*kstack_check != 0xAA) {
-    //   panic_msg("Kernel stack verification failed");
-    //   printf("pidx: %{type: int}", PRINT_FLAG_BOTH, pidx);
-    //   panic_loc("setup_process_kernel_stack");
-    // }
-
-    // // keep reading downwards from kstackvaddr to check if the gaurd page
-    // is
-    // // working
-    // for (int i = 1; i < 0xFFFF; i++) {
-    //   volatile uint8_t *addr = (uint8_t *)(kstackvaddr - i);
-    //   volatile uint8_t val = *addr; // <-- Add this line to force the read
-    //   (void)val;                    // Prevent unused variable warning if
-    //   needed
-    // }
   }
 
   return true;
@@ -171,16 +150,7 @@ void usertrap(void);
 
 void user_trap_ret(void) {
   proc_t *p = current_proc();
-
-  // printf("user_trap_ret: p->pid = %{type: int}\n", PRINT_FLAG_BOTH, p->pid);
-  // printf("user_trap_ret: p->name = %{type: str}\n", PRINT_FLAG_BOTH,
-  // p->name);
-
   PS_disable_interrupts();
-
-  // printf("user_trap_ret: p->trapframe->epc = %{type: hex}\n",
-  // PRINT_FLAG_BOTH,
-  //        (uint64_t)p->trapframe->epc);
 
   if (p->is_kernel) {
     PS_set_trap_vector((uint64_t)trap_vector);
@@ -191,17 +161,10 @@ void user_trap_ret(void) {
   uint64_t trampoline_uservec = TRAMPOLINE + (uservec - trampoline);
   PS_set_trap_vector(trampoline_uservec);
 
-  // printf("user_trap_ret: trampoline_uservec = %{type: hex}\n",
-  // PRINT_FLAG_BOTH,
-  //        trampoline_uservec);
-
   p->trapframe->kernel_satp = PS_get_atp();
   p->trapframe->kernel_sp = p->kstack + KSTACK_PAGES * PAGE_SIZE;
   p->trapframe->kernel_trap = (uint64_t)usertrap;
   p->trapframe->kernel_hartid = P_get_thread_ptr();
-
-  // printf("kernel_trap = %{type: hex}\n", PRINT_FLAG_BOTH,
-  //        p->trapframe->kernel_trap);
 
   uint64_t x = PS_get_status();
   x &= ~SSTATUS_SPP;
@@ -217,14 +180,6 @@ void user_trap_ret(void) {
 
   uint64_t trampoline_userret = TRAMPOLINE + (userret - trampoline);
 
-  // printf("In user_trap_ret: about to call trampoline_userret (at %{type:hex})
-  // "
-  //        "with satp_value = %{type: hex}\n",
-  //        PRINT_FLAG_BOTH, trampoline_userret, satp_value);
-
-  // printf("Is trampoline_userret mapped? %{type: int}\n", PRINT_FLAG_BOTH,
-  //        is_addr_mapped(shared_page_table, trampoline_userret));
-
   ((void (*)(uint64_t))trampoline_userret)(satp_value);
 }
 
@@ -235,23 +190,23 @@ void forkret() {
 
 g_bool initialize_processes() {
   for (uint8_t i = 0; i < NPROC; i++) {
-    proc_t *p = &proc[i];
+    proc_t *p = &processes[i];
     initlock(&p->lock, "proc");
     p->state = UNUSED;
     setup_process_kernel_stack(p, i);
   }
 
   // lock init
-  initlock(&pid_lock, "pid_lock");
+  initlock(&current_pid_lock, "pid_lock");
 }
 
 uint64_t allocate_pid() {
   uint64_t new_pid = 0;
 
-  acquire(&pid_lock);
-  new_pid = pid;
-  pid++;
-  release(&pid_lock);
+  acquire(&current_pid_lock);
+  new_pid = current_pid;
+  current_pid++;
+  release(&current_pid_lock);
 
   return new_pid;
 }
@@ -284,7 +239,7 @@ RESULT_TYPE(proc_t *) make_proc() {
   proc_t *p = NULL;
 
   for (uint8_t i = 0; i < NPROC; i++) {
-    p = &proc[i];
+    p = &processes[i];
     acquire(&p->lock);
     if (p->state == UNUSED) {
       goto found;
@@ -388,7 +343,7 @@ void scheduler() {
 
     for (uint8_t offset = 0; offset < NPROC; offset++) {
       uint8_t i = (rr_index + offset) % NPROC;
-      p = &proc[i];
+      p = &processes[i];
       acquire(&p->lock);
       if (p->state == RUNNABLE) {
         runnable_count++;
@@ -402,7 +357,7 @@ void scheduler() {
     if (runnable_count > 0) {
       for (uint8_t offset = 0; offset < NPROC; offset++) {
         uint8_t i = (rr_index + offset) % NPROC;
-        p = &proc[i];
+        p = &processes[i];
         acquire(&p->lock);
         if (p->state == RUNNABLE && p->priority == min_priority) {
           selected_proc = p;
@@ -580,7 +535,7 @@ proc_from_code(uint8_t code[], uint64_t size, const char *name) {
 
 void wakeup(void *chan) {
   for (uint8_t i = 0; i < NPROC; i++) {
-    proc_t *p = &proc[i];
+    proc_t *p = &processes[i];
     acquire(&p->lock);
     if (p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
@@ -593,7 +548,7 @@ void reparent(proc_t *p) {
   proc_t *pp = current_proc();
 
   for (uint8_t i = 0; i < NPROC; i++) {
-    proc_t *child = &proc[i];
+    proc_t *child = &processes[i];
     if (child->parent == p) {
       child->parent = init_proc;
       wakeup(init_proc);
@@ -772,7 +727,7 @@ uint64_t wait(uint64_t address) {
     has_children = 0;
 
     for (uint8_t i = 0; i < NPROC; i++) {
-      pp = &proc[i];
+      pp = &processes[i];
       if (pp->parent == p) {
 
         acquire(&pp->lock);
@@ -811,7 +766,7 @@ RESULT_TYPE(void) kill(uint64_t pid) {
   proc_t *p;
 
   for (uint8_t i = 0; i < NPROC; i++) {
-    p = &proc[i];
+    p = &processes[i];
     acquire(&p->lock);
     if (p->pid == pid) {
       p->killed = 1;

@@ -97,7 +97,7 @@ void exception_handler(uint64_t scause, uint64_t sepc, uint64_t stval,
         const char *acc = (cause_code == 12)   ? "execute"
                           : (cause_code == 13) ? "read"
                                                : "write";
-        proc_t *gproc = &proc[i];
+        proc_t *gproc = &processes[i];
         printf(ANSI_APPLY(
                    ANSI_COLOR_RED,
                    "Kernel stack guard page accessed by process pid=%{type: "

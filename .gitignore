@@ -61,3 +61,8 @@ Thumbs.db
 
 # Other
 tags
+
+limine
+.cache
+*.d
+compile_commands.json

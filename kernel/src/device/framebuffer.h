@@ -1,8 +1,8 @@
 #pragma once
 
-#include <lib/result.h>
-#include <lib/types.h>
-#include <limine.h>
+#include "lib/result.h"
+#include "lib/types.h"
+#include "limine.h"
 #include <stdint.h>
 
 typedef struct {

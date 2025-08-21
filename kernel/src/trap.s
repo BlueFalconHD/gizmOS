@@ -97,10 +97,7 @@ trap_vector:
     .cfi_def_cfa sp, 256
     .cfi_offset ra, -256
     .cfi_offset s0, -224
-    csrr a0, scause
-    csrr a1, sepc
-    csrr a2, stval
-    csrr a3, sstatus
+    mv a0, sp
     call kernel_trap_handler
     restore_regs
     .cfi_def_cfa sp, 0

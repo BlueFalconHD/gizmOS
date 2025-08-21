@@ -1,8 +1,10 @@
 #pragma once
 
-#include <device/framebuffer.h>
+#include "device/framebuffer.h"
 #include <lib/types.h>
 #include <stdint.h>
+
+struct PCSurface;
 
 #define GIZM_FONT_WIDTH 5
 #define GIZM_FONT_HEIGHT 6
@@ -158,3 +160,31 @@ void gizm_font_draw_text(uint32_t x, uint32_t y, const char *str,
  */
 void gizm_font_draw_text_scaled(uint32_t x, uint32_t y, const char *str,
                                 gizm_color_t color, uint32_t scale);
+
+/**
+ * Draw text on a PixelCore PCSurface at the specified position. This function
+ * writes 0xAARRGGBB pixels into the surface (alpha 0xFF) and marks a dirty
+ * rectangle covering the rendered text.
+ * @param surface Target PixelCore surface
+ * @param x X coordinate within the surface
+ * @param y Y coordinate within the surface
+ * @param str Null-terminated UTF-8 (ASCII subset) string to draw
+ * @param color Text color (RGB)
+ */
+void gizm_font_draw_text_surface(struct PCSurface *surface, uint32_t x,
+                                 uint32_t y, const char *str,
+                                 gizm_color_t color);
+
+/**
+ * Draw scaled text on a PixelCore PCSurface. This also marks the appropriate
+ * dirty rectangle on the surface that bounds the rendered glyphs.
+ * @param surface Target PixelCore surface
+ * @param x X coordinate within the surface
+ * @param y Y coordinate within the surface
+ * @param str Null-terminated UTF-8 (ASCII subset) string to draw
+ * @param color Text color (RGB)
+ * @param scale Text scale (1 = normal size, 2 = double size, etc.)
+ */
+void gizm_font_draw_text_scaled_surface(struct PCSurface *surface, uint32_t x,
+                                        uint32_t y, const char *str,
+                                        gizm_color_t color, uint32_t scale);

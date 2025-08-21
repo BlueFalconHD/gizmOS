@@ -1,5 +1,6 @@
 #include "gizm_font.h"
 #include <device/shared.h>
+#include <lib/PixelCore/surface.h>
 #include <lib/memory.h>
 #include <lib/str.h>
 
@@ -284,4 +285,131 @@ void gizm_font_draw_text_scaled(uint32_t x, uint32_t y, const char *str,
   gizm_font_init_context(&ctx, shared_framebuffer, color, scale,
                          GIZM_FONT_WRAP_CLIP);
   gizm_font_draw_string(&ctx, x, y, str);
+}
+
+static inline void pc_surface_put_pixel(PCSurface *surface, uint32_t x,
+                                        uint32_t y, uint32_t argb) {
+  if (!surface)
+    return;
+  if (x >= surface->rect.width || y >= surface->rect.height)
+    return;
+  surface->pixels[(size_t)y * (size_t)surface->stride + (size_t)x] = argb;
+}
+
+static uint32_t gizm_font_draw_char_surface(PCSurface *surface, uint32_t x,
+                                            uint32_t y, char c,
+                                            gizm_color_t color,
+                                            uint32_t scale) {
+  if (!surface)
+    return 0;
+
+  switch (c) {
+  case ' ':
+    return scale * GIZM_FONT_ADVANCE;
+  case '\t':
+    return scale * GIZM_FONT_ADVANCE * 4;
+  case '\n':
+  case '\r':
+    return 0;
+  default:
+    break;
+  }
+
+  if (!is_printable_char(c))
+    return scale * GIZM_FONT_ADVANCE;
+
+  uint32_t glyph_index = GIZM_FONT_ASCII_TO_INDEX(c);
+  if (glyph_index >= GIZM_FONT_NUM_GLYPHS)
+    return scale * GIZM_FONT_ADVANCE;
+
+  gizm_glyph_t glyph = gizm_font_glyphs[glyph_index];
+  uint32_t offset_y = y + GIZM_FONT_EXTRA_BITS(glyph) * scale;
+
+  uint32_t argb = 0xFF000000u | ((uint32_t)color.r << 16) |
+                  ((uint32_t)color.g << 8) | (uint32_t)color.b;
+
+  for (uint32_t gy = 0; gy < GIZM_FONT_HEIGHT; ++gy) {
+    for (uint32_t py = 0; py < scale; ++py) {
+      uint32_t draw_y = offset_y + gy * scale + py;
+      if (draw_y >= surface->rect.height)
+        continue;
+
+      for (uint32_t gx = 0; gx < GIZM_FONT_WIDTH; ++gx) {
+        uint32_t bit_index = gy * GIZM_FONT_WIDTH + gx;
+        uint32_t pixel_set = (glyph >> bit_index) & 1u;
+
+        if (pixel_set) {
+          for (uint32_t px = 0; px < scale; ++px) {
+            uint32_t draw_x = x + gx * scale + px;
+            if (draw_x >= surface->rect.width)
+              continue;
+            pc_surface_put_pixel(surface, draw_x, draw_y, argb);
+          }
+        }
+      }
+    }
+  }
+
+  return scale * GIZM_FONT_ADVANCE;
+}
+
+void gizm_font_draw_text_surface(PCSurface *surface, uint32_t x, uint32_t y,
+                                 const char *str, gizm_color_t color) {
+  gizm_font_draw_text_scaled_surface(surface, x, y, str, color, 1);
+}
+
+void gizm_font_draw_text_scaled_surface(PCSurface *surface, uint32_t x,
+                                        uint32_t y, const char *str,
+                                        gizm_color_t color, uint32_t scale) {
+  if (!surface || !str || scale == 0)
+    return;
+
+  uint32_t start_x = x;
+  uint32_t cur_x = x;
+  uint32_t cur_y = y;
+
+  uint32_t char_height = scale * (GIZM_FONT_HEIGHT + GIZM_FONT_DESCENDER);
+  uint32_t row_advance = gizm_font_get_row_advance(scale);
+
+  uint32_t max_right = cur_x;
+  uint32_t bottom = cur_y + char_height;
+
+  for (uint32_t i = 0; str[i]; ++i) {
+    char c = str[i];
+
+    if (c == '\n') {
+      cur_y += row_advance;
+      cur_x = start_x;
+      if (cur_y + char_height > bottom)
+        bottom = cur_y + char_height;
+      continue;
+    } else if (c == '\r') {
+      cur_x = start_x;
+      continue;
+    } else if (c == '\b') {
+      uint32_t adv = scale * GIZM_FONT_ADVANCE;
+      if (cur_x >= adv)
+        cur_x -= adv;
+      continue;
+    } else if (c == '\t') {
+      cur_x += scale * GIZM_FONT_ADVANCE * 4;
+    } else if (c == ' ') {
+      cur_x += scale * GIZM_FONT_ADVANCE;
+    } else {
+      uint32_t adv =
+          gizm_font_draw_char_surface(surface, cur_x, cur_y, c, color, scale);
+      cur_x += adv;
+    }
+
+    if (cur_x > max_right)
+      max_right = cur_x;
+  }
+
+  uint32_t width = (max_right > start_x) ? (max_right - start_x) : 0;
+  uint32_t height = (bottom > y) ? (bottom - y) : 0;
+
+  if (width > 0 && height > 0) {
+    PCRect dirty = {(int32_t)x, (int32_t)y, width, height};
+    PCSurface_mark_dirty(surface, dirty);
+  }
 }

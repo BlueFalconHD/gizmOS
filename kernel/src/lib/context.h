@@ -2,7 +2,10 @@
 
 #include <stdint.h>
 
-typedef struct {
+/**
+ * Saved CPU context for context switching.
+ */
+typedef struct context {
   uint64_t ra;
   uint64_t sp;
 

@@ -1,10 +1,11 @@
 #include <lib/macros.h>
 
+/*
+ * Forces an exception by accessing 0x0. Assumes this is unmapped (which is
+ * standard behaviour currently).
+ */
 G_INLINE void force_exception() {
-  // read from null pointer to trigger exception
   volatile int *ptr = (int *)0x0;
-
-  // Dereference the null pointer to cause a fault
   volatile int value = *ptr;
-  (void)value; // Prevent unused variable warning
+  (void)value;
 }

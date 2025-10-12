@@ -2,10 +2,6 @@
 #include "earlyinit.h"
 #include <stdint.h>
 
-/****************************************
-Comparison, Copying, and Concatenation
-****************************************/
-
 EARLY_TEXT uint64_t strlen(const char *str) {
   unsigned int len = 0;
   while (*str++) {
@@ -68,10 +64,6 @@ void strncat(char *dest, const char *src, size_t n) {
   }
   *dest = '\0';
 }
-
-/*********************************
-Integer Conversion
-*********************************/
 
 EARLY_TEXT void hexstrfuint(uint64_t value, char *buffer) {
   char temp[20];

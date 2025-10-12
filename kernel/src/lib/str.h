@@ -4,10 +4,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/****************************************
-Comparison, Copying, and Concatenation
-****************************************/
-
 /**
  * Returns the length of a string.
  *
@@ -57,10 +53,6 @@ void strcat(char *dest, const char *src);
  * @param n The number of characters to concatenate.
  */
 void strncat(char *dest, const char *src, size_t n);
-
-/*********************************
-Integer Conversion
-*********************************/
 
 /**
  * Converts an unsigned integer to a string in hexadecimal format.

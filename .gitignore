@@ -66,3 +66,5 @@ limine
 .cache
 *.d
 compile_commands.json
+
+data.img

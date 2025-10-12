@@ -34,6 +34,15 @@
 #define VIRTIO_MMIO_DEVICE_DESC_LOW  0x0a0
 #define VIRTIO_MMIO_DEVICE_DESC_HIGH 0x0a4
 
+/* Device IDs of interest (virtio spec §5) */
+#define VIRTIO_DEV_NET    1
+#define VIRTIO_DEV_BLOCK  2
+#define VIRTIO_DEV_CONSOLE 3
+#define VIRTIO_DEV_INPUT  18
+
+/* Device-specific configuration space base (virtio-mmio) */
+#define VIRTIO_MMIO_CONFIG           0x100
+
 /* --------------------------------------------------------------------------
  *  Status‑register bits (virtio_config.h)
  * -------------------------------------------------------------------------- */

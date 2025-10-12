@@ -2,12 +2,15 @@
 #include "device/plic.h"
 #include "device/shared.h"
 #include "device/virtio/virtio_mouse.h"
+#include "device/virtio/virtio_bus.h"
 #include "lib/sbi.h"
 #include "lib/time.h"
 #include "lib/timer.h"
 #include "mem_layout.h"
 #include "physical_alloc.h"
-#include "proc.h"
+#include <proc/process.h>
+#include <proc/process_table.h>
+#include <proc/scheduler.h>
 #include <device/virtio/virtio_keyboard.h>
 #include <lib/ansi.h>
 #include <lib/cpu.h>
@@ -16,10 +19,6 @@
 #include <platform/interrupts.h>
 #include <platform/registers.h>
 #include <stdint.h>
-
-// #define TICK_INTERVAL_CYCLES 1000000
-// #define TICK_INTERVAL_CYCLES 100000
-#define TICK_INTERVAL_CYCLES 1000000
 
 static uint64_t next_deadline = 0;
 
@@ -206,6 +205,7 @@ void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
       (sstatus_on_entry >> 5) & 1; // Supervisor Previous Interrupt Enable
   uint64_t spp =
       (sstatus_on_entry >> 8) & 1; // Supervisor Previous Privilege (0=U, 1=S)
+  (void)spp;
 
   if (!spie) {
     printf(ANSI_APPLY(ANSI_COLOR_YELLOW,
@@ -220,9 +220,11 @@ void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
     break;
   case 5: // Supervisor timer interrupt
           // print("Supervisor timer interrupt\n", PRINT_FLAG_BOTH);
-    // print("Kenrnel encountered a timer interrupt\n", PRINT_FLAG_BOTH);
-    print("tick\n", PRINT_FLAG_UART);
-    sbi_set_timer(get_csrr_time() + TICK_INTERVAL_CYCLES);
+    // Arm next deadline using accumulated schedule to avoid drift
+    if (next_deadline == 0)
+      next_deadline = get_csrr_time();
+    next_deadline += TICK_INTERVAL_CYCLES;
+    sbi_set_timer(next_deadline);
     break;
   case 9: // Supervisor external interrupt
     handle_external_interrupt();
@@ -258,19 +260,22 @@ void handle_external_interrupt() {
         if (!(u[5] & 0x01)) // LSR bit0: Data‑Ready?
           break;
         char c = u[0];
-        char s[2] = {c, '\0'};
+        (void)c;
       }
       plic_enable_interrupt(shared_plic, 0, PLIC_CONTEXT_SUPERVISOR, 10);
     }
     break;
-  case 1:
-    virtio_keyboard_handle_irq(shared_virtio_keyboard);
-    break;
-  case 2:
-    virtio_mouse_handle_irq(shared_virtio_mouse);
+  case 1: // virtio‑mmio[0]
+  case 2: // virtio‑mmio[1]
+    virtio_bus_handle_irq(irq);
     break;
   default:
-    printf("Unknown external interrupt: %{type: int}\n", PRINT_FLAG_BOTH, irq);
+    // Default dispatch for virtio‑mmio range (1..8 on QEMU virt)
+    if (irq >= 1 && irq <= 8) {
+      virtio_bus_handle_irq(irq);
+    } else {
+      printf("Unknown external interrupt: %{type: int}\n", PRINT_FLAG_BOTH, irq);
+    }
     break;
   }
 

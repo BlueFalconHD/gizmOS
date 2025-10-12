@@ -1,3 +1,5 @@
+#pragma once
+
 #include <lib/context.h>
 #include <lib/mailbox.h>
 #include <lib/notification.h>

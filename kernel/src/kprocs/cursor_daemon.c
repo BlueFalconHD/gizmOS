@@ -1,7 +1,7 @@
 #include "cursor_daemon.h"
 #include <device/shared.h>
 #include <lib/time.h>
-#include <proc.h>
+#include <proc/scheduler.h>
 
 void cursor_daemon(void *arg) {
   (void)arg;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "proc.h"
+#include <proc/process.h>
 #include <lib/context.h>
 #include <lib/macros.h>
 #include <lib/types.h>

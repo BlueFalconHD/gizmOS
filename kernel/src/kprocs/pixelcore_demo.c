@@ -12,7 +12,7 @@
 #include <lib/PixelCore/region.h>
 #include <lib/PixelCore/surface.h>
 #include <lib/time.h>
-#include <proc.h>
+#include <proc/scheduler.h>
 
 #define BOXES 120
 

@@ -14,6 +14,9 @@ make_virtio_device(uint64_t base, uint32_t irq) {
   dev->base = base;
   dev->irq = irq;
   dev->is_initialized = false;
+  dev->driver_data = 0;
+  dev->isr = 0;
+  dev->device_id = 0;
   return RESULT_SUCCESS(dev);
 }
 
@@ -39,6 +42,7 @@ g_bool virtio_device_init(virtio_device_t *dev, uint32_t wanted_features) {
   }
 
   reset_device(dev);
+  dev->device_id = virtio_mmio_read(dev, VIRTIO_MMIO_DEVICE_ID);
   set_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE | VIRTIO_CONFIG_S_DRIVER);
 
   virtio_mmio_write(dev, VIRTIO_MMIO_DRIVER_FEATURES, wanted_features);
@@ -104,6 +108,45 @@ g_bool virtio_queue_setup(virtio_device_t *dev, virtio_queue_t *q,
 
   virtio_mmio_write(dev, VIRTIO_MMIO_QUEUE_READY, 1);
   virtio_mmio_write(dev, VIRTIO_MMIO_QUEUE_NOTIFY, qsel);
+
+  q->last_used_idx = 0;
+  return true;
+}
+
+g_bool virtio_queue_setup_empty(virtio_device_t *dev, virtio_queue_t *q,
+                                uint16_t qsel, uint16_t size) {
+  if (!dev || !dev->is_initialized || !q)
+    return false;
+
+  q->size = size;
+  q->desc = alloc_page();
+  q->avail = alloc_page();
+  q->used = alloc_page();
+  q->free_map = alloc_page();
+
+  if (!q->desc || !q->avail || !q->used || !q->free_map)
+    return false;
+
+  memset(q->desc, 0, PAGE_SIZE);
+  memset(q->avail, 0, PAGE_SIZE);
+  memset(q->used, 0, PAGE_SIZE);
+  memset(q->free_map, 0, PAGE_SIZE);
+
+  virtio_mmio_write(dev, VIRTIO_MMIO_QUEUE_SEL, qsel);
+  virtio_mmio_write(dev, VIRTIO_MMIO_QUEUE_NUM, size);
+
+  uint64_t p_desc = V2P((uint64_t)q->desc);
+  uint64_t p_avail = V2P((uint64_t)q->avail);
+  uint64_t p_used = V2P((uint64_t)q->used);
+
+  virtio_mmio_write(dev, VIRTIO_MMIO_QUEUE_DESC_LOW, p_desc);
+  virtio_mmio_write(dev, VIRTIO_MMIO_QUEUE_DESC_HIGH, p_desc >> 32);
+  virtio_mmio_write(dev, VIRTIO_MMIO_DRIVER_DESC_LOW, p_avail);
+  virtio_mmio_write(dev, VIRTIO_MMIO_DRIVER_DESC_HIGH, p_avail >> 32);
+  virtio_mmio_write(dev, VIRTIO_MMIO_DEVICE_DESC_LOW, p_used);
+  virtio_mmio_write(dev, VIRTIO_MMIO_DEVICE_DESC_HIGH, p_used >> 32);
+
+  virtio_mmio_write(dev, VIRTIO_MMIO_QUEUE_READY, 1);
 
   q->last_used_idx = 0;
   return true;

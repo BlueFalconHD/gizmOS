@@ -1,4 +1,5 @@
 #include "virtio_mouse.h"
+#include "virtio_bus.h"
 #include "device/shared.h"
 #include <lib/memory.h>
 #include <lib/panic.h>
@@ -13,6 +14,8 @@ make_virtio_mouse(uint64_t base, uint32_t irq) {
   m->vdev.base = base;
   m->vdev.irq = irq;
   m->vdev.is_initialized = false;
+  m->vdev.driver_data = m;
+  m->vdev.isr = (void (*)(void *))virtio_mouse_handle_irq;
 
   m->status_pkts[0] = (struct virtio_mouse_status_pkt){
       .select = 1, .reserved = 0, .size = 1, .data = 1};
@@ -28,6 +31,9 @@ g_bool virtio_mouse_init(virtio_mouse_t *m) {
 
   if (!virtio_device_init(&m->vdev, 0))
     return false;
+
+  /* register with virtio bus */
+  virtio_bus_register(&m->vdev);
 
   /* queue 0 – event ring */
   if (!virtio_queue_setup(&m->vdev, &m->q_events, /*qsel*/ 0,
@@ -46,12 +52,10 @@ g_bool virtio_mouse_init(virtio_mouse_t *m) {
   m->q_ctl.avail->ring[0] = 0;
   m->q_ctl.avail->idx = 1;
   __sync_synchronize();
-  virtio_mmio_write(&m->vdev, VIRTIO_MMIO_QUEUE_NOTIFY, 1);
+  virtio_queue_notify(&m->vdev, 1);
 
   /* finally → DRIVER_OK */
-  virtio_mmio_write(&m->vdev, VIRTIO_MMIO_STATUS,
-                    virtio_mmio_read(&m->vdev, VIRTIO_MMIO_STATUS) |
-                        VIRTIO_CONFIG_S_DRIVER_OK);
+  virtio_set_driver_ok(&m->vdev);
   return true;
 }
 

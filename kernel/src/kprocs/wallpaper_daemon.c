@@ -2,7 +2,7 @@
 #include "lib/gfx.h"
 #include <device/shared.h>
 #include <lib/time.h>
-#include <proc.h>
+#include <proc/scheduler.h>
 
 void wallpaper_daemon(void *arg) {
   (void)arg;

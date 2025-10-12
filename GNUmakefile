@@ -7,7 +7,7 @@ ARCH := riscv64
 
 # Uncomment following line to enable debugging.
 # NOTE TO SELF: IF I NEED TO DEBUG STRUCT VALUES, SET OPTIMIZE TO -O0
-# DEBUG := 1
+DEBUG := 1
 # MONITOR := 1
 # SHOW_INTERRUPT := 1
 
@@ -36,6 +36,12 @@ endif
 
 override IMAGE_NAME := template-$(ARCH)
 
+# Source directory to auto-populate the data disk image
+DISK_DIR ?= disk
+DISK_SIZE_MB ?= 64
+# List of files in DISK_DIR drives rebuilds of data.img when contents change
+DISK_SRCS := $(shell [ -d $(DISK_DIR) ] && find $(DISK_DIR) -type f -print)
+
 # Toolchain for building the 'limine' executable for the host.
 HOST_CC := cc
 HOST_CFLAGS := -g -O2 -pipe
@@ -51,6 +57,29 @@ all-hdd: $(IMAGE_NAME).hdd
 
 .PHONY: run
 run: run-$(ARCH)
+
+.PHONY: data.img
+data.img: $(DISK_SRCS)
+	rm -f data.img
+	dd if=/dev/zero bs=1M count=0 seek=$(DISK_SIZE_MB) of=data.img
+	@if command -v mformat >/dev/null 2>&1; then \
+	  echo "[mformat] creating FAT filesystem in data.img"; \
+	  mformat -i data.img@@0 ; \
+	  if [ -d "$(DISK_DIR)" ] && ls "$(DISK_DIR)"/* >/dev/null 2>&1; then \
+	    echo "[mcopy] copying $(DISK_DIR)/* -> ::/"; \
+	    mcopy -s -i data.img@@0 "$(DISK_DIR)"/* ::/ ; \
+	  fi; \
+	else \
+	  echo "Note: mtools not found; created raw data.img without filesystem"; \
+	fi
+
+.PHONY: disk-add
+# Usage: make disk-add SRC=path/in/host DEST=path/in/disk (e.g., DEST=/hello)
+disk-add: data.img
+	$(if $(SRC),,$(error SRC not set))
+	$(if $(DEST),,$(error DEST not set))
+	$(if $(shell command -v mcopy 2>/dev/null),mcopy -i data.img@@0 $(SRC) ::$(DEST),
+		@echo "mcopy not found; cannot add files. Install mtools.")
 
 .PHONY: run-hdd
 run-hdd: run-hdd-$(ARCH)
@@ -100,7 +129,7 @@ run-hdd-aarch64: ovmf/ovmf-code-$(ARCH).fd $(IMAGE_NAME).hdd
 		$(QEMUFLAGS)
 
 .PHONY: run-riscv64
-run-riscv64: ovmf/ovmf-code-$(ARCH).fd $(IMAGE_NAME).iso
+run-riscv64: ovmf/ovmf-code-$(ARCH).fd $(IMAGE_NAME).iso data.img
 	qemu-system-$(ARCH) \
 		-M virt \
 		-cpu rv64 \
@@ -109,6 +138,8 @@ run-riscv64: ovmf/ovmf-code-$(ARCH).fd $(IMAGE_NAME).iso
 		-device virtio-keyboard-device,bus=virtio-mmio-bus.0 \
 		-device virtio-mouse-device,bus=virtio-mmio-bus.1 \
 		-device virtio-gpu-device,bus=virtio-mmio-bus.2 \
+		-drive if=none,file=data.img,format=raw,id=vdisk0 \
+		-device virtio-blk-device,drive=vdisk0,bus=virtio-mmio-bus.3 \
 		-drive if=pflash,unit=0,format=raw,file=ovmf/ovmf-code-$(ARCH).fd,readonly=on \
 		-cdrom $(IMAGE_NAME).iso \
 		$(QEMUFLAGS)
@@ -272,7 +303,7 @@ endif
 .PHONY: clean
 clean:
 	$(MAKE) -C kernel clean
-	rm -rf iso_root $(IMAGE_NAME).iso $(IMAGE_NAME).hdd
+	rm -rf iso_root $(IMAGE_NAME).iso $(IMAGE_NAME).hdd data.img
 
 .PHONY: distclean
 distclean:

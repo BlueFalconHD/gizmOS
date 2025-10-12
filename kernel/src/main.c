@@ -11,7 +11,10 @@
 #include "lib/timer.h"
 #include "mem_layout.h"
 #include "platform/interrupts.h"
-#include "proc.h"
+#include <proc/process.h>
+#include <proc/process_table.h>
+#include <proc/scheduler.h>
+#include <proc/kernel_task.h>
 #include <device/console.h>
 #include <device/framebuffer.h>
 #include <device/plic.h>
@@ -19,6 +22,9 @@
 #include <device/shared.h>
 #include <device/uart.h>
 #include <device/virtio/virtio_keyboard.h>
+#include <device/virtio/virtio_block.h>
+#include <device/disk.h>
+#include <device/virtio/virtio_bus.h>
 #include <dtb/dtb.h>
 #include <kprocs/pixelcore_demo.h>
 #include <lib/PixelCore/backbuffer.h>
@@ -31,6 +37,7 @@
 #include <lib/result.h>
 #include <lib/str.h>
 #include <lib/time.h>
+#include <fs/fat.h>
 #include <limine.h>
 #include <limine_requests.h>
 #include <memory_map.h>
@@ -118,6 +125,8 @@ EARLY_TEXT void main() {
                1); // Virtio mouse
   mmio_map_add(mmap, 0x10003000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // Virtio gpu
+  mmio_map_add(mmap, 0x10004000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
+               1); // Virtio block
 
   mmio_map_pages(mmap, shared_page_table);
   activate_page_table(shared_page_table);
@@ -152,6 +161,9 @@ EARLY_TEXT void main() {
     panic("Failed to initialize PLIC");
   set_shared_plic(plic);
 
+  // init virtio bus registry
+  virtio_bus_init();
+
   result_t rcursor = make_cursor(fb);
   if (!result_is_ok(rcursor))
     panic("Failed to create cursor");
@@ -180,6 +192,10 @@ EARLY_TEXT void main() {
 
   plic_set_priority(plic, 2, 1);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 2);
+
+  // enable virtio block interrupt (mmio bus.3 → IRQ 3)
+  plic_set_priority(plic, 3, 1);
+  plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 3);
 
   result_t rmouse = make_virtio_mouse(0x10002000, 2);
   if (!result_is_ok(rmouse)) {
@@ -236,7 +252,7 @@ EARLY_TEXT void main() {
   //   printf("Failed to create wallpaperd task\n", PRINT_FLAG_BOTH);
   // }
 
-  force_exception();
+  // force_exception();
 
   result_t rwm = make_kernel_task(pixelcore_demo, fb, "pixelcore_demo");
   if (result_is_ok(rwm)) {
@@ -248,7 +264,30 @@ EARLY_TEXT void main() {
   // printf("Started kernel daemons with priority scheduling\n",
   // PRINT_FLAG_BOTH);
 
-  sbi_set_timer(get_csrr_time() + 1000000);
+  // Bring up VirtIO block -> disk wrapper
+  result_t rblk = make_virtio_block(0x10004000, 3);
+  if (!result_is_ok(rblk)) {
+    panic("Failed to create virtio block");
+  }
+  virtio_block_t *blk = (virtio_block_t *)result_unwrap(rblk);
+  if (!virtio_block_init(blk)) {
+    panic("Failed to initialize virtio block");
+  }
+
+  result_t rdisk = make_disk(blk);
+  if (!result_is_ok(rdisk)) {
+    panic("Failed to create disk device");
+  }
+  disk_t *disk = (disk_t *)result_unwrap(rdisk);
+  if (!disk_init(disk)) {
+    panic("Failed to initialize disk device");
+  }
+  set_shared_disk(disk);
+
+  // List FAT root directory (if FAT formatted)
+  fat_list_root(disk);
+
+  sbi_set_timer(get_csrr_time() + TICK_INTERVAL_CYCLES);
 
   scheduler();
 

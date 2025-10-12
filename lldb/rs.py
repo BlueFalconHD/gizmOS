@@ -21,7 +21,7 @@ def rs(debugger, command, exe_ctx, result, internal_dict):
     # Using the command interpreter lets us surface any error or textual output
     # through the provided `result` object.
     ci  = debugger.GetCommandInterpreter()
-    cro = lldb.SBCommandReturnObject()
+    cro = lldb.SBCommandReturnObject() # pyright: ignore
     ci.HandleCommand("thread step-inst --count 1 --step-over 1", cro)
 
     if not cro.Succeeded():

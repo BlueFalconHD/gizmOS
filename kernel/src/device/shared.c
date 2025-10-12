@@ -6,6 +6,7 @@
 #include <device/framebuffer.h>
 #include <device/rtc.h>
 #include <device/uart.h>
+#include <device/disk.h>
 
 #include <device/cursor.h>
 #include <lib/macros.h>
@@ -27,6 +28,8 @@ virtio_mouse_t *shared_virtio_mouse = NULL;
 g_bool shared_virtio_mouse_initialized = false;
 cursor_t *shared_cursor = NULL;
 g_bool shared_cursor_initialized = false;
+disk_t *shared_disk = NULL;
+g_bool shared_disk_initialized = false;
 
 void set_shared_uart(uart_t *uart) {
   shared_uart = uart;
@@ -66,4 +69,9 @@ void set_shared_virtio_mouse(virtio_mouse_t *mouse) {
 void set_shared_cursor(cursor_t *cursor) {
   shared_cursor = cursor;
   shared_cursor_initialized = true;
+};
+
+void set_shared_disk(disk_t *disk) {
+  shared_disk = disk;
+  shared_disk_initialized = true;
 };

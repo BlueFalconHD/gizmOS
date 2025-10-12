@@ -1,24 +1,20 @@
 #include "dyn_array.h"
 #include "lib/print.h"
+#include <lib/kalloc.h>
 #include <lib/memory.h>
 #include <lib/panic.h>
 #include <physical_alloc.h>
 
-/* internal helper – returns number of elements that fit into one page      */
-static inline g_usize max_elems_in_page(g_usize elem_sz) {
-  return (PAGE_SIZE / elem_sz);
-}
+#define KB 1024
+#define MB (1024 * KB)
 
-/* allocate backing storage fitting at least `cap` elements (one page max)  */
 static void *alloc_block(g_usize elem_sz, g_usize cap) {
-  if (cap == 0 || cap > max_elems_in_page(elem_sz))
-    return NULL;
-  return alloc_page();
+  return kalloc(elem_sz * cap);
 }
 
 RESULT_TYPE(dyn_array_t *)
 make_dyn_array(g_usize elem_size, g_usize initial_capacity) {
-  dyn_array_t *a = (dyn_array_t *)alloc_page();
+  dyn_array_t *a = (dyn_array_t *)kalloc(sizeof(dyn_array_t));
   if (!a)
     return RESULT_FAILURE(RESULT_NOMEM);
 
@@ -49,11 +45,10 @@ void dyn_array_free(dyn_array_t *a) {
   if (!a || !a->is_initialized)
     return;
 
-  free_page(a->data);
+  kfree(a->data);
   a->data = NULL;
   a->cap = a->len = 0;
   a->is_initialized = false;
-  /* caller may free `a` itself if it was heap‑allocated */
 }
 
 static g_bool grow(dyn_array_t *a) {
@@ -61,11 +56,11 @@ static g_bool grow(dyn_array_t *a) {
          a->len, a->cap);
 
   g_usize new_cap = a->cap * 2;
-  if (new_cap == 0) /* was empty → minimum 1                   */
+  if (new_cap == 0)
     new_cap = 1;
 
-  if (new_cap > max_elems_in_page(a->elem_size)) {
-    return false; /* cannot exceed one 4‑KiB page            */
+  if (new_cap > KB / a->elem_size) {
+    return false;
   }
 
   void *new_block = alloc_block(a->elem_size, new_cap);
@@ -73,7 +68,7 @@ static g_bool grow(dyn_array_t *a) {
     return false;
 
   memcpy(new_block, a->data, a->len * a->elem_size);
-  free_page(a->data);
+  kfree(a->data);
   a->data = new_block;
   a->cap = new_cap;
   return true;

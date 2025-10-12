@@ -9,6 +9,9 @@ typedef struct {
   uint64_t base;          /* MMIO base address */
   uint32_t irq;           /* PLIC IRQ line */
   g_bool   is_initialized;
+  void    *driver_data;   /* opaque pointer owned by specific driver */
+  void   (*isr)(void *);  /* optional device-specific ISR callback */
+  uint32_t device_id;     /* VIRTIO_MMIO_DEVICE_ID */
 } virtio_device_t;
 
 /** A single virtqueue owned by a driver. */
@@ -43,6 +46,10 @@ g_bool virtio_queue_setup(virtio_device_t *dev, virtio_queue_t *q,
                           void       *buffers,
                           uint16_t    elem_size);
 
+/** Allocate queue rings/descriptors without priming any entries. */
+g_bool virtio_queue_setup_empty(virtio_device_t *dev, virtio_queue_t *q,
+                                uint16_t qsel, uint16_t size);
+
 static inline uint32_t virtio_mmio_read(virtio_device_t *dev, uint32_t off)
 {
     return *(volatile uint32_t *)(dev->base + off);
@@ -59,4 +66,15 @@ static inline void virtio_ack_irq(virtio_device_t *dev)
 {
     uint32_t ist = virtio_mmio_read(dev, VIRTIO_MMIO_INTERRUPT_STATUS);
     virtio_mmio_write(dev, VIRTIO_MMIO_INTERRUPT_ACK, ist);
+}
+
+static inline void virtio_queue_notify(virtio_device_t *dev, uint16_t qsel)
+{
+    virtio_mmio_write(dev, VIRTIO_MMIO_QUEUE_NOTIFY, qsel);
+}
+
+static inline void virtio_set_driver_ok(virtio_device_t *dev)
+{
+    uint32_t s = virtio_mmio_read(dev, VIRTIO_MMIO_STATUS);
+    virtio_mmio_write(dev, VIRTIO_MMIO_STATUS, s | VIRTIO_CONFIG_S_DRIVER_OK);
 }

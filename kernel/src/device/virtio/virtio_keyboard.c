@@ -1,4 +1,5 @@
 #include "virtio_keyboard.h"
+#include "virtio_bus.h"
 #include "device/virtio/virtio_keycode.h"
 #include "lib/result.h"
 #include "physical_alloc.h"
@@ -16,6 +17,8 @@ make_virtio_keyboard(uint64_t base, uint32_t irq) {
   kbd->vdev.base = base;
   kbd->vdev.irq = irq;
   kbd->vdev.is_initialized = false;
+  kbd->vdev.driver_data = kbd;
+  kbd->vdev.isr = (void (*)(void *))virtio_keyboard_handle_irq;
 
   /* ➜ NEW: populate static status packet */
   kbd->status_pkt = (struct virtio_keyboard_status_pkt){
@@ -31,6 +34,9 @@ g_bool virtio_keyboard_init(virtio_keyboard_t *kbd) {
 
   if (!virtio_device_init(&kbd->vdev, 0))
     return false;
+
+  /* register with virtio bus */
+  virtio_bus_register(&kbd->vdev);
 
   /* Queue 0 – event stream */
   if (!virtio_queue_setup(&kbd->vdev, &kbd->q_events,
@@ -50,12 +56,10 @@ g_bool virtio_keyboard_init(virtio_keyboard_t *kbd) {
   kbd->q_ctl.avail->ring[0] = 0;
   kbd->q_ctl.avail->idx = 1;
   __sync_synchronize();
-  virtio_mmio_write(&kbd->vdev, VIRTIO_MMIO_QUEUE_NOTIFY, 1);
+  virtio_queue_notify(&kbd->vdev, 1);
 
   /* finally signal DRIVER_OK */
-  virtio_mmio_write(&kbd->vdev, VIRTIO_MMIO_STATUS,
-                    virtio_mmio_read(&kbd->vdev, VIRTIO_MMIO_STATUS) |
-                        VIRTIO_CONFIG_S_DRIVER_OK);
+  virtio_set_driver_ok(&kbd->vdev);
 
   return true;
 }

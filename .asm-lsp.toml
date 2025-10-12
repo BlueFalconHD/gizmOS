@@ -1,0 +1,40 @@
+[default_config]
+assembler = "gas"
+instruction_set = "riscv"
+
+[default_config.opts]
+compiler = "clang"
+
+# clang -target riscv64-unknown-none -g -O0 -pipe -I src -Wall -Wextra -std=gnu11 -nostdinc -ffreestanding -fno-stack-protector -fno-stack-check -fno-PIC -ffunction-sections -fdata-sections -isysroot /dev/null -march=rv64imac -mabi=lp64 -mno-relax -I src -I gen-riscv64 -isystem freestnd-c-hdrs-0bsd -fno-omit-frame-pointer -DLIMINE_API_REVISION=2 -MMD -MP -isysroot /dev/null ...
+compile_flags_txt = [
+    "-target",
+    "riscv64-unknown-none",
+    "-g",
+    "-O0",
+    "-pipe",
+    "-I",
+    "src",
+    "-Wall",
+    "-Wextra",
+    "-std=gnu11",
+    "-nostdinc",
+    "-ffreestanding",
+    "-fno-stack-protector",
+    "-fno-stack-check",
+    "-fno-PIC",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-isysroot",
+    "/dev/null",
+    "-march=rv64imac",
+    "-mabi=lp64",
+    "-mno-relax",
+    "-isystem",
+    "freestnd-c-hdrs-0bsd",
+    "-fno-omit-frame-pointer",
+    "-DLIMINE_API_REVISION=2",
+    "-MMD",
+    "-MP",
+    "-isysroot",
+    "/dev/null",
+]

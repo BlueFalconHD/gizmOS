@@ -110,7 +110,7 @@ def _pte_ppn(pte):
     return (pte >> 10) & ((1 << 44) - 1)
 
 def _read_u64(process, va):
-    err = lldb.SBError()
+    err = lldb.SBError() # pyright: ignore
     val = process.ReadUnsignedFromMemory(va, 8, err)
     if err.Fail():
         raise RuntimeError(err.GetCString() or "memory read failure")
@@ -193,7 +193,7 @@ def _walk_impl(target, process, satp_val, va, hhdm_off, override_sv=None, verbos
 
     return {"ok": False, "reason": "Walk terminated without finding a leaf PTE", "path": path}
 
-def mmu_walk(debugger, command, exe_ctx, result, internal_dict):
+def mmu_walk(debugger, command, exe_ctx, result, internal_dict): # noqa: C901
     """
     mmu-walk <va> [--hhdm <offset>] [--satp <val>] [--sv {39,48,57}] [--verbose]
     Walk the current RISC-V page tables and resolve VA -> PA.
@@ -357,7 +357,7 @@ def mmu_set_hhdm(debugger, command, exe_ctx, result, internal_dict):
     except Exception as e:
         _err(result, f"mmu-set-hhdm failed: {e}")
 
-def mmu_dump(debugger, command, exe_ctx, result, internal_dict):
+def mmu_dump(debugger, command, exe_ctx, result, internal_dict): # noqa: C901
     """
     mmu-dump [--path <i0,i1,...>] [--all] [--satp <val>] [--sv {39,48,57}] [--hhdm <offset>]
     Dump PTEs of a page-table at root or at the table reached by the index path.

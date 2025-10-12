@@ -12,9 +12,9 @@
 #include <lib/PixelCore/region.h>
 #include <lib/PixelCore/surface.h>
 #include <lib/time.h>
-#include <proc.h>
+#include <proc/scheduler.h>
 
-#define BOXES 120
+#define BOXES 5
 
 G_INLINE uint8_t random_byte(void) {
   // Generate a random byte using a simple linear congruential generator
@@ -258,7 +258,7 @@ void pixelcore_demo(void *arg) {
     PCBackBuffer_flush_to_framebuffer(bb, fb);
 
     // ~60 FPS
-    // sleep_us(frame_us);
+    sleep_us(frame_us);
     yield();
   }
 }

@@ -1,7 +1,7 @@
 #include "memory.h"
 #include "process.h"
-#include <lib/memory.h>
 #include <lib/cpu.h>
+#include <lib/memory.h>
 #include <mem_layout.h>
 #include <page_table.h>
 #include <physical_alloc.h>
@@ -12,11 +12,6 @@ extern uint64_t hhdm_offset;
 /* local helpers formerly in proc.c */
 #define PGROUNDUP(sz) (((sz) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
 #define PGROUNDDOWN(sz) ((sz) & ~(PAGE_SIZE - 1))
-
-/*
- * NOTE: The following helpers are kept verbatim from the old monolithic
- * file to preserve behaviour. They operate on per‑process page tables.
- */
 
 g_bool uvmdealloc(proc_t *p, uint64_t oldsz, uint64_t newsz); /* fwd */
 
@@ -137,5 +132,3 @@ RESULT_TYPE(void) proc_resize(int n) {
   p->sz = sz;
   return RESULT_SUCCESS(0);
 }
-
-

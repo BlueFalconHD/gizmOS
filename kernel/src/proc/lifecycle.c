@@ -3,6 +3,7 @@
 #include "process.h"
 #include "process_table.h"
 #include "scheduler.h"
+#include "sleep.h"
 #include <lib/cpu.h>
 #include <lib/memory.h>
 #include <lib/print.h>
@@ -11,7 +12,8 @@
 #include <mem_layout.h>
 #include <page_table.h>
 #include <physical_alloc.h>
-#include "sleep.h"
+
+#define PROC_LIFECYCLE_DEBUG_LEVEL 0
 
 extern void forkret();
 
@@ -68,7 +70,9 @@ found:
   p->context.ra = (uint64_t)forkret;
   p->context.sp = p->kstack + KSTACK_PAGES * PAGE_SIZE;
 
+#if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
   printf("alloc proc kstack = %{type: hex}\n", PRINT_FLAG_BOTH, p->kstack);
+#endif
 
   result_t rmb = make_mailbox();
   if (!result_is_ok(rmb)) {
@@ -146,6 +150,11 @@ uint64_t wait(uint64_t address) {
   uint64_t pid;
   proc_t *p = current_proc();
 
+#if PROC_LIFECYCLE_DEBUG_LEVEL >= 3
+  printf("proc %{type: int} (%s) entering wait\n", PRINT_FLAG_BOTH, p->pid,
+         p->name);
+#endif
+
   acquire(&wait_lock);
 
   for (;;) {
@@ -154,11 +163,22 @@ uint64_t wait(uint64_t address) {
     for (uint8_t i = 0; i < NPROC; i++) {
       pp = &processes[i];
       if (pp->parent == p) {
+#if PROC_LIFECYCLE_DEBUG_LEVEL >= 3
+        printf("proc %{type: int} (%s) found child proc %{type: int} (%s) in "
+               "state %{type: int}\n",
+               PRINT_FLAG_BOTH, p->pid, p->name, pp->pid, pp->name, pp->state);
+#endif
 
         acquire(&pp->lock);
         has_children = 1;
 
         if (pp->state == ZOMBIE) {
+#if PROC_LIFECYCLE_DEBUG_LEVEL >= 2
+          printf(
+              "proc %{type: int} (%s) reaping child proc %{type: int} (%s)\n",
+              PRINT_FLAG_BOTH, p->pid, p->name, pp->pid, pp->name);
+#endif
+
           pid = pp->pid;
           if (address != 0 &&
               !result_is_ok(copyout(p->pagetable, address, (void *)&p->xstate,
@@ -178,6 +198,18 @@ uint64_t wait(uint64_t address) {
       }
 
       if (!has_children || killed(p)) {
+#if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
+        if (!has_children) {
+          printf("proc %{type: int} (%s) has no children\n", PRINT_FLAG _BOTH,
+                 p->pid, p->name);
+        }
+
+        if (killed(p)) {
+          printf("proc %{type: int} (%s) was killed\n", PRINT_FLAG_BOTH, p->pid,
+                 p->name);
+        }
+#endif
+
         release(&wait_lock);
         return -1;
       }
@@ -249,5 +281,3 @@ uint64_t fork(void) {
 
   return pid;
 }
-
-

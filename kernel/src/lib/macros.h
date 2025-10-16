@@ -21,3 +21,19 @@
 #ifndef NULL
 #define NULL ((void *)0)
 #endif
+
+#ifndef ALIGNUP
+#define ALIGNUP(x, a) (((x) + ((a) - 1)) & ~((a) - 1))
+#endif
+
+#ifndef ALIGNDOWN
+#define ALIGNDOWN(x, a) ((x) & ~((a) - 1))
+#endif
+
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
+#ifndef MAX
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif

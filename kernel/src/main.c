@@ -21,10 +21,10 @@
 #include <device/rtc.h>
 #include <device/shared.h>
 #include <device/uart.h>
-#include <device/virtio/virtio_keyboard.h>
-#include <device/virtio/virtio_block.h>
+#include <device/virtio/virtio.h>
+#include <device/virtio/drivers/block.h>
 #include <device/disk.h>
-#include <device/virtio/virtio_bus.h>
+#include <device/virtio/virtio.h>
 #include <dtb/dtb.h>
 #include <kprocs/pixelcore_demo.h>
 #include <lib/PixelCore/backbuffer.h>
@@ -161,8 +161,7 @@ EARLY_TEXT void main() {
     panic("Failed to initialize PLIC");
   set_shared_plic(plic);
 
-  // init virtio bus registry
-  virtio_bus_init();
+  // VirtIO registry will probe devices from DTB later
 
   result_t rcursor = make_cursor(fb);
   if (!result_is_ok(rcursor))
@@ -178,34 +177,13 @@ EARLY_TEXT void main() {
   plic_set_threshold(plic, 0, PLIC_CONTEXT_SUPERVISOR, 0);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 10);
 
-  // enable virtio keyboard interrupt
+  // Enable expected VirtIO IRQs (DTB probe will map exact lines)
   plic_set_priority(plic, 1, 1);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 1);
-
-  result_t rkbd = make_virtio_keyboard(0x10001000, 1);
-  if (!result_is_ok(rkbd))
-    panic("Failed to create virtio keyboard");
-  virtio_keyboard_t *kbd = (virtio_keyboard_t *)result_unwrap(rkbd);
-  if (!virtio_keyboard_init(kbd))
-    panic("Failed to initialize virtio keyboard");
-  set_shared_virtio_keyboard(kbd);
-
   plic_set_priority(plic, 2, 1);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 2);
-
-  // enable virtio block interrupt (mmio bus.3 → IRQ 3)
   plic_set_priority(plic, 3, 1);
   plic_enable_interrupt(plic, 0, PLIC_CONTEXT_SUPERVISOR, 3);
-
-  result_t rmouse = make_virtio_mouse(0x10002000, 2);
-  if (!result_is_ok(rmouse)) {
-    panic("Failed to create virtio mouse");
-  }
-  virtio_mouse_t *mouse = (virtio_mouse_t *)result_unwrap(rmouse);
-  if (!virtio_mouse_init(mouse)) {
-    panic("Failed to initialize virtio mouse");
-  }
-  set_shared_virtio_mouse(mouse);
 
   sbi_set_timer(UINT64_MAX);
 
@@ -264,16 +242,13 @@ EARLY_TEXT void main() {
   // printf("Started kernel daemons with priority scheduling\n",
   // PRINT_FLAG_BOTH);
 
-  // Bring up VirtIO block -> disk wrapper
-  result_t rblk = make_virtio_block(0x10004000, 3);
-  if (!result_is_ok(rblk)) {
-    panic("Failed to create virtio block");
-  }
-  virtio_block_t *blk = (virtio_block_t *)result_unwrap(rblk);
-  if (!virtio_block_init(blk)) {
-    panic("Failed to initialize virtio block");
-  }
+  // Register VirtIO drivers and statically enumerate known MMIO slots
+  virtio_register_all_drivers();
+  printf("VirtIO: static bus scan...\n", PRINT_FLAG_BOTH);
+  virtio_bus_init_static();
 
+  // Use discovered virtio-blk device
+  virtio_block_dev_t *blk = virtio_blk_get();
   result_t rdisk = make_disk(blk);
   if (!result_is_ok(rdisk)) {
     panic("Failed to create disk device");

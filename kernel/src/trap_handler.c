@@ -1,17 +1,15 @@
 #include "trap_handler.h"
 #include "device/plic.h"
 #include "device/shared.h"
-#include "device/virtio/virtio_mouse.h"
-#include "device/virtio/virtio_bus.h"
+#include <device/virtio/virtio.h>
 #include "lib/sbi.h"
-#include "lib/time.h"
 #include "lib/timer.h"
 #include "mem_layout.h"
 #include "physical_alloc.h"
 #include <proc/process.h>
 #include <proc/process_table.h>
 #include <proc/scheduler.h>
-#include <device/virtio/virtio_keyboard.h>
+// legacy-specific include removed; unified virtio core used instead
 #include <lib/ansi.h>
 #include <lib/cpu.h>
 #include <lib/print.h>
@@ -195,6 +193,7 @@ void exception_handler(uint64_t scause, uint64_t sepc, uint64_t stval,
 }
 
 void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
+  (void)sepc;
   uint64_t sstatus_on_entry;
   asm volatile(
       "csrr %0, sstatus"
@@ -267,12 +266,12 @@ void handle_external_interrupt() {
     break;
   case 1: // virtio‑mmio[0]
   case 2: // virtio‑mmio[1]
-    virtio_bus_handle_irq(irq);
+    virtio_shared_isr(irq);
     break;
   default:
     // Default dispatch for virtio‑mmio range (1..8 on QEMU virt)
     if (irq >= 1 && irq <= 8) {
-      virtio_bus_handle_irq(irq);
+      virtio_shared_isr(irq);
     } else {
       printf("Unknown external interrupt: %{type: int}\n", PRINT_FLAG_BOTH, irq);
     }

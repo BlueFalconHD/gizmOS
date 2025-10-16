@@ -1,6 +1,7 @@
 #include "fat.h"
 #include <lib/print.h>
 #include <lib/memory.h>
+#include <lib/kalloc.h>
 
 /* Very small FAT12/16 boot sector fields */
 typedef struct __attribute__((packed)) {
@@ -48,11 +49,11 @@ g_bool fat_list_root(disk_t *disk)
     return false;
 
   const uint32_t bs = disk->sector_size;
-  uint8_t *sec = (uint8_t *)alloc_page();
+  uint8_t *sec = (uint8_t *)kalloc(bs);
   if (!sec) return false;
 
-  if (!virtio_block_read(disk->vblk, 0, sec, 1)) {
-    free_page(sec);
+  if (!disk_read(disk, 0, sec, 1)) {
+    kfree(sec);
     return false;
   }
 
@@ -60,6 +61,7 @@ g_bool fat_list_root(disk_t *disk)
   uint32_t root_sectors = ((bpb->root_entries * 32) + (bs - 1)) / bs;
   uint32_t fat_sectors = bpb->sectors_per_fat16;
   uint32_t first_data_sector = bpb->reserved_sectors + (bpb->num_fats * fat_sectors) + root_sectors;
+  (void)first_data_sector;
   uint32_t first_root_sector = bpb->reserved_sectors + (bpb->num_fats * fat_sectors);
 
   print("FAT root listing:\n", PRINT_FLAG_BOTH);
@@ -68,12 +70,12 @@ g_bool fat_list_root(disk_t *disk)
   uint32_t ents_per_sector = bs / sizeof(fat_dirent_t);
   uint32_t sectors_to_scan = root_sectors;
 
-  uint8_t *dirbuf = (uint8_t *)alloc_page();
-  if (!dirbuf) { free_page(sec); return false; }
+  uint8_t *dirbuf = (uint8_t *)kalloc(bs);
+  if (!dirbuf) { kfree(sec); return false; }
 
   for (uint32_t s = 0; s < sectors_to_scan; s++) {
     uint64_t lba = first_root_sector + s;
-    if (!virtio_block_read(disk->vblk, lba, dirbuf, 1)) break;
+    if (!disk_read(disk, lba, dirbuf, 1)) break;
     fat_dirent_t *de = (fat_dirent_t *)dirbuf;
     for (uint32_t i = 0; i < ents_per_sector && entries; i++, entries--) {
       if (de[i].name[0] == 0x00) { entries = 0; break; }
@@ -86,8 +88,8 @@ g_bool fat_list_root(disk_t *disk)
     }
   }
 
-  free_page(dirbuf);
-  free_page(sec);
+  kfree(dirbuf);
+  kfree(sec);
   return true;
 }
 

@@ -2,16 +2,16 @@
 
 #include <lib/types.h>
 #include <lib/result.h>
-#include <device/virtio/virtio_block.h>
+#include <device/virtio/drivers/block.h>
 
 typedef struct {
-  virtio_block_t *vblk;
+  virtio_block_dev_t *vblk;
   uint32_t sector_size;
   uint64_t capacity_sectors;
   g_bool is_initialized;
 } disk_t;
 
-RESULT_TYPE(disk_t *) make_disk(virtio_block_t *vblk);
+RESULT_TYPE(disk_t *) make_disk(virtio_block_dev_t *vblk);
 
 g_bool disk_init(disk_t *d);
 

@@ -1,7 +1,6 @@
 #include "shared.h"
 #include "device/plic.h"
-#include "device/virtio/virtio_keyboard.h"
-#include "device/virtio/virtio_mouse.h"
+#include <device/virtio/virtio.h>
 #include <device/console.h>
 #include <device/framebuffer.h>
 #include <device/rtc.h>
@@ -22,10 +21,8 @@ rtc_t *shared_rtc = NULL;
 g_bool shared_rtc_initialized = false;
 plic_t *shared_plic = NULL;
 g_bool shared_plic_initialized = false;
-virtio_keyboard_t *shared_virtio_keyboard = NULL;
-g_bool shared_virtio_keyboard_initialized = false;
-virtio_mouse_t *shared_virtio_mouse = NULL;
-g_bool shared_virtio_mouse_initialized = false;
+// VirtIO device instances are now discovered via DTB and handled within the
+// VirtIO registry; no per-device globals needed here.
 cursor_t *shared_cursor = NULL;
 g_bool shared_cursor_initialized = false;
 disk_t *shared_disk = NULL;
@@ -56,15 +53,10 @@ void set_shared_plic(plic_t *plic) {
   shared_plic_initialized = true;
 };
 
-void set_shared_virtio_keyboard(virtio_keyboard_t *keyboard) {
-  shared_virtio_keyboard = keyboard;
-  shared_virtio_keyboard_initialized = true;
-};
-
-void set_shared_virtio_mouse(virtio_mouse_t *mouse) {
-  shared_virtio_mouse = mouse;
-  shared_virtio_mouse_initialized = true;
-};
+// No-op stubs retained for compatibility if referenced elsewhere; can be
+// removed once call sites migrate fully.
+void set_shared_virtio_keyboard(void *unused) {(void)unused;}
+void set_shared_virtio_mouse(void *unused) {(void)unused;}
 
 void set_shared_cursor(cursor_t *cursor) {
   shared_cursor = cursor;

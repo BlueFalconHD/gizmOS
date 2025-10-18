@@ -1,10 +1,10 @@
 #include "console.h"
 #include <device/framebuffer.h>
-#include <extern/flanterm/backends/fb.h>
-#include <extern/flanterm/flanterm.h>
+#include <extern/flanterm/src/flanterm.h>
+#include <extern/flanterm/src/flanterm_backends/fb.h>
+#include <lib/kalloc.h>
 #include <lib/str.h>
 #include <limine.h>
-#include <lib/kalloc.h>
 
 result_t make_console(framebuffer_t *framebuffer) {
   console_t *console = (console_t *)kalloc(sizeof(console_t));

@@ -8,4 +8,5 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand('command script import lldb/mmu.py')
     debugger.HandleCommand('gdb-remote localhost:1234')
     debugger.HandleCommand('breakpoint set --name exception_handler')
+    debugger.HandleCommand('breakpoint set --name dbg_internal')
     debugger.HandleCommand('target symbols add limine/limine.dSYM/Contents/Resources/DWARF/limine')

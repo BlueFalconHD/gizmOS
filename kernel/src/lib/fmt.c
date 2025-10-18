@@ -352,6 +352,7 @@ const char *format_left_pad_to_str(enum format_left_pad format_left_pad) {
 }
 
 char *format_dump(struct format *format, char *buf, size_t buf_len) {
+  (void)buf_len;
   buf[0] = '\0';
   strcat(buf, "format {\n");
   strcat(buf, "   type: '");
@@ -392,13 +393,13 @@ void format_parse_single(struct format *format, const char *key,
     if (strcmp(val, FORMAT_VALUE_SPECIAL)) {
       format->width_from_args = true;
     } else {
-      format->format_width = uintfstr(key);
+      format->format_width = uintfstr(val);
     }
   } else if (strcmp(key, FORMAT_KEY_PRECISION)) {
     if (strcmp(val, FORMAT_VALUE_SPECIAL)) {
       format->precision_from_args = true;
     } else {
-      format->format_precision = uintfstr(key);
+      format->format_precision = uintfstr(val);
     }
   } else {
     dbg("key != FORMAT_KEY_TYPE && key != FORMAT_KEY_CASE && "
@@ -536,7 +537,11 @@ char *format_char(struct format *format, char *buf, char val) {
 char *format_str(struct format *format, char *buf, const char *val) {
   (void)format;
   buf[0] = '\0';
-  strcat(buf, val);
+  if (val) {
+    strcat(buf, val);
+  } else {
+    strcat(buf, "(null)");
+  }
   return buf;
 }
 
@@ -544,7 +549,7 @@ char *format_ptr(struct format *format, char *buf, const void *val) {
   buf[0] = '\0';
 
   if (format->format_prefix == FORMAT_PREFIX_AUTO) {
-    strcat(buf, "*0x");
+    strcat(buf, "0x");
   }
 
   char num_buf[64];
@@ -574,12 +579,6 @@ char *apply_format_generic(struct format *format, char *ret_buf,
                            size_t ret_buf_len, va_list *args) {
   char temp[256];
   temp[0] = '\0';
-
-  int64_t arg_i;
-  uint64_t arg_u;
-  char arg_c;
-  char *arg_s;
-  void *arg_p;
 
   switch (format->format_type) {
   case FORMAT_TYPE_INT:
@@ -646,15 +645,15 @@ char *apply_format_generic(struct format *format, char *ret_buf,
   return ret_buf;
 }
 
-char *format(const char *fmt, ...) {
+char *vformat(const char *fmt, va_list args_in) {
   va_list args;
-  va_start(args, fmt);
+  va_copy(args, args_in);
 
   char *ret_buf = (char *)kalloc(4096);
 
   if (!ret_buf) {
-    va_end(args);
     dbg("kalloc(...) == NULL");
+    va_end(args);
     return NULL;
   }
   ret_buf[0] = '\0';
@@ -699,4 +698,12 @@ char *format(const char *fmt, ...) {
 
   va_end(args);
   return ret_buf;
+}
+
+char *format(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  char *s = vformat(fmt, args);
+  va_end(args);
+  return s;
 }

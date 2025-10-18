@@ -17,6 +17,8 @@ typedef enum {
 typedef struct log {
   const char *subsystem;
   const char *category;
+
+  log_level_t level; // determines what logs are emitted
 } log_t;
 
 log_t *g_log_create(const char *subsystem, const char *category);

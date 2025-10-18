@@ -1,8 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <stdarg.h>
 
 /**
  * Formats a string using the given format string and arguments.
@@ -33,6 +32,11 @@
  * args).
  */
 char *format(const char *main, ...);
+
+/**
+ * Variadic-list version of format().
+ */
+char *vformat(const char *fmt, va_list args);
 
 /**
  * Formats a string using the given format string and arguments and prints it to

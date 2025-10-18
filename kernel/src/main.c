@@ -3,6 +3,7 @@
 #include "lib/canary.h"
 #include "lib/debug.h"
 #include "lib/dyn_array.h"
+#include "lib/log.h"
 #include "lib/macros.h"
 #include "lib/sbi.h"
 #include "lib/timer.h"
@@ -104,7 +105,7 @@ EARLY_TEXT void main() {
   }
   set_shared_console(console);
 
-  printf("*. gizmOS %{type: str}\n", PRINT_FLAG_BOTH, VERSION);
+  printf("*. gizmOS %{type: str}\n\n\n", PRINT_FLAG_BOTH, VERSION);
 
   mmio_map *mmap = alloc_mmio_map();
   mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
@@ -198,7 +199,10 @@ EARLY_TEXT void main() {
   enable_interrupts();
   uart_enable_interrupts(uart);
 
-  printf("*. gizmOS %{type: str}\n", PRINT_FLAG_UART, VERSION);
+  printf("*. gizmOS %{type: str}\n\n\n", PRINT_FLAG_UART, VERSION);
+
+  log_t *klog = g_log_create("kernel", "main");
+  g_log(klog, LOG_LEVEL_INFO, "Kernel started successfully");
 
   initialize_processes();
 

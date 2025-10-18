@@ -1,11 +1,11 @@
 #include "trap_handler.h"
+#include "buddy_allocator.h"
 #include "device/plic.h"
 #include "device/shared.h"
-#include <device/virtio/virtio.h>
 #include "lib/sbi.h"
 #include "lib/timer.h"
 #include "mem_layout.h"
-#include "physical_alloc.h"
+#include <device/virtio/virtio.h>
 #include <proc/process.h>
 #include <proc/process_table.h>
 #include <proc/scheduler.h>
@@ -149,11 +149,11 @@ void exception_handler(uint64_t scause, uint64_t sepc, uint64_t stval,
   print("\n\n", PRINT_FLAG_BOTH);
 
   // Print memory stats
-  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Memory Status:\n"), PRINT_FLAG_BOTH);
-  strfuint(get_free_page_count(), buffer);
-  print("Free page count: ", PRINT_FLAG_BOTH);
-  print(buffer, PRINT_FLAG_BOTH);
-  print("\n\n", PRINT_FLAG_BOTH);
+  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Buddy allocator status:\n"),
+        PRINT_FLAG_BOTH);
+
+  // might be bad idea but this uses no allocation like before so it could be ok
+  // buddy_print_stats();
 
   // Print register dump
   print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Registers:\n"), PRINT_FLAG_BOTH);
@@ -273,7 +273,8 @@ void handle_external_interrupt() {
     if (irq >= 1 && irq <= 8) {
       virtio_shared_isr(irq);
     } else {
-      printf("Unknown external interrupt: %{type: int}\n", PRINT_FLAG_BOTH, irq);
+      printf("Unknown external interrupt: %{type: int}\n", PRINT_FLAG_BOTH,
+             irq);
     }
     break;
   }

@@ -1,6 +1,7 @@
 #include "panic.h"
 #include "device/shared.h"
 #include "earlyinit.h"
+#include "lib/debug.h"
 #include <device/framebuffer.h>
 #include <lib/ansi.h>
 #include <lib/print.h>
@@ -11,7 +12,7 @@
 
 EARLY_TEXT void fill_fb_with_panic_color() {
   if (!shared_framebuffer_initialized) {
-    // screwed
+    dbg("shared_framebuffer_initialized == false (aka were screwed)");
     return;
   }
 

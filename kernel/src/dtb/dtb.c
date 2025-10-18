@@ -4,7 +4,7 @@
 #include <lib/panic.h>
 #include <lib/print.h>
 #include <limine.h>
-#include <physical_alloc.h>
+#include <lib/kalloc.h>
 #include <stdint.h>
 
 __attribute__((
@@ -78,7 +78,7 @@ void dtb_dostuff() {
   }
 
   // Allocate memory for the values
-  dtb_pair *reg_values = alloc_page();
+  dtb_pair *reg_values = (dtb_pair *)kalloc(sizeof(dtb_pair) * pair_count);
   if (!reg_values) {
     panic("Failed to allocate memory for reg values\n");
   }
@@ -93,5 +93,5 @@ void dtb_dostuff() {
   printf("Serial size: 0x%{type: hex}\n", PRINT_FLAG_BOTH, reg_values[0].b);
 
   // Don't forget to free the allocated memory
-  free_page(reg_values);
+  kfree(reg_values);
 }

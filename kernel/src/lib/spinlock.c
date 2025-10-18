@@ -1,5 +1,6 @@
 #include "spinlock.h"
 #include "lib/cpu.h"
+#include "lib/debug.h"
 #include "lib/types.h"
 #include "platform/interrupts.h"
 
@@ -21,8 +22,10 @@ g_bool holding(struct spinlock *lk) {
 // Loops (spins) until the lock is acquired.
 void acquire(struct spinlock *lk) {
   intr_push_off(); // disable interrupts to avoid deadlock.
-  if (holding(lk))
+  if (holding(lk)) {
+    dbg("holding(lk)");
     panic("acquire");
+  }
 
   // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
   //   a5 = 1
@@ -42,8 +45,10 @@ void acquire(struct spinlock *lk) {
 
 // Release the lock.
 void release(struct spinlock *lk) {
-  if (!holding(lk))
+  if (!holding(lk)) {
+    dbg("!holding(lk)");
     panic("release");
+  }
 
   lk->cpu = 0;
 

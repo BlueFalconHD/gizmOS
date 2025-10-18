@@ -1,6 +1,6 @@
 #include "rtc.h"
 #include <lib/result.h>
-#include <physical_alloc.h>
+#include <lib/kalloc.h>
 
 #define TIME_LOW_REGISTER 0x0
 #define TIME_HIGH_REGISTER 0x4
@@ -9,7 +9,7 @@
 #define CLEAR_INTERRUPT_REGISTER 0x10
 
 RESULT_TYPE(rtc_t *) make_rtc(uint64_t base) {
-  rtc_t *rtc = (rtc_t *)alloc_page();
+  rtc_t *rtc = (rtc_t *)kalloc(sizeof(rtc_t));
   if (!rtc) {
     return RESULT_FAILURE(RESULT_NOMEM);
   }

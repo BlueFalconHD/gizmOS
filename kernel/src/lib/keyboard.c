@@ -1,12 +1,14 @@
 #include "keyboard.h"
+#include "lib/debug.h"
 #include "lib/print.h"
-#include <lib/str.h>
 #include <lib/kalloc.h>
+#include <lib/str.h>
 
 RESULT_TYPE(keypress_t *)
 make_keypress(uint8_t keycode, uint8_t modifiers, keypress_type_t type) {
   keypress_t *kp = (keypress_t *)kalloc(sizeof(keypress_t));
   if (!kp) {
+    dbg("kalloc(...) == NULL");
     return RESULT_FAILURE(RESULT_NOMEM);
   }
   kp->keycode = keycode;
@@ -17,11 +19,13 @@ make_keypress(uint8_t keycode, uint8_t modifiers, keypress_type_t type) {
 
 void keypress_debug(keypress_t *kp) {
   if (!kp) {
+    dbg("kp == NULL");
     return;
   }
 
   char *modifiers_str = (char *)kalloc(128);
   if (!modifiers_str) {
+    dbg("modifiers_str == NULL");
     return;
   }
 
@@ -63,8 +67,10 @@ void keypress_debug(keypress_t *kp) {
     strcat(modifiers_str, "CAPSLOCK,");
   }
 
-  printf("<keypress:%{type: hex} keycode=%{type: hex} mods=%{type: hex} [%{type: str}] type=%{type: int}>\n",
-         PRINT_FLAG_BOTH, (uint64_t)kp, kp->keycode, (uint64_t)kp->modifiers, modifiers_str, kp->type);
+  printf("<keypress:%{type: hex} keycode=%{type: hex} mods=%{type: hex} "
+         "[%{type: str}] type=%{type: int}>\n",
+         PRINT_FLAG_BOTH, (uint64_t)kp, kp->keycode, (uint64_t)kp->modifiers,
+         modifiers_str, kp->type);
 
   kfree(modifiers_str);
 }

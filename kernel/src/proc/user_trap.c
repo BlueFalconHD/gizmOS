@@ -7,9 +7,18 @@
 #include <lib/print.h>
 #include <lib/gizm_font.h>
 #include <mem_layout.h>
+#include <lib/usermem.h>
+#include <lib/kalloc.h>
+#include "notification.h"
 #include <page_table.h>
 #include <platform/interrupts.h>
 #include <platform/registers.h>
+#include <syscall.h>
+
+// Debugging for notification injection into user trap return
+#ifndef NOTIF_DELIVERY_DEBUG_LEVEL
+#define NOTIF_DELIVERY_DEBUG_LEVEL 0
+#endif
 
 extern char trampoline[];
 extern char uservec[];
@@ -25,6 +34,43 @@ void user_trap_ret(void) {
     PS_set_trap_vector((uint64_t)trap_vector);
     PS_enable_interrupts();
     return;
+  }
+
+  // Before switching back to user, inject a pending notification if any.
+  if (!p->is_kernel && p->notif_pending && p->notif_ctx.valid == 0) {
+    notif_msg_t m;
+    if (notification_pop(p, &m)) {
+      if (notification_ensure_userbuf(p)) {
+        notif_handler_t *h = &p->notif_handlers[m.type];
+        if (h->handler_va != 0) {
+          uint64_t uva = p->notif_userbuf_base + NOTIF_PAYLOAD_OFFSET;
+          uint64_t maxn = p->notif_userbuf_size - NOTIF_PAYLOAD_OFFSET;
+          uint64_t n = (m.len < maxn) ? m.len : maxn;
+          if (!result_is_ok(copyout(p->pagetable, uva, m.kbuf, n))) {
+            // failed copy; drop
+            n = 0;
+          }
+          if (n < m.len) {
+            m.flags |= NOTIF_DFLAG_TRUNCATED;
+          }
+          
+#if NOTIF_DELIVERY_DEBUG_LEVEL >= 1
+          printf("[notif] inject: pid=%{type: int} type=%{type: int} n=%{type: int} handler=%{type: hex}\n",
+                 PRINT_FLAG_BOTH, p->pid, (int)m.type, (int)n, h->handler_va);
+#endif
+          notif_ctx_save_from_trapframe(p);
+          p->trapframe->a0 = m.type;
+          p->trapframe->a1 = uva;
+          p->trapframe->a2 = n;
+          p->trapframe->a3 = h->arg_va;
+          // set a7 so user handler can ecall NOTIF_DONE and return
+          p->trapframe->a7 = SYSCALL_NOTIF_DONE;
+          p->trapframe->epc = h->handler_va;
+        }
+      }
+      if (m.kbuf)
+        kfree(m.kbuf);
+    }
   }
 
   uint64_t trampoline_uservec = TRAMPOLINE + (uservec - trampoline);
@@ -74,18 +120,49 @@ void usertrap(void) {
       printf("Data at faulting address: 0x%{type: hex}\n", PRINT_FLAG_BOTH,
              *(uint64_t *)fault_va);
     } else {
-      printf("Failed to get physical address for faulting address\n",
-             PRINT_FLAG_BOTH);
+      print("Failed to get physical address for faulting address\n",
+            PRINT_FLAG_BOTH);
     }
   }
 
   p->trapframe->epc = PS_get_exception_pc();
 
   if (PS_get_exception_cause() == 8) {
+    // Advance past the ecall so we don't re-trap on the same instruction
+    p->trapframe->epc += 4;
     PS_enable_interrupts();
 
     int callnum = p->trapframe->a7;
-    if (callnum == 2) {
+    // Detect end of a notification handler: we choose a dedicated syscall id
+    // to mark completion and restore context.
+    if (callnum == SYSCALL_NOTIF_DONE) {
+      notif_ctx_restore_to_trapframe(p);
+      goto out;
+    }
+    if (callnum == SYSCALL_NOTIF_REGISTER) {
+      // a0=type, a1=handler, a2=arg, a3=flags
+      uint16_t type = (uint16_t)p->trapframe->a0;
+      uint64_t handler = p->trapframe->a1;
+      uint64_t arg = p->trapframe->a2;
+      uint32_t flags = (uint32_t)p->trapframe->a3;
+      uint32_t id = notification_register(p, type, handler, arg, flags);
+      p->trapframe->a0 = id; // return id
+      goto out;
+    }
+    if (callnum == SYSCALL_NOTIF_UNREGISTER) {
+      // a0=type, a1=id
+      uint16_t type = (uint16_t)p->trapframe->a0;
+      uint32_t id = (uint32_t)p->trapframe->a1;
+      g_bool ok = notification_unregister(p, type, id);
+      p->trapframe->a0 = ok ? 0 : (uint64_t)-1;
+      goto out;
+    }
+    if (callnum == SYSCALL_PRINT_INT) {
+      // a0 contains the number to print
+      int64_t val = (int64_t)p->trapframe->a0;
+      printf("%{type: int}\n", PRINT_FLAG_BOTH, val);
+      goto out;
+    } else if (callnum == 2) {
       // exit
     } else if (callnum == 6) {
       fill_screen_with_color(25, 25, 25);
@@ -99,7 +176,7 @@ void usertrap(void) {
   if (PS_get_exception_cause() == 0x8000000000000005) {
     yield();
   }
-
+out:
   user_trap_ret();
 }
 

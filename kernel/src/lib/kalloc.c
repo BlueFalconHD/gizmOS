@@ -1,6 +1,7 @@
 #include "kalloc.h"
 #include "buddy_allocator.h"
 
+#include "lib/debug.h"
 #include "print.h"
 #include <lib/memory.h>
 #include <stddef.h>
@@ -23,8 +24,10 @@ static inline size_t kalloc_header_size(void) {
 }
 
 static int size_to_order(size_t size) {
-  if (size == 0)
+  if (size == 0) {
+    dbg("size == 0");
     return 0;
+  }
 
   size_t page_size = 4096;
   size_t pages_needed = (size + page_size - 1) / page_size;
@@ -41,6 +44,7 @@ static int size_to_order(size_t size) {
   }
 
   if (capacity < pages_needed) {
+    dbg("capacity < pages_needed");
     return -1;
   }
 
@@ -102,6 +106,7 @@ static void record_allocation(void *ptr, size_t size, const char *file,
 
 void *kalloc_impl(size_t size) {
   if (size == 0) {
+    dbg("size == 0");
     return NULL;
   }
 
@@ -110,10 +115,12 @@ void *kalloc_impl(size_t size) {
 
   int order = size_to_order(total);
   if (order < 0) {
+    dbg("size_to_order(...) < 0");
     return NULL;
   }
   void *block = buddy_alloc_pages(order);
   if (!block) {
+    dbg("buddy_alloc_pages(...) == NULL");
     return NULL;
   }
 
@@ -128,6 +135,7 @@ void *kalloc_impl(size_t size) {
 
 void kfree_impl(void *ptr) {
   if (ptr == NULL) {
+    dbg("ptr == NULL");
     return;
   }
 
@@ -139,6 +147,7 @@ void kfree_impl(void *ptr) {
     printf("[KALLOC] WARNING: kfree on non-kalloc pointer %{type: hex}\n",
            PRINT_FLAG_BOTH, (uint64_t)ptr);
 #endif
+    dbg("hdr->magic != KALLOC_HEADER_MAGIC");
     return;
   }
 
@@ -150,15 +159,18 @@ void kfree_impl(void *ptr) {
 
 size_t kalloc_usable_size(void *ptr) {
   if (ptr == NULL) {
+    dbg("ptr == NULL");
     return 0;
   }
   size_t header_sz = kalloc_header_size();
   kalloc_header_t *hdr = (kalloc_header_t *)((uint8_t *)ptr - header_sz);
   if (hdr->magic != KALLOC_HEADER_MAGIC) {
+    dbg("hdr->magic != KALLOC_HEADER_MAGIC");
     return 0;
   }
   size_t block_size = ((size_t)4096) << hdr->order;
   if (block_size < header_sz) {
+    dbg("block_size < header_sz");
     return 0;
   }
   return block_size - header_sz;
@@ -180,11 +192,13 @@ void *kresize_impl(void *ptr, size_t new_size) {
     printf("[KALLOC] WARNING: kresize on non-kalloc pointer %{type: hex}\n",
            PRINT_FLAG_BOTH, (uint64_t)ptr);
 #endif
+    dbg("hdr->magic != KALLOC_HEADER_MAGIC");
     return NULL;
   }
 
   size_t block_size = ((size_t)4096) << hdr->order;
   if (block_size < header_sz) {
+    dbg("block_size < header_sz");
     return NULL;
   }
   size_t old_usable = block_size - header_sz;
@@ -196,6 +210,7 @@ void *kresize_impl(void *ptr, size_t new_size) {
 
   void *new_ptr = kalloc_impl(new_size);
   if (!new_ptr) {
+    dbg("kalloc_impl(...) == NULL");
     return NULL;
   }
 
@@ -221,6 +236,7 @@ void *kresize_trace(void *ptr, size_t new_size, const char *file, int line) {
 #endif
   } else {
 #ifdef KALLOC_TRACE
+    dbg("kresize_impl(...) == NULL");
     printf("[KALLOC] Failed to resize %{type: hex} to %{type: int} bytes "
            "(%{type: str}:%{type: int})\n",
            PRINT_FLAG_BOTH, (uint64_t)ptr, (int)new_size, file, line);
@@ -236,7 +252,7 @@ void *kalloc_trace(size_t size, const char *file, int line) {
     record_allocation(ptr, size, file, line);
 
 #ifdef KALLOC_TRACE
-    printf("[KALLOC] Allocated %{type: int} bytes at %{type: hex} (%{type: "
+    printf("[KALLOC] Allocated %{type: int} bytes at %{type: hex} %{type: "
            "str}:%{type: int})\n",
            PRINT_FLAG_BOTH, (int)size, (uint64_t)ptr, file, line);
 #endif

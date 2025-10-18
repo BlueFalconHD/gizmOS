@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/debug.h"
 #include <lib/panic.h>
 #include <stdint.h>
 
@@ -32,10 +33,10 @@ static inline bool result_is_ok(result_t result) {
 
 static inline uint64_t result_unwrap(result_t result) {
   if (!result_is_ok(result)) {
+    dbg("result_is_ok(...) == false");
     panic("Attempted to unwrap failed result");
   }
   return result.data.value;
 }
 
-// add inline comment after result_t type to show actual type
 #define RESULT_TYPE(T) result_t /* T */

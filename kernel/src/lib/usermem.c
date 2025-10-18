@@ -1,3 +1,4 @@
+#include "lib/debug.h"
 #include <lib/memory.h>
 #include <lib/result.h>
 #include <limine_requests.h>
@@ -21,6 +22,7 @@ copyout(page_table_t *pagetable, uint64_t dstva, void *src, uint64_t len) {
   while (len > 0) {
     uint64_t pa;
     if (!get_physical_address(pagetable, dstva, &pa)) {
+      dbg("get_physical_address(...) == false");
       return RESULT_FAILURE(RESULT_ERROR); /* unmapped user page */
     }
 
@@ -48,6 +50,7 @@ copyin(page_table_t *pagetable, void *dst, uint64_t srcva, uint64_t len) {
   while (len > 0) {
     uint64_t pa;
     if (!get_physical_address(pagetable, srcva, &pa)) {
+      dbg("get_physical_address(...) == false");
       return RESULT_FAILURE(RESULT_ERROR); /* unmapped user page */
     }
 

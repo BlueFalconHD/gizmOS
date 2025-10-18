@@ -1,4 +1,6 @@
 #include "kernel_task.h"
+#include "lib/kalloc.h"
+#include "buddy_allocator.h"
 #include "lifecycle.h"
 #include "scheduler.h"
 #include <lib/cpu.h>
@@ -6,7 +8,6 @@
 #include <lib/spinlock.h>
 #include <lib/str.h>
 #include <mem_layout.h>
-#include <physical_alloc.h>
 
 void kernel_task_wrapper(void) {
   proc_t *p = current_proc();
@@ -30,10 +31,10 @@ make_kernel_task(void (*entry)(void *), void *arg, const char *name) {
 
   proc_t *p = (proc_t *)result_unwrap(r);
 
-  free_page(p->trapframe);
+  kfree(p->trapframe);
   p->trapframe = NULL;
 
-  free_page(p->pagetable);
+  buddy_free_page(p->pagetable);
   p->pagetable = shared_page_table;
 
   p->is_kernel = 1;
@@ -54,5 +55,3 @@ make_kernel_task(void (*entry)(void *), void *arg, const char *name) {
   release(&p->lock);
   return RESULT_SUCCESS(p);
 }
-
-

@@ -1,4 +1,5 @@
 #include "math.h"
+#include "lib/debug.h"
 #include "lib/timer.h"
 #include <device/rtc.h>
 
@@ -11,6 +12,7 @@
  */
 double sqrt(double n) {
   if (n < 0) {
+    dbg("n < 0");
     return -1; // Undefined for negative numbers
   }
   if (n == 0) {
@@ -39,6 +41,7 @@ double sqrt(double n) {
 double pow(double base, double exp) {
   if (base == 0.0) {
     if (exp == 0.0) {
+      dbg("exp == 0.0");
       return -1; // Undefined (0^0)
     } else {
       return 0.0;
@@ -62,6 +65,7 @@ double pow(double base, double exp) {
  */
 double root(double n, double r) {
   if (r == 0) {
+    dbg("r == 0");
     return -1; // Undefined
   }
 
@@ -180,6 +184,7 @@ double lerp(double a, double b, double t) { return a + t * (b - a); }
  */
 double map(double n, double start1, double stop1, double start2, double stop2) {
   if (stop1 == start1) {
+    dbg("stop1 == start1");
     return -1; // Undefined
   }
   double ratio = (n - start1) / (stop1 - start1);
@@ -334,6 +339,7 @@ double atan2(double y, double x) {
   } else if (x == 0 && y < 0) {
     return -PI / 2;
   } else {
+    dbg("x == 0 && y == 0");
     return 0; // Undefined
   }
 }
@@ -368,6 +374,7 @@ double exp(double x) {
  */
 double ln(double x) {
   if (x <= 0) {
+    dbg("x <= 0");
     return -1; // Undefined
   }
 

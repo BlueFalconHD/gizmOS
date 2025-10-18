@@ -67,6 +67,7 @@ uint64_t executable_size;
 
 EARLY_TEXT result_t limine_requests_init() {
   if (LIMINE_BASE_REVISION_SUPPORTED == false) {
+    dbg("LIMINE_BASE_REVISION_SUPPORTED == false");
     panic_msg("Limine base revision not supported. Please update Limine "
               "to the latest "
               "version.");

@@ -72,7 +72,6 @@ Tests are built into the kernel and run during boot when the `TESTS` macro is de
 - **String operations**: String manipulation utilities (`lib/str.c/h`)
 - **Graphics**: Basic 2D graphics primitives (`lib/gfx.c/h`)
 - **Synchronization**: Spinlocks and other primitives (`lib/spinlock.c/h`)
-- **IPC**: Mailbox system for inter-process communication (`lib/mailbox.c/h`)
 
 ### External Dependencies
 - **Limine**: Modern multiprotocol bootloader

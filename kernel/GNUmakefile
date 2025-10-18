@@ -80,6 +80,9 @@ override CFLAGS += \
     -fdata-sections \
     -isysroot /dev/null
 
+ifeq ($(DEBUG),1)
+    CPPFLAGS += -DG_DEBUG
+endif
 
 # Internal C preprocessor flags that should not be changed by the user.
 override CPPFLAGS := \

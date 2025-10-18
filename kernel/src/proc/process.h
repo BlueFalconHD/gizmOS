@@ -1,10 +1,11 @@
 #pragma once
 
 #include <lib/context.h>
-#include <lib/mailbox.h>
-#include <lib/notification.h>
 #include <lib/spinlock.h>
 #include <page_table.h>
+#include <lib/types.h>
+#include <lib/result.h>
+#include "notification_types.h"
 
 struct trapframe {
   uint64_t kernel_satp;   /* kernel page table (satp value)      */
@@ -75,5 +76,15 @@ typedef struct proc {
   char name[16];
 
   g_bool is_kernel;
-  mailbox_t *mailbox;
+  /* Notifications */
+  notif_msg_t     notif_queue[NOTIF_QUEUE_SIZE];
+  uint32_t        notif_q_head;
+  uint32_t        notif_q_tail;
+  uint64_t        notif_seq;
+  uint8_t         notif_pending;
+  uint64_t        notif_stats_dropped;
+  notif_handler_t notif_handlers[NOTIF_MAX_TYPE];
+  notif_ctx_t     notif_ctx;
+  uint64_t        notif_userbuf_base; // user VA for buffer+stub
+  uint64_t        notif_userbuf_size;
 } proc_t;

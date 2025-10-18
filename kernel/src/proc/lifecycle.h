@@ -12,4 +12,8 @@ void setkilled(proc_t *p);
 g_bool killed(proc_t *p);
 uint64_t fork(void);
 
+// Create a user process from a raw code buffer mapped at VA=0
+RESULT_TYPE(proc_t *) proc_from_code(uint8_t code[], uint64_t size,
+                                     const char *name);
+
 

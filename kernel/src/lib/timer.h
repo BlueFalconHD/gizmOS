@@ -13,13 +13,13 @@
 #define TICK_INTERVAL_CYCLES ((uint64_t)(TIMER_FREQUENCY) / (uint64_t)(TICK_HZ))
 
 G_INLINE uint64_t get_csrr_time(void) {
-    uint64_t t;
-    asm volatile("csrr %0, time" : "=r"(t));
-    return t;
+  uint64_t t;
+  asm volatile("csrr %0, time" : "=r"(t));
+  return t;
 }
 
 G_INLINE uint64_t get_time_in_cycles(void) {
-    uint64_t cycles;
-    asm volatile("rdcycle %0" : "=r"(cycles));
-    return cycles;
+  uint64_t cycles;
+  asm volatile("rdcycle %0" : "=r"(cycles));
+  return cycles;
 }

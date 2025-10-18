@@ -4,12 +4,12 @@
 #include "lib/types.h"
 #include "platform/registers.h"
 #include "platform/tlb.h"
+#include "buddy_allocator.h"
 #include <lib/memory.h> // For memset
 #include <lib/panic.h>
 #include <lib/print.h>
 #include <lib/str.h>
 #include <limine_requests.h>
-#include <physical_alloc.h> // For alloc_page and free_page
 #include <stdbool.h>
 
 page_table_t *shared_page_table;
@@ -45,7 +45,7 @@ EARLY_TEXT static void get_vpn_indices(uint64_t va, uint16_t vpn[SV39_LEVELS]) {
 }
 
 EARLY_TEXT page_table_t *create_page_table() {
-  page_table_t *pt = (page_table_t *)alloc_page();
+  page_table_t *pt = (page_table_t *)buddy_alloc_page();
   if (pt) {
     memset(pt, 0, PAGE_SIZE);
   }

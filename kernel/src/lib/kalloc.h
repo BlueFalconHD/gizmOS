@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 // uncomment to enable simple allocation tracing
+// CURRENTLY BROKEN B/C OF RECURSION
 // #define KALLOC_TRACE
 
 typedef struct allocation {

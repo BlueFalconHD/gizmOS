@@ -2,9 +2,8 @@
 /*
  * Very small “vector” implementation backed by the kernel page allocator.
  * It is intentionally simple:
- *   • Elements are kept in one contiguous block obtained via alloc_page().
- *   • Capacity grows geometrically (×2) until the backing area would no
- *     longer fit into one 4‑KiB page – after that `dyn_array_push()` fails.
+ *   • Elements are kept in one contiguous block obtained via kalloc().
+ *   • Capacity grows geometrically (×2); no artificial 4‑KiB cap.
  *   • The API is generic (void *) but strongly typed at call‑site through
  *     the usual C macro trick.
  *

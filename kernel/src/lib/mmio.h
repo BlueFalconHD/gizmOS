@@ -11,12 +11,10 @@ typedef struct {
   uint16_t id;
 } mmio_entry;
 
-// how many entries (plus main mmio_map struct) can be stored in 4KiB
-#define MAX_MMIO_ENTRIES ((4096 - sizeof(mmio_map)) / sizeof(mmio_entry))
-
 typedef struct {
   mmio_entry *entries;
   uint64_t count;
+  uint64_t capacity;
 } mmio_map;
 
 mmio_map *alloc_mmio_map();

@@ -1,4 +1,5 @@
 #include "gizm_font.h"
+#include "lib/debug.h"
 #include <device/shared.h>
 #include <lib/PixelCore/surface.h>
 #include <lib/memory.h>
@@ -38,8 +39,10 @@ const gizm_glyph_t gizm_font_glyphs[GIZM_FONT_NUM_GLYPHS] = {
 void gizm_font_init_context(gizm_font_context_t *ctx, framebuffer_t *fb,
                             gizm_color_t color, uint32_t scale,
                             gizm_font_wrap_t wrap_mode) {
-  if (!ctx)
+  if (!ctx) {
+    dbg("ctx == NULL");
     return;
+  }
 
   ctx->framebuffer = fb;
   ctx->color = color;
@@ -51,8 +54,13 @@ static g_bool is_printable_char(char c) { return c >= ' ' && c <= '~'; }
 
 uint32_t gizm_font_draw_char(gizm_font_context_t *ctx, uint32_t x, uint32_t y,
                              char c) {
-  if (!ctx || !ctx->framebuffer)
+  if (!ctx || !ctx->framebuffer) {
+    if (!ctx)
+      dbg("ctx == NULL");
+    else
+      dbg("ctx->framebuffer == NULL");
     return 0;
+  }
 
   // Handle special characters
   switch (c) {
@@ -80,7 +88,6 @@ uint32_t gizm_font_draw_char(gizm_font_context_t *ctx, uint32_t x, uint32_t y,
 
   uint8_t pixel_data[3] = {ctx->color.r, ctx->color.g, ctx->color.b};
 
-  // Render the glyph
   for (uint32_t glyph_y = 0; glyph_y < GIZM_FONT_HEIGHT; glyph_y++) {
     for (uint32_t pixel_y = 0; pixel_y < ctx->scale; pixel_y++) {
       uint32_t draw_y = offset_y + glyph_y * ctx->scale + pixel_y;
@@ -105,8 +112,13 @@ uint32_t gizm_font_draw_char(gizm_font_context_t *ctx, uint32_t x, uint32_t y,
 uint32_t gizm_font_draw_string_n(gizm_font_context_t *ctx, uint32_t x,
                                  uint32_t y, const char *str,
                                  uint32_t max_len) {
-  if (!ctx || !str)
+  if (!ctx || !str) {
+    if (!ctx)
+      dbg("ctx == NULL");
+    else
+      dbg("str == NULL");
     return 0;
+  }
 
   uint32_t start_x = x;
   uint32_t current_x = x;
@@ -118,7 +130,6 @@ uint32_t gizm_font_draw_string_n(gizm_font_context_t *ctx, uint32_t x,
   for (uint32_t i = 0; str[i] && i < max_len; i++) {
     char c = str[i];
 
-    // Calculate character dimensions
     uint32_t char_width = 0;
     uint32_t char_height =
         ctx->scale * (GIZM_FONT_HEIGHT + GIZM_FONT_DESCENDER);
@@ -148,48 +159,38 @@ uint32_t gizm_font_draw_string_n(gizm_font_context_t *ctx, uint32_t x,
       break;
     }
 
-    // Check bounds
     uint32_t end_x = current_x + char_width;
     uint32_t end_y = current_y + char_height;
 
-    // Check if we're going off the bottom of the screen
     if (end_y > fb_height) {
       break;
     }
 
-    // Handle horizontal overflow
     if (end_x > fb_width) {
       if (ctx->wrap_mode == GIZM_FONT_WRAP_WRAP) {
-        // Wrap to next line
         current_y += ctx->scale * GIZM_FONT_ROW_ADVANCE;
         current_x = start_x;
         lines_rendered++;
 
-        // Check bounds again after wrapping
         end_y = current_y + char_height;
         if (end_y > fb_height) {
           break;
         }
-        // Redo this character on the new line
         i--;
         continue;
       } else {
-        // Clip mode - don't draw characters that go off the right edge
         continue;
       }
     }
 
-    // Check if we're starting off the left edge
     if (current_x >= fb_width) {
       continue;
     }
 
-    // Draw the character if it's visible
     if (current_y < fb_height && current_x < fb_width) {
       uint32_t advance = gizm_font_draw_char(ctx, current_x, current_y, c);
       current_x += advance;
     } else {
-      // Just advance without drawing
       current_x += char_width;
     }
   }
@@ -199,15 +200,22 @@ uint32_t gizm_font_draw_string_n(gizm_font_context_t *ctx, uint32_t x,
 
 uint32_t gizm_font_draw_string(gizm_font_context_t *ctx, uint32_t x, uint32_t y,
                                const char *str) {
-  if (!str)
+  if (!str) {
+    dbg("str == NULL");
     return 0;
+  }
   return gizm_font_draw_string_n(ctx, x, y, str, strlen(str));
 }
 
 uint32_t gizm_font_string_width_n(const char *str, uint32_t max_len,
                                   uint32_t scale) {
-  if (!str || scale == 0)
+  if (!str || scale == 0) {
+    if (!str)
+      dbg("str == NULL");
+    else
+      dbg("scale == 0");
     return 0;
+  }
 
   uint32_t width = 0;
   uint32_t current_line_width = 0;
@@ -238,7 +246,6 @@ uint32_t gizm_font_string_width_n(const char *str, uint32_t max_len,
     }
   }
 
-  // Check the last line
   if (current_line_width > max_width) {
     max_width = current_line_width;
   }
@@ -247,8 +254,10 @@ uint32_t gizm_font_string_width_n(const char *str, uint32_t max_len,
 }
 
 uint32_t gizm_font_string_width(const char *str, uint32_t scale) {
-  if (!str)
+  if (!str) {
+    dbg("str == NULL");
     return 0;
+  }
   return gizm_font_string_width_n(str, strlen(str), scale);
 }
 
@@ -267,8 +276,13 @@ uint32_t gizm_font_get_row_advance(uint32_t scale) {
 // Convenience functions using shared framebuffer
 void gizm_font_draw_text(uint32_t x, uint32_t y, const char *str,
                          gizm_color_t color) {
-  if (!shared_framebuffer_initialized || !str)
+  if (!shared_framebuffer_initialized || !str) {
+    if (!str)
+      dbg("str == NULL");
+    if (!shared_framebuffer_initialized)
+      dbg("shared_framebuffer_initialized == false");
     return;
+  }
 
   gizm_font_context_t ctx;
   gizm_font_init_context(&ctx, shared_framebuffer, color, 1,
@@ -278,8 +292,13 @@ void gizm_font_draw_text(uint32_t x, uint32_t y, const char *str,
 
 void gizm_font_draw_text_scaled(uint32_t x, uint32_t y, const char *str,
                                 gizm_color_t color, uint32_t scale) {
-  if (!shared_framebuffer_initialized || !str)
+  if (!shared_framebuffer_initialized || !str) {
+    if (!str)
+      dbg("str == NULL");
+    if (!shared_framebuffer_initialized)
+      dbg("shared_framebuffer_initialized == false");
     return;
+  }
 
   gizm_font_context_t ctx;
   gizm_font_init_context(&ctx, shared_framebuffer, color, scale,
@@ -289,8 +308,10 @@ void gizm_font_draw_text_scaled(uint32_t x, uint32_t y, const char *str,
 
 static inline void pc_surface_put_pixel(PCSurface *surface, uint32_t x,
                                         uint32_t y, uint32_t argb) {
-  if (!surface)
+  if (!surface) {
+    dbg("surface == NULL");
     return;
+  }
   if (x >= surface->rect.width || y >= surface->rect.height)
     return;
   surface->pixels[(size_t)y * (size_t)surface->stride + (size_t)x] = argb;
@@ -300,8 +321,10 @@ static uint32_t gizm_font_draw_char_surface(PCSurface *surface, uint32_t x,
                                             uint32_t y, char c,
                                             gizm_color_t color,
                                             uint32_t scale) {
-  if (!surface)
+  if (!surface) {
+    dbg("surface == NULL");
     return 0;
+  }
 
   switch (c) {
   case ' ':
@@ -361,8 +384,15 @@ void gizm_font_draw_text_surface(PCSurface *surface, uint32_t x, uint32_t y,
 void gizm_font_draw_text_scaled_surface(PCSurface *surface, uint32_t x,
                                         uint32_t y, const char *str,
                                         gizm_color_t color, uint32_t scale) {
-  if (!surface || !str || scale == 0)
+  if (!surface || !str || scale == 0) {
+    if (!surface)
+      dbg("surface == NULL");
+    if (!str)
+      dbg("str == NULL");
+    if (scale == 0)
+      dbg("scale == 0");
     return;
+  }
 
   uint32_t start_x = x;
   uint32_t cur_x = x;

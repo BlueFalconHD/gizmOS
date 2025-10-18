@@ -1,7 +1,7 @@
 #include "plic.h"
 #include "lib/canary.h"
 #include <lib/result.h>
-#include <physical_alloc.h>
+#include <lib/kalloc.h>
 
 // PLIC register offsets (based on RISC-V PLIC specification)
 #define PLIC_PRIORITY_BASE 0x000000 // Priority registers (4 bytes per source)
@@ -29,7 +29,7 @@ static uint32_t *plic_enable_addr(plic_t *plic, uint32_t hart, uint32_t context,
 }
 
 RESULT_TYPE(plic_t *) make_plic(uint64_t base) {
-  plic_t *plic = (plic_t *)alloc_page();
+  plic_t *plic = (plic_t *)kalloc(sizeof(plic_t));
   if (!plic) {
     return RESULT_FAILURE(RESULT_NOMEM);
   }

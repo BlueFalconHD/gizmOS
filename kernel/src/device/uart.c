@@ -1,7 +1,7 @@
 #include "uart.h"
 #include "lib/result.h"
 #include "lib/types.h"
-#include "physical_alloc.h"
+#include <lib/kalloc.h>
 #include <lib/str.h>
 
 #define LINE_STATUS_REGISTER 0x5
@@ -16,7 +16,7 @@
  * @return A result_t that can safely be cast to a uart_t pointer if successful.
  */
 RESULT_TYPE(*uart_t) make_uart(uint64_t base) {
-  uart_t *uart = (uart_t *)alloc_page();
+  uart_t *uart = (uart_t *)kalloc(sizeof(uart_t));
   if (!uart) {
     return RESULT_FAILURE(RESULT_NOMEM);
   }

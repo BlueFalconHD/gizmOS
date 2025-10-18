@@ -1,7 +1,8 @@
 #include "fmt.h"
+#include "lib/debug.h"
 #include <lib/str.h>
 
-#include <physical_alloc.h>
+#include <lib/kalloc.h>
 #include <stdarg.h>
 #include <stdbool.h>
 
@@ -167,6 +168,11 @@ enum format_type format_type_from_str(const char *str) {
     return FORMAT_TYPE_PTR;
   else if (strcmp(str, FORMAT_TYPE_BINARY_STR))
     return FORMAT_TYPE_BINARY;
+
+  dbg("str != FORMAT_TYPE_INT_STR && str != FORMAT_TYPE_UINT_STR && "
+      "str != FORMAT_TYPE_HEX_STR && str != FORMAT_TYPE_CHAR_STR && "
+      "str != FORMAT_TYPE_STR_STR && str != FORMAT_TYPE_PTR_STR && "
+      "str != FORMAT_TYPE_BINARY_STR");
   return FORMAT_TYPE_INVALID;
 }
 
@@ -187,6 +193,11 @@ const char *format_type_to_str(enum format_type type) {
   case FORMAT_TYPE_BINARY:
     return FORMAT_TYPE_BINARY_STR;
   default:
+
+    dbg("type != FORMAT_TYPE_INT && type != FORMAT_TYPE_UINT && "
+        "type != FORMAT_TYPE_HEX && type != FORMAT_TYPE_CHAR && "
+        "type != FORMAT_TYPE_STR && type != FORMAT_TYPE_PTR && "
+        "type != FORMAT_TYPE_BINARY");
     return "INVALID_FORMAT_TYPE";
   }
 }
@@ -196,6 +207,8 @@ enum format_case format_case_from_str(const char *str) {
     return FORMAT_CASE_LOWER;
   else if (strcmp(str, FORMAT_CASE_UPPER_STR))
     return FORMAT_CASE_UPPER;
+
+  dbg("str != FORMAT_CASE_LOWER_STR && str != FORMAT_CASE_UPPER_STR");
   return FORMAT_CASE_INVALID;
 }
 
@@ -206,6 +219,9 @@ const char *format_case_to_str(enum format_case format_case) {
   case FORMAT_CASE_UPPER:
     return FORMAT_CASE_UPPER_STR;
   default:
+
+    dbg("format_case != FORMAT_CASE_LOWER && "
+        "format_case != FORMAT_CASE_UPPER");
     return "INVALID_FORMAT_CASE";
   }
 }
@@ -215,6 +231,8 @@ enum format_justify format_justify_from_str(const char *str) {
     return FORMAT_JUSTIFY_LEFT;
   else if (strcmp(str, FORMAT_JUSTIFY_RIGHT_STR))
     return FORMAT_JUSTIFY_RIGHT;
+
+  dbg("str != FORMAT_JUSTIFY_LEFT_STR && str != FORMAT_JUSTIFY_RIGHT_STR");
   return FORMAT_JUSTIFY_INVALID;
 }
 
@@ -225,6 +243,9 @@ const char *format_justify_to_str(enum format_justify format_justify) {
   case FORMAT_JUSTIFY_RIGHT:
     return FORMAT_JUSTIFY_RIGHT_STR;
   default:
+
+    dbg("format_justify != FORMAT_JUSTIFY_LEFT && "
+        "format_justify != FORMAT_JUSTIFY_RIGHT");
     return "INVALID_FORMAT_JUSTIFY";
   }
 }
@@ -236,6 +257,9 @@ enum format_sign format_sign_from_str(const char *str) {
     return FORMAT_SIGN_FORCE;
   else if (strcmp(str, FORMAT_SIGN_SPACE_STR))
     return FORMAT_SIGN_SPACE;
+
+  dbg("str != FORMAT_SIGN_AUTO_STR && str != FORMAT_SIGN_FORCE_STR && "
+      "str != FORMAT_SIGN_SPACE_STR");
   return FORMAT_SIGN_INVALID;
 }
 
@@ -248,6 +272,10 @@ const char *format_sign_to_str(enum format_sign format_sign) {
   case FORMAT_SIGN_SPACE:
     return FORMAT_SIGN_SPACE_STR;
   default:
+
+    dbg("format_sign != FORMAT_SIGN_AUTO && "
+        "format_sign != FORMAT_SIGN_FORCE && "
+        "format_sign != FORMAT_SIGN_SPACE");
     return "INVALID_FORMAT_SIGN";
   }
 }
@@ -257,6 +285,8 @@ enum format_prefix format_prefix_from_str(const char *str) {
     return FORMAT_PREFIX_AUTO;
   else if (strcmp(str, FORMAT_PREFIX_NONE_STR))
     return FORMAT_PREFIX_NONE;
+
+  dbg("str != FORMAT_PREFIX_AUTO_STR && str != FORMAT_PREFIX_NONE_STR");
   return FORMAT_PREFIX_INVALID;
 }
 
@@ -267,6 +297,8 @@ const char *format_prefix_to_str(enum format_prefix format_prefix) {
   case FORMAT_PREFIX_NONE:
     return FORMAT_PREFIX_NONE_STR;
   default:
+    dbg("format_prefix != FORMAT_PREFIX_AUTO && "
+        "format_prefix != FORMAT_PREFIX_NONE");
     return "INVALID_FORMAT_PREFIX";
   }
 }
@@ -276,6 +308,9 @@ enum format_decimal_point format_decimal_point_from_str(const char *str) {
     return FORMAT_DECIMAL_POINT_AUTO;
   else if (strcmp(str, FORMAT_DECIMAL_POINT_FORCE_STR))
     return FORMAT_DECIMAL_POINT_FORCE;
+
+  dbg("str != FORMAT_DECIMAL_POINT_AUTO_STR && "
+      "str != FORMAT_DECIMAL_POINT_FORCE_STR");
   return FORMAT_DECIMAL_POINT_INVALID;
 }
 
@@ -287,6 +322,8 @@ format_decimal_point_to_str(enum format_decimal_point format_decimal_point) {
   case FORMAT_DECIMAL_POINT_FORCE:
     return FORMAT_DECIMAL_POINT_FORCE_STR;
   default:
+    dbg("format_decimal_point != FORMAT_DECIMAL_POINT_AUTO && "
+        "format_decimal_point != FORMAT_DECIMAL_POINT_FORCE");
     return "INVALID_FORMAT_DECIMAL_POINT";
   }
 }
@@ -296,6 +333,8 @@ enum format_left_pad format_left_pad_from_str(const char *str) {
     return FORMAT_LEFT_PAD_SPACE;
   else if (strcmp(str, FORMAT_LEFT_PAD_ZERO_STR))
     return FORMAT_LEFT_PAD_ZERO;
+
+  dbg("str != FORMAT_LEFT_PAD_SPACE_STR && str != FORMAT_LEFT_PAD_ZERO_STR");
   return FORMAT_LEFT_PAD_INVALID;
 }
 
@@ -306,6 +345,8 @@ const char *format_left_pad_to_str(enum format_left_pad format_left_pad) {
   case FORMAT_LEFT_PAD_ZERO:
     return FORMAT_LEFT_PAD_ZERO_STR;
   default:
+    dbg("format_left_pad != FORMAT_LEFT_PAD_SPACE && "
+        "format_left_pad != FORMAT_LEFT_PAD_ZERO");
     return "INVALID_FORMAT_LEFT_PAD";
   }
 }
@@ -359,6 +400,12 @@ void format_parse_single(struct format *format, const char *key,
     } else {
       format->format_precision = uintfstr(key);
     }
+  } else {
+    dbg("key != FORMAT_KEY_TYPE && key != FORMAT_KEY_CASE && "
+        "key != FORMAT_KEY_JUSTIFY && key != FORMAT_KEY_SIGN && "
+        "key != FORMAT_KEY_PREFIX && key != FORMAT_KEY_DECIMAL_POINT && "
+        "key != FORMAT_KEY_LEFT_PAD && key != FORMAT_KEY_WIDTH && "
+        "key != FORMAT_KEY_PRECISION");
   }
 }
 
@@ -403,19 +450,9 @@ void format_parse(struct format *format, const char *str) {
       }
     }
 
-    // If both key and val are done, parse the pair
     if (key_done && val_done) {
-#ifdef DEBUG
-      term_puts("key: ");
-      term_puts(key);
-      term_puts(", val: ");
-      term_puts(val);
-      term_puts("\n");
-#endif
-
       format_parse_single(format, key, val);
 
-      // Reset for next pair
       key_i = 0;
       val_i = 0;
       key_done = false;
@@ -423,28 +460,16 @@ void format_parse(struct format *format, const char *str) {
     }
   }
 
-  // If we reached the end and there's a key-value pair that never hit a comma
-  // (key_done true, but val_done false), parse it here.
   if (key_done && (val_i > 0)) {
     val[val_i] = '\0';
-
-#ifdef DEBUG
-    term_puts("key: ");
-    term_puts(key);
-    term_puts(", val: ");
-    term_puts(val);
-    term_puts("\n");
-#endif
 
     format_parse_single(format, key, val);
   }
 }
 
-/* Format an int64_t into buf */
 char *format_int(struct format *format, char *buf, int64_t val) {
   buf[0] = '\0';
 
-  // Sign handling
   if (format->format_sign == FORMAT_SIGN_FORCE) {
     if (val < 0)
       strcat(buf, "-");
@@ -457,15 +482,13 @@ char *format_int(struct format *format, char *buf, int64_t val) {
       strcat(buf, "+");
   }
 
-  // Convert number to string
   char num_buf[64];
-  strfint(val, num_buf); // user-provided
+  strfint(val, num_buf);
   strcat(buf, num_buf);
 
   return buf;
 }
 
-/* Format a uint64_t into buf */
 char *format_uint(struct format *format, char *buf, uint64_t val) {
   buf[0] = '\0';
 
@@ -476,55 +499,47 @@ char *format_uint(struct format *format, char *buf, uint64_t val) {
     strcat(buf, " ");
   }
 
-  // Convert number to string
   char num_buf[64];
-  strfuint(val, num_buf); // user-provided
+  strfuint(val, num_buf);
   strcat(buf, num_buf);
 
   return buf;
 }
 
-/* Format a hex */
 char *format_hex(struct format *format, char *buf, uint64_t val) {
   buf[0] = '\0';
 
-  // Optional sign
   if (format->format_sign == FORMAT_SIGN_FORCE) {
     strcat(buf, "+");
   } else if (format->format_sign == FORMAT_SIGN_SPACE) {
     strcat(buf, " ");
   }
 
-  // Optional prefix
   if (format->format_prefix == FORMAT_PREFIX_AUTO) {
     strcat(buf, "0x");
   }
 
-  // Convert number to hex string
   char num_buf[64];
-  hexstrfuint(val, num_buf); // user-provided
+  hexstrfuint(val, num_buf);
   strcat(buf, num_buf);
 
   return buf;
 }
 
-/* Single char */
 char *format_char(struct format *format, char *buf, char val) {
-  (void)format; // ignore
+  (void)format;
   buf[0] = val;
   buf[1] = '\0';
   return buf;
 }
 
-/* Simple string copy */
 char *format_str(struct format *format, char *buf, const char *val) {
-  (void)format; // ignore
+  (void)format;
   buf[0] = '\0';
-  strcat(buf, val); // assume val is null-terminated
+  strcat(buf, val);
   return buf;
 }
 
-/* Pointer as hex */
 char *format_ptr(struct format *format, char *buf, const void *val) {
   buf[0] = '\0';
 
@@ -539,20 +554,17 @@ char *format_ptr(struct format *format, char *buf, const void *val) {
   return buf;
 }
 
-/* Binary format: 0101001010001 */
 char *format_binary(struct format *format, char *buf, uint64_t val) {
   buf[0] = '\0';
 
-  // Optional sign
   if (format->format_sign == FORMAT_SIGN_FORCE) {
     strcat(buf, "+");
   } else if (format->format_sign == FORMAT_SIGN_SPACE) {
     strcat(buf, " ");
   }
 
-  // Convert number to binary string
   char num_buf[64];
-  binstrfuint(val, num_buf); // user-provided
+  binstrfuint(val, num_buf);
   strcat(buf, num_buf);
 
   return buf;
@@ -560,9 +572,6 @@ char *format_binary(struct format *format, char *buf, uint64_t val) {
 
 char *apply_format_generic(struct format *format, char *ret_buf,
                            size_t ret_buf_len, va_list *args) {
-  // 1) Make a temp buffer for the raw numeric/string data (before
-  // justification).
-  //    Let's assume 256 is large enough for your typical usage.
   char temp[256];
   temp[0] = '\0';
 
@@ -600,23 +609,21 @@ char *apply_format_generic(struct format *format, char *ret_buf,
   }
 
   size_t data_len = strlen(temp);
-  size_t width = format->format_width; // e.g. 10
+  size_t width = format->format_width;
   if (width < data_len)
-    width = data_len; // no negative padding
+    width = data_len;
 
   if (width >= ret_buf_len) {
-    // If ret_buf too small, just do a truncated copy or handle error
+    dbg("width >= ret_buf_len");
     width = ret_buf_len - 1;
   }
 
   size_t pad_len = width - data_len;
   char pad_char = (format->format_left_pad == FORMAT_LEFT_PAD_ZERO) ? '0' : ' ';
 
-  // Clear ret_buf
   ret_buf[0] = '\0';
 
   if (format->format_justify == FORMAT_JUSTIFY_LEFT) {
-    // text first, then pad
     strcat(ret_buf, temp);
     for (size_t i = 0; i < pad_len; i++) {
       size_t len = strlen(ret_buf);
@@ -626,7 +633,6 @@ char *apply_format_generic(struct format *format, char *ret_buf,
       }
     }
   } else {
-    // pad first, then text
     for (size_t i = 0; i < pad_len; i++) {
       size_t len = strlen(ret_buf);
       if (len + 1 < ret_buf_len) {
@@ -644,21 +650,20 @@ char *format(const char *fmt, ...) {
   va_list args;
   va_start(args, fmt);
 
-  char *ret_buf = (char *)alloc_page();
+  char *ret_buf = (char *)kalloc(4096);
 
   if (!ret_buf) {
     va_end(args);
+    dbg("kalloc(...) == NULL");
     return NULL;
   }
   ret_buf[0] = '\0';
 
-  // Temp buffer for expansions
   char fmt_buf[256];
 
   int main_index = 0;
   while (fmt[main_index] != '\0') {
     if (fmt[main_index] == '%' && fmt[main_index + 1] == '{') {
-      // parse format string between %{ and }
       char format_str[128];
       int fidx = 0;
       main_index += 2;
@@ -667,26 +672,13 @@ char *format(const char *fmt, ...) {
       }
       format_str[fidx] = '\0';
 
-      // if main[main_index] == '}', skip it
       if (fmt[main_index] == '}') {
         main_index++;
       }
 
-      // parse into struct
       struct format format;
       format_parse(&format, format_str);
 
-#ifdef DEBUG
-      // Debug: dump format
-      {
-        char dumpbuf[256];
-        format_dump(&format, dumpbuf, sizeof(dumpbuf));
-        term_puts(dumpbuf);
-        term_puts("\n");
-      }
-#endif
-
-      // get width/precision from args if flagged
       if (format.width_from_args) {
         format.format_width = (uint64_t)va_arg(args, int);
       }
@@ -694,14 +686,10 @@ char *format(const char *fmt, ...) {
         format.format_precision = (uint64_t)va_arg(args, int);
       }
 
-      // apply
       fmt_buf[0] = '\0';
       apply_format_generic(&format, fmt_buf, sizeof(fmt_buf), &args);
-
-      // concatenate the formatted piece
       strcat(ret_buf, fmt_buf);
     } else {
-      // copy literal chars
       size_t len = strlen(ret_buf);
       ret_buf[len] = fmt[main_index];
       ret_buf[len + 1] = '\0';
@@ -710,5 +698,5 @@ char *format(const char *fmt, ...) {
   }
 
   va_end(args);
-  return ret_buf; // caller can free_page(ret_buf) if desired
+  return ret_buf;
 }

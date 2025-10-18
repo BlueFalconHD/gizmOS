@@ -1,5 +1,8 @@
 #include "lifecycle.h"
+#include "lib/kalloc.h"
+#include "buddy_allocator.h"
 #include "memory.h"
+#include "notification.h"
 #include "process.h"
 #include "process_table.h"
 #include "scheduler.h"
@@ -11,7 +14,6 @@
 #include <lib/usermem.h>
 #include <mem_layout.h>
 #include <page_table.h>
-#include <physical_alloc.h>
 
 #define PROC_LIFECYCLE_DEBUG_LEVEL 0
 
@@ -48,17 +50,16 @@ found:
   p->state = USED;
   p->priority = PROC_PRIORITY_NORMAL;
 
-  struct trapframe *tf = alloc_page();
+  struct trapframe *tf = (struct trapframe *)buddy_alloc_page();
   if (!tf) {
     release(&p->lock);
     return RESULT_FAILURE(RESULT_NOMEM);
   }
-
   p->trapframe = tf;
 
   page_table_t *pt = allocate_process_page_table(p);
   if (!pt) {
-    free_page(p->trapframe);
+    kfree(p->trapframe);
     p->trapframe = NULL;
     release(&p->lock);
     return RESULT_FAILURE(RESULT_NOMEM);
@@ -70,20 +71,12 @@ found:
   p->context.ra = (uint64_t)forkret;
   p->context.sp = p->kstack + KSTACK_PAGES * PAGE_SIZE;
 
+  // Initialize notification subsystem for this process
+  notification_init_proc(p);
+
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
   printf("alloc proc kstack = %{type: hex}\n", PRINT_FLAG_BOTH, p->kstack);
 #endif
-
-  result_t rmb = make_mailbox();
-  if (!result_is_ok(rmb)) {
-    free_page(p->trapframe);
-    p->trapframe = NULL;
-    free_page(p->pagetable);
-    p->pagetable = NULL;
-    release(&p->lock);
-    return RESULT_FAILURE(RESULT_NOMEM);
-  }
-  p->mailbox = (mailbox_t *)result_unwrap(rmb);
 
   return RESULT_SUCCESS(p);
 }
@@ -93,12 +86,12 @@ void free_process(proc_t *p) {
     return;
 
   if (p->pagetable) {
-    free_page(p->pagetable);
+    buddy_free_page(p->pagetable);
     p->pagetable = NULL;
   }
 
   if (p->trapframe) {
-    free_page(p->trapframe);
+    buddy_free_page(p->trapframe);
     p->trapframe = NULL;
   }
 
@@ -280,4 +273,53 @@ uint64_t fork(void) {
   release(&new_proc->lock);
 
   return pid;
+}
+
+RESULT_TYPE(proc_t *)
+proc_from_code(uint8_t code[], uint64_t size, const char *name) {
+  proc_t *p = NULL;
+
+  result_t rp = make_proc();
+  if (!result_is_ok(rp)) {
+    return RESULT_FAILURE(RESULT_NOMEM);
+  }
+
+  p = (proc_t *)result_unwrap(rp);
+
+  // Allocate user memory up to size and copy code to VA=0
+  uint64_t newsz = ((size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1));
+  if (!uvmalloc(p, 0, newsz)) {
+    free_process(p);
+    release(&p->lock);
+    return RESULT_FAILURE(RESULT_NOMEM);
+  }
+
+  // Copy program bytes into mapped region
+  uint64_t remaining = size;
+  uint64_t offset = 0;
+  while (remaining > 0) {
+    uint64_t chunk = remaining;
+    // copyout copies from kernel buffer to user VA space
+    if (!result_is_ok(copyout(p->pagetable, offset, code + offset, chunk))) {
+      uvmdealloc(p, newsz, 0);
+      free_process(p);
+      release(&p->lock);
+      return RESULT_FAILURE(RESULT_ERROR);
+    }
+    offset += chunk;
+    remaining -= chunk;
+  }
+
+  p->sz = newsz;
+
+  // Set initial trapframe for user entry
+  p->trapframe->epc = 0;    // entry point at 0
+  p->trapframe->sp = newsz; // simple stack at top of image
+
+  if (name != NULL)
+    strncopy(p->name, name, sizeof(p->name));
+
+  p->state = RUNNABLE;
+  release(&p->lock);
+  return RESULT_SUCCESS(p);
 }

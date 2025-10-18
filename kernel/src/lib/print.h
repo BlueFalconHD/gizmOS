@@ -12,7 +12,7 @@ typedef uint8_t print_flags_t;
 #include <device/console.h>
 #include <device/shared.h>
 #include <device/uart.h>
-#include <physical_alloc.h>
+#include <lib/kalloc.h>
 
 void print(const char *str, print_flags_t flags);
 
@@ -21,6 +21,6 @@ void print(const char *str, print_flags_t flags);
     char *buf = format(fmt, ##__VA_ARGS__);                                    \
     if (buf) {                                                                 \
       print(buf, flags);                                                       \
-      free_page(buf);                                                          \
+      kfree(buf);                                                              \
     }                                                                          \
   } while (0)

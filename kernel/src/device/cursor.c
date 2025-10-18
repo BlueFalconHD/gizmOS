@@ -2,12 +2,12 @@
 #include "device/shared.h"
 #include "img/cursor.h"
 #include "img/img.h"
-#include <physical_alloc.h>
+#include <lib/kalloc.h>
 
 #define CURSOR_SZ IMG_CURSOR_WIDTH
 
 RESULT_TYPE(cursor_t *) make_cursor(framebuffer_t *fb) {
-  cursor_t *c = (cursor_t *)alloc_page();
+  cursor_t *c = (cursor_t *)kalloc(sizeof(cursor_t));
   if (!c)
     return RESULT_FAILURE(RESULT_NOMEM);
 

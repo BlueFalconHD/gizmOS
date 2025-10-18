@@ -2,11 +2,11 @@
 #include "lib/canary.h"
 #include <lib/memory.h>
 #include <lib/result.h>
-#include <physical_alloc.h>
+#include <lib/kalloc.h>
 
 RESULT_TYPE(framebuffer_t *)
 make_framebuffer(struct limine_framebuffer *framebuffer) {
-  framebuffer_t *fb = (framebuffer_t *)alloc_page();
+  framebuffer_t *fb = (framebuffer_t *)kalloc(sizeof(framebuffer_t));
 
   canary_dbg_val((uint64_t)fb);
 

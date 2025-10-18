@@ -1,3 +1,5 @@
+#pragma once
+
 #include <lib/macros.h>
 
 /*
@@ -9,3 +11,8 @@ G_INLINE void force_exception() {
   volatile int value = *ptr;
   (void)value;
 }
+
+/*
+ * Causes a RISC-V breakpoint exception
+ */
+G_INLINE void force_breakpoint_exception() { asm volatile("ebreak"); }

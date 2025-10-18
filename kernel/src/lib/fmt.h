@@ -7,7 +7,7 @@
 /**
  * Formats a string using the given format string and arguments.
  *
- * IMPORTANT: The returned string must be freed by the caller using free_page().
+ * IMPORTANT: The returned string must be freed by the caller using kfree().
  *
  * @param main The format string.
  * @param ... The arguments to format.

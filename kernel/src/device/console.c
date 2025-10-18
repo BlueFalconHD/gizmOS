@@ -4,10 +4,10 @@
 #include <extern/flanterm/flanterm.h>
 #include <lib/str.h>
 #include <limine.h>
-#include <physical_alloc.h>
+#include <lib/kalloc.h>
 
 result_t make_console(framebuffer_t *framebuffer) {
-  console_t *console = (console_t *)alloc_page();
+  console_t *console = (console_t *)kalloc(sizeof(console_t));
   if (!console) {
     return RESULT_FAILURE(RESULT_NOMEM);
   }

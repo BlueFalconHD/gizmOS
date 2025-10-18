@@ -4,7 +4,7 @@
 #include <lib/print.h>
 #include <lib/str.h>
 #include <lib/time.h>
-#include <physical_alloc.h>
+#include <lib/kalloc.h>
 #include <stdint.h>
 
 // Global variable that represents the time that sleep should end
@@ -118,7 +118,7 @@ void time_to_string(const time_t *tm, char *buf) {
       weekday, month, tm->day, tm->year, tm->hours, tm->minutes, tm->seconds);
 
   strncopy(buf, f, strlen(f) + 1);
-  free_page(f);
+  kfree(f);
 }
 
 void sleep_s(uint32_t seconds) {

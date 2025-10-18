@@ -1,11 +1,13 @@
 #include "gfx.h"
 #include "device/framebuffer.h"
 #include "device/shared.h"
+#include "lib/debug.h"
 
 #include <stdint.h>
 
 void fill_screen_with_color(uint8_t r, uint8_t g, uint8_t b) {
   if (!shared_framebuffer_initialized) {
+    dbg("shared_framebuffer_initialized == false");
     return;
   }
 

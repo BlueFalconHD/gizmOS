@@ -1,18 +1,24 @@
 #include "mmio.h"
+#include "lib/debug.h"
 
+#include <lib/kalloc.h>
 #include <lib/panic.h>
 #include <page_table.h>
-#include <physical_alloc.h>
 #include <stdbool.h>
 
 mmio_map *alloc_mmio_map() {
-  mmio_map *mmap = alloc_page();
-  mmap->count = 0;
-  mmap->entries = alloc_page();
-  if (!mmap || !mmap->entries) {
+  mmio_map *mmap = (mmio_map *)kalloc(sizeof(mmio_map));
+  if (!mmap) {
+    dbg("mmap == NULL");
     panic("Failed to allocate memory for mmio map");
   }
-
+  mmap->count = 0;
+  mmap->capacity = 16; /* initial */
+  mmap->entries = (mmio_entry *)kalloc(mmap->capacity * sizeof(mmio_entry));
+  if (!mmap->entries) {
+    dbg("mmap->entries == NULL");
+    panic("Failed to allocate memory for mmio entries");
+  }
   return mmap;
 }
 
@@ -20,22 +26,34 @@ bool mmio_map_add(mmio_map *map, uint64_t base, uint64_t size, uint64_t flags,
                   uint16_t id) {
   // Check if the map is null
   if (!map) {
+    dbg("map == NULL");
     return false;
   }
 
-  // Check if the map is full
-  if (map->count >= MAX_MMIO_ENTRIES) {
-    return false;
+  // grow if full
+  if (map->count >= map->capacity) {
+    uint64_t new_cap = map->capacity ? map->capacity * 2 : 16;
+    mmio_entry *new_entries =
+        (mmio_entry *)kalloc(new_cap * sizeof(mmio_entry));
+    if (!new_entries) {
+      dbg("new_entries == NULL");
+      return false;
+    }
+    // copy existing
+    for (uint64_t i = 0; i < map->count; i++) {
+      new_entries[i] = map->entries[i];
+    }
+    kfree(map->entries);
+    map->entries = new_entries;
+    map->capacity = new_cap;
   }
 
-  // Check if the base address is already in the map
   for (uint64_t i = 0; i < map->count; i++) {
     if (map->entries[i].base == base) {
       return false;
     }
   }
 
-  // Add the entry
   map->entries[map->count].base = base;
   map->entries[map->count].size = size;
   map->entries[map->count].flags = flags;
@@ -45,15 +63,13 @@ bool mmio_map_add(mmio_map *map, uint64_t base, uint64_t size, uint64_t flags,
 }
 
 bool mmio_map_remove(mmio_map *map, uint64_t base) {
-  // Check if the map is null
   if (!map) {
+    dbg("map == NULL");
     return false;
   }
 
-  // Find the entry
   for (uint64_t i = 0; i < map->count; i++) {
     if (map->entries[i].base == base) {
-      // Remove the entry
       for (uint64_t j = i; j < map->count - 1; j++) {
         map->entries[j] = map->entries[j + 1];
       }
@@ -62,21 +78,21 @@ bool mmio_map_remove(mmio_map *map, uint64_t base) {
     }
   }
 
+  dbg("entry not found to remove");
   return false;
 }
 
 bool mmio_map_pages(mmio_map *map, page_table_t *pt) {
-  // Check if the map is null
   if (!map) {
+    dbg("map == NULL");
     return false;
   }
 
-  // Check if the page table is null
   if (!pt) {
+    dbg("pt == NULL");
     return false;
   }
 
-  // Map the entries as identity map
   for (uint64_t i = 0; i < map->count; i++) {
     for (uint64_t j = 0; j < map->entries[i].size; j += PAGE_SIZE) {
       if (!map_page(pt, map->entries[i].base + j, map->entries[i].base + j,
@@ -90,13 +106,13 @@ bool mmio_map_pages(mmio_map *map, page_table_t *pt) {
 }
 
 bool mmio_unmap_pages(mmio_map *map, page_table_t *pt) {
-  // Check if the map is null
   if (!map) {
+    dbg("map == NULL");
     return false;
   }
 
-  // Check if the page table is null
   if (!pt) {
+    dbg("pt == NULL");
     return false;
   }
 
@@ -104,12 +120,25 @@ bool mmio_unmap_pages(mmio_map *map, page_table_t *pt) {
   for (uint64_t i = 0; i < map->count; i++) {
     for (uint64_t j = 0; j < map->entries[i].size; j += PAGE_SIZE) {
       if (!unmap_page(pt, map->entries[i].base + j)) {
+        dbg("unmap_page(...) == false");
         return false;
       }
     }
   }
 
   return true;
+}
+
+static inline void mmio_map_free(mmio_map *map) {
+  if (!map) {
+    dbg("map == NULL");
+    return;
+  }
+  if (map->entries) {
+    kfree(map->entries);
+    map->entries = NULL;
+  }
+  kfree(map);
 }
 
 /**
@@ -119,12 +148,11 @@ bool mmio_unmap_pages(mmio_map *map, page_table_t *pt) {
  * @return The ID of the mapped entry if found, otherwise 0.
  */
 uint16_t mmio_is_mapped(mmio_map *map, uint64_t vaddr) {
-  // Check if the map is null
   if (!map) {
+    dbg("map == NULL");
     return 0;
   }
 
-  // Check if the address is contained in the map
   for (uint64_t i = 0; i < map->count; i++) {
     if (vaddr >= map->entries[i].base &&
         vaddr < map->entries[i].base + map->entries[i].size) {
@@ -144,26 +172,24 @@ uint16_t mmio_is_mapped(mmio_map *map, uint64_t vaddr) {
  * @return The read value.
  */
 uint64_t mmio_read(mmio_map *map, uint64_t vaddr, uint8_t size, uint16_t rid) {
-  // Check if the map is null
   if (!map) {
+    dbg("map == NULL");
     return 0;
   }
 
-  // Check if the size is valid
   if (size != 1 && size != 2 && size != 4) {
+    dbg("size != 1 && size != 2 && size != 4");
     return 0;
   }
 
-  // Check if the address is contained in the map
   for (uint64_t i = 0; i < map->count; i++) {
     if (vaddr >= map->entries[i].base &&
         vaddr < map->entries[i].base + map->entries[i].size) {
-      // Check if the ID matches
       if (rid != 0 && rid != map->entries[i].id) {
+        dbg("rid != 0 && rid != map->entries[i].id");
         return 0;
       }
 
-      // Read the value from the MMIO address
       volatile uint8_t *addr = (volatile uint8_t *)(vaddr);
       uint64_t value = 0;
       for (uint8_t j = 0; j < size; j++) {
@@ -186,26 +212,24 @@ uint64_t mmio_read(mmio_map *map, uint64_t vaddr, uint8_t size, uint16_t rid) {
  */
 void mmio_write(mmio_map *map, uint64_t vaddr, uint64_t value, uint8_t size,
                 uint16_t rid) {
-  // Check if the map is null
   if (!map) {
+    dbg("map == NULL");
     return;
   }
 
-  // Check if the size is valid
   if (size != 1 && size != 2 && size != 4) {
+    dbg("size != 1 && size != 2 && size != 4");
     return;
   }
 
-  // Check if the address is contained in the map
   for (uint64_t i = 0; i < map->count; i++) {
     if (vaddr >= map->entries[i].base &&
         vaddr < map->entries[i].base + map->entries[i].size) {
-      // Check if the ID matches
       if (rid != 0 && rid != map->entries[i].id) {
+        dbg("rid != 0 && rid != map->entries[i].id");
         return;
       }
 
-      // Write the value to the MMIO address
       volatile uint8_t *addr = (volatile uint8_t *)(vaddr);
       for (uint8_t j = 0; j < size; j++) {
         addr[j] = (value >> (j * 8)) & 0xFF;

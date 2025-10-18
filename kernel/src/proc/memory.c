@@ -1,10 +1,11 @@
 #include "memory.h"
+#include "lib/kalloc.h"
+#include "buddy_allocator.h"
 #include "process.h"
 #include <lib/cpu.h>
 #include <lib/memory.h>
 #include <mem_layout.h>
 #include <page_table.h>
-#include <physical_alloc.h>
 
 extern char trampoline[];
 extern uint64_t hhdm_offset;
@@ -21,13 +22,13 @@ g_bool uvmalloc(proc_t *p, uint64_t oldsz, uint64_t newsz) {
 
   oldsz = PGROUNDUP(oldsz);
   for (uint64_t a = oldsz; a < newsz; a += PAGE_SIZE) {
-    void *mem = alloc_page();
+    void *mem = buddy_alloc_page();
     if (!mem)
       return false;
     memset(mem, 0, PAGE_SIZE);
     if (!map_page(p->pagetable, a, V2P((uint64_t)mem),
                   PTE_R | PTE_W | PTE_X | PTE_U | PTE_V)) {
-      free_page(mem);
+      kfree(mem);
       uvmdealloc(p, a, oldsz);
       return false;
     }
@@ -46,7 +47,7 @@ g_bool uvmdealloc(proc_t *p, uint64_t oldsz, uint64_t newsz) {
       continue;
     if (!unmap_page(p->pagetable, a))
       return false;
-    free_page((void *)(pa + hhdm_offset));
+    kfree((void *)(pa + hhdm_offset));
   }
   p->sz = newsz;
   return true;
@@ -58,14 +59,14 @@ g_bool uvmcopy(page_table_t *src, page_table_t *dst, uint64_t sz) {
     if (!get_physical_address(src, a, &pa))
       return false;
 
-    void *mem = alloc_page();
+    void *mem = buddy_alloc_page();
     if (!mem)
       return false;
     memcpy(mem, (void *)(pa + hhdm_offset), PAGE_SIZE);
 
     if (!map_page(dst, a, V2P((uint64_t)mem),
                   PTE_R | PTE_W | PTE_X | PTE_U | PTE_V)) {
-      free_page(mem);
+      kfree(mem);
       return false;
     }
   }
@@ -73,7 +74,7 @@ g_bool uvmcopy(page_table_t *src, page_table_t *dst, uint64_t sz) {
 }
 
 page_table_t *allocate_process_page_table(proc_t *p) {
-  page_table_t *pt = alloc_page();
+  page_table_t *pt = (page_table_t *)buddy_alloc_page();
   if (!pt) {
     return NULL;
   }
@@ -82,13 +83,13 @@ page_table_t *allocate_process_page_table(proc_t *p) {
 
   if (!map_page(pt, TRAMPOLINE, V2P((uint64_t)trampoline),
                 PTE_R | PTE_W | PTE_X | PTE_V)) {
-    free_page(pt);
+    buddy_free_page(pt);
     return NULL;
   }
 
   if (!map_page(pt, TRAPFRAME, V2P((uint64_t)p->trapframe),
                 PTE_R | PTE_W | PTE_X | PTE_V)) {
-    free_page(pt);
+    buddy_free_page(pt);
     return NULL;
   }
 

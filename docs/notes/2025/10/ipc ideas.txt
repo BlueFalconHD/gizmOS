@@ -1,0 +1,43 @@
+Two level of IPC on gizmOS:
+
+First, it is important to describe the notification system. Processes are able to register one handler per type of notification they may recieve, and the kernel will run those functions upon receiving a notification of that type. Notifications are generic and not meant for IPC, instead they primarily serve to notify processes of driver events. The kernel is the only one who can issue notifications, processes are only able to register handlers for them.
+
+1. Spine
+Spine is the low level IPC mechanism which permits processes to transmit raw messages to one another (think bytes) through the notification system. Spine is low level and isn't necessarily developer friendly. Spine permits basic messaging functionality along with some simple security measures. Spine is primarily implemented within the kernel, with a userspace syscall wrapper library/interface for ease of use. Spine is not recommended for most applications, instead Lattice should be used.
+
+As noted above, the notification system only permits the kernel to send notifications. The origin of Spine's notifications are within the kernel, where it will issue notifications on behalf of processes which call the spine_msg_send syscall.
+
+syscalls:
+- notif (callback):
+    - notification_register(type, callback, flags) -> id
+    - notification_unregister(type, id)
+- spine:
+    - spine_msg_send(dest_pid, msg_ptr, msg_size, flags) -> status
+
+Spine also has the concept of services, where 16 character (nul-padded) service names (one per process) can be register to a PID. This allows processes to more easily locate one another without needing to know PIDs. Spine services are registered with the kernel and can be looked up by other processes. Service names must be unique across the system.
+
+syscalls:
+- spine:
+    - spine_service_advertise(name, flags)
+    - spine_service_lookup(name, flags) -> token
+
+As mentioned earlier, Spine also has some primitive security measures which allow retrieving process information given a message's seal. Each process recieves its own token which the kernel stores in a table along with important process information. When a process sends a message, the kernel attaches the sender process's token. The recipient of the message can then use the token to retrieve information about the sender process through the seal data structure.
+
+syscalls:
+- spine:
+    - spine_get_seal(token, seal_ptr, seal_size) -> status
+
+The spine seal structure contains the process PID, name, advertised service name, and other information (TBD)
+
+2. Lattice
+Lattice is the higher level object-based IPC channel in gizmOS. Lattice is built on top of Spine, primarily within userspace libraries. Lattice enables more compatibility and flexibility within transport while taking the weight of structure layout and serialization off the developer. Lattice is more developer friendly and is the recommended IPC mechanism for most applications.
+
+Lattice is built around objects which are serialized onto the wire and transmitted through Spine. A LatticeMap is equivalent to a dictionary, where key/value pairs can be stored. Values can be primitive types (LatticeNumber, LatticeString, etc) or other objects (LatticeMap, LatticeArray). LatticeArrays are equivalent to lists, where values can be stored in an ordered manner. Lattice objects can be nested within one another to create complex data structures.
+
+Lattice implements automatic multiplexing capabilities into Spine by allowing message objects to include a "method" field. This field is a string which indicates the type of operation the message is requesting. When you set up Lattice, it will register a handler for you to dispatch incoming messages with the proper callbacks based on the method field. This allows a single Spine notification handler to handle multiple types of messages without having to handle routing yourself.
+
+Lattice also implements a request/response mechanism on top of Spine. When sending a message, you can indicate that you expect a response. Lattice will automatically generate a unique ID for the request and include it in the message. When the recipient processes the message, it can send a response back to the sender using the same ID. Lattice will handle matching the response to the original request and invoking the appropriate callback.
+
+lattice_send_message
+lattice_send_message_with_reply
+lattice_send_message_with_reply_sync

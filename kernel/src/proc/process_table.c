@@ -1,11 +1,11 @@
 #include "process_table.h"
+#include "buddy_allocator.h"
 #include "process.h"
-#include <lib/spinlock.h>
-#include <lib/print.h>
 #include <lib/panic.h>
+#include <lib/print.h>
+#include <lib/spinlock.h>
 #include <mem_layout.h>
 #include <page_table.h>
-#include <physical_alloc.h>
 
 proc_t processes[NPROC];
 
@@ -24,7 +24,7 @@ g_bool setup_process_kernel_stack(proc_t *p, uint8_t pidx) {
     uint64_t kstackvaddr = KSTACK(pidx);
 
     for (int i = 0; i < KSTACK_PAGES; i++) {
-      void *kpage = alloc_page();
+      void *kpage = buddy_alloc_page();
       if (!kpage) {
         panic_msg("Kernel stack allocation failed");
         printf("pidx: %{type: int}", PRINT_FLAG_BOTH, pidx);

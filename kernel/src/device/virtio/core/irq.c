@@ -5,6 +5,21 @@
 #include "queue.h"
 #include <lib/memory.h>
 #include <lib/print.h>
+#include <lib/log.h>
+
+static inline log_t *virtio_irq_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("virtio", "irq");
+    #if VIRTIO_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
+
 #include <device/virtio/virtio.h>
 #include <lib/print.h>
 
@@ -35,9 +50,7 @@ void virtio_shared_isr(uint32_t irq) {
     uint32_t ist = virtio_mmio_read32(dev->mmio_base, VIRTIO_MMIO_INTERRUPT_STATUS);
     if (ist == 0) continue;
     virtio_mmio_write32(dev->mmio_base, VIRTIO_MMIO_INTERRUPT_ACK, ist);
-    #if VIRTIO_DEBUG
-    printf("virtio: IRQ%{type: int} ist=0x%{type: hex}\n", PRINT_FLAG_BOTH, irq, (uint64_t)ist);
-    #endif
+    LOG_DEBUG(virtio_irq_log(), "IRQ%{type: int} ist=0x%{type: hex}", irq, (uint64_t)ist);
     if ((ist & 0x2) && g_cb[i].cb) { // bit1: config change
       g_cb[i].cb(dev);
     }

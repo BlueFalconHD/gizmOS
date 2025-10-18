@@ -4,6 +4,15 @@
 #include <lib/kalloc.h>
 #include <lib/memory.h>
 #include <lib/print.h>
+#include <lib/log.h>
+#if NOTIF_DEBUG_LEVEL >= 1 || NOTIF_DEBUG_LEVEL >= 2
+static inline log_t *notif_log() {
+  static log_t *l = NULL;
+  if (!l)
+    l = g_log_create("proc", "notif");
+  return l;
+}
+#endif
 #include <lib/spinlock.h>
 #include <lib/usermem.h>
 #include <mem_layout.h>
@@ -77,9 +86,7 @@ g_bool notification_post_copy(struct proc *p, uint16_t type, const void *data,
     // queue full: drop newest by default
     p->notif_stats_dropped++;
 #if NOTIF_DEBUG_LEVEL >= 1
-    printf(
-        "[notif] drop: pid=%{type: int} type=%{type: int} len=%{type: int}\n",
-        PRINT_FLAG_BOTH, p->pid, (int)type, (int)len);
+    LOG_WARN(notif_log(), "drop: pid=%{type: int} type=%{type: int} len=%{type: int}", p->pid, (int)type, (int)len);
 #endif
   } else {
     notif_msg_t *m = &p->notif_queue[p->notif_q_tail];
@@ -93,9 +100,7 @@ g_bool notification_post_copy(struct proc *p, uint16_t type, const void *data,
     p->notif_pending = 1;
     enq = true;
 #if NOTIF_DEBUG_LEVEL >= 2
-    printf("[notif] enq: pid=%{type: int} id=%{type: int} type=%{type: int} "
-           "len=%{type: int}\n",
-           PRINT_FLAG_BOTH, p->pid, (int)m->id, (int)m->type, (int)m->len);
+    LOG_DEBUG(notif_log(), "enq: pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int}", p->pid, (int)m->id, (int)m->type, (int)m->len);
 #endif
   }
 
@@ -115,10 +120,7 @@ g_bool notification_pop(struct proc *p, notif_msg_t *out) {
     p->notif_q_head = inc_mod(p->notif_q_head, NOTIF_QUEUE_SIZE);
     ok = true;
 #if NOTIF_DEBUG_LEVEL >= 2
-    printf("[notif] pop: pid=%{type: int} id=%{type: int} type=%{type: int} "
-           "len=%{type: int}\n",
-           PRINT_FLAG_BOTH, p->pid, (int)out->id, (int)out->type,
-           (int)out->len);
+    LOG_DEBUG(notif_log(), "pop: pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int}", p->pid, (int)out->id, (int)out->type, (int)out->len);
 #endif
   } else {
     p->notif_pending = 0;

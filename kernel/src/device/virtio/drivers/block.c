@@ -5,6 +5,21 @@
 #include <lib/kalloc.h>
 #include <lib/memory.h>
 #include <lib/print.h>
+#include <lib/log.h>
+
+static inline log_t *virtio_blk_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("virtio", "block");
+    #if VIRTIO_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
+
 #include <page_table.h>
 #include <stddef.h>
 
@@ -35,8 +50,8 @@ static int blk_init(virtio_block_dev_t *blk) {
   virtio_mmio_write32(blk->vdev->mmio_base, VIRTIO_MMIO_STATUS,
                       s | VIRTIO_CONFIG_S_DRIVER_OK);
 #if VIRTIO_DEBUG
-  printf("virtio-blk: capacity(sectors)=%{type: int}\n", PRINT_FLAG_BOTH,
-         (int)blk->capacity);
+  LOG_INFO(virtio_blk_log(), "capacity(sectors)=%{type: int}",
+           (int)blk->capacity);
 #endif
   return 0;
 }
@@ -105,10 +120,9 @@ static g_bool submit_rw(virtio_block_dev_t *blk, uint32_t type, uint64_t sector,
   }
   g_bool ok = (tail->status == VIRTIO_BLK_S_OK);
 #if VIRTIO_DEBUG
-  printf(
-      "virtio-blk: %s sector=%{type: int} n=%{type: int} status=%{type: int}\n",
-      PRINT_FLAG_BOTH, is_write ? "write" : "read", (int)sector,
-      (int)num_sectors, (int)tail->status);
+  LOG_DEBUG(virtio_blk_log(), "%{type: str} sector=%{type: int} n=%{type: int} status=%{type: int}",
+            is_write ? "write" : "read", (int)sector, (int)num_sectors,
+            (int)tail->status);
 #endif
   return ok;
 }

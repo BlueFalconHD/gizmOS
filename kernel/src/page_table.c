@@ -8,11 +8,19 @@
 #include <lib/memory.h> // For memset
 #include <lib/panic.h>
 #include <lib/print.h>
+#include <lib/log.h>
 #include <lib/str.h>
 #include <limine_requests.h>
 #include <stdbool.h>
 
 page_table_t *shared_page_table;
+
+static inline log_t *pt_log() {
+  static log_t *l = NULL;
+  if (!l)
+    l = g_log_create("mmu", "pagetable");
+  return l;
+}
 
 /**
  * @brief Helper function to convert a physical address to a virtual address.
@@ -171,11 +179,9 @@ EARLY_TEXT bool identity_map(page_table_t *root_table, uint64_t start_address,
   while (addr < end_addr) {
     if (!map_page(root_table, addr, addr, flags)) {
 
-      panic_msg_no_cr("Failed to map page at ");
       char buffer[128];
       hexstrfuint(addr, buffer);
-      print(buffer, PRINT_FLAG_BOTH);
-      print("\n", PRINT_FLAG_BOTH);
+      LOG_ERROR(pt_log(), "Failed to map page at 0x%{type: str}", buffer);
 
       return false;
     }
@@ -198,11 +204,9 @@ EARLY_TEXT bool map_range(page_table_t *root_table, uint64_t virtual_start,
     uint64_t pa = physical_start + addr_offset;
 
     if (!map_page(root_table, va, pa, flags)) {
-      panic_msg_no_cr("Failed to map page at virtual address ");
       char buffer[128];
       hexstrfuint(va, buffer);
-      print(buffer, PRINT_FLAG_BOTH);
-      print("\n", PRINT_FLAG_BOTH);
+      LOG_ERROR(pt_log(), "Failed to map page at virtual address 0x%{type: str}", buffer);
       return false;
     }
     addr_offset += PAGE_SIZE;
@@ -221,11 +225,9 @@ bool unmap_range(page_table_t *root_table, uint64_t virtual_start,
     uint64_t va = virtual_start + addr_offset;
 
     if (!unmap_page(root_table, va)) {
-      panic_msg_no_cr("Failed to unmap page at virtual address ");
       char buffer[128];
       hexstrfuint(va, buffer);
-      print(buffer, PRINT_FLAG_BOTH);
-      print("\n", PRINT_FLAG_BOTH);
+      LOG_ERROR(pt_log(), "Failed to unmap page at virtual address 0x%{type: str}", buffer);
       return false;
     }
     addr_offset += PAGE_SIZE;
@@ -277,10 +279,7 @@ g_bool is_addr_mapped(page_table_t *root_table, uint64_t virtual_address) {
         hexstrfuint(virtual_address, va_buf);
         hexstrfuint(physical_address, pa_buf);
 
-        print(va_buf, PRINT_FLAG_BOTH);
-        print(" -> ", PRINT_FLAG_BOTH);
-        print(pa_buf, PRINT_FLAG_BOTH);
-        print("\n", PRINT_FLAG_BOTH);
+        LOG_DEBUG(pt_log(), "%{type: str} -> %{type: str}", va_buf, pa_buf);
 
         return true;
       } else {

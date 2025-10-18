@@ -2,7 +2,21 @@
 #include "buddy_allocator.h"
 
 #include "lib/debug.h"
-#include "print.h"
+#include <lib/log.h>
+
+static inline log_t *kalloc_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("mm", "kalloc");
+    #if KALLOC_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
+
 #include <lib/memory.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -143,10 +157,7 @@ void kfree_impl(void *ptr) {
   kalloc_header_t *hdr = (kalloc_header_t *)((uint8_t *)ptr - header_sz);
 
   if (hdr->magic != KALLOC_HEADER_MAGIC) {
-#ifdef KALLOC_TRACE
-    printf("[KALLOC] WARNING: kfree on non-kalloc pointer %{type: hex}\n",
-           PRINT_FLAG_BOTH, (uint64_t)ptr);
-#endif
+    LOG_WARN(kalloc_log(), "WARNING: kfree on non-kalloc pointer %{type: hex}", (uint64_t)ptr);
     dbg("hdr->magic != KALLOC_HEADER_MAGIC");
     return;
   }
@@ -188,10 +199,7 @@ void *kresize_impl(void *ptr, size_t new_size) {
   size_t header_sz = kalloc_header_size();
   kalloc_header_t *hdr = (kalloc_header_t *)((uint8_t *)ptr - header_sz);
   if (hdr->magic != KALLOC_HEADER_MAGIC) {
-#ifdef KALLOC_TRACE
-    printf("[KALLOC] WARNING: kresize on non-kalloc pointer %{type: hex}\n",
-           PRINT_FLAG_BOTH, (uint64_t)ptr);
-#endif
+    LOG_WARN(kalloc_log(), "WARNING: kresize on non-kalloc pointer %{type: hex}", (uint64_t)ptr);
     dbg("hdr->magic != KALLOC_HEADER_MAGIC");
     return NULL;
   }
@@ -224,23 +232,16 @@ void *kresize_impl(void *ptr, size_t new_size) {
   return new_ptr;
 }
 
-void *kresize_trace(void *ptr, size_t new_size, const char *file, int line) {
+void *kresize_trace(void *ptr, size_t new_size, const char *file __attribute__((unused)), int line __attribute__((unused))) {
   void *new_ptr = kresize_impl(ptr, new_size);
   if (new_ptr != NULL) {
     record_allocation(new_ptr, new_size, file, line);
-#ifdef KALLOC_TRACE
-    printf("[KALLOC] Resized %{type: hex} -> %{type: hex} to %{type: int} "
-           "bytes (%{type: str}:%{type: int})\n",
-           PRINT_FLAG_BOTH, (uint64_t)ptr, (uint64_t)new_ptr, (int)new_size,
-           file, line);
+#ifdef KALLOC_DEBUG
+    LOG_DEBUG(kalloc_log(), "Resized %{type: hex} -> %{type: hex} to %{type: int} bytes (%{type: str}:%{type: int})", (uint64_t)ptr, (uint64_t)new_ptr, (int)new_size, file, line);
 #endif
   } else {
-#ifdef KALLOC_TRACE
+    LOG_WARN(kalloc_log(), "Failed to resize %{type: hex} to %{type: int} bytes (%{type: str}:%{type: int})", (uint64_t)ptr, (int)new_size, file, line);
     dbg("kresize_impl(...) == NULL");
-    printf("[KALLOC] Failed to resize %{type: hex} to %{type: int} bytes "
-           "(%{type: str}:%{type: int})\n",
-           PRINT_FLAG_BOTH, (uint64_t)ptr, (int)new_size, file, line);
-#endif
   }
   return new_ptr;
 }
@@ -251,21 +252,18 @@ void *kalloc_trace(size_t size, const char *file, int line) {
   if (ptr != NULL) {
     record_allocation(ptr, size, file, line);
 
-#ifdef KALLOC_TRACE
-    printf("[KALLOC] Allocated %{type: int} bytes at %{type: hex} %{type: "
-           "str}:%{type: int})\n",
-           PRINT_FLAG_BOTH, (int)size, (uint64_t)ptr, file, line);
+#ifdef KALLOC_DEBUG
+    LOG_DEBUG(kalloc_log(), "Allocated %{type: int} bytes at %{type: hex} (%{type: str}:%{type: int})", (int)size, (uint64_t)ptr, file, line);
 #endif
   }
 
   return ptr;
 }
 
-void kfree_trace(void *ptr, const char *file, int line) {
+void kfree_trace(void *ptr, const char *file __attribute__((unused)), int line __attribute__((unused))) {
   if (ptr != NULL) {
-#ifdef KALLOC_TRACE
-    printf("[KALLOC] Freeing %{type: hex} (%{type: str}:%{type: int})\n",
-           PRINT_FLAG_BOTH, (uint64_t)ptr, file, line);
+#ifdef KALLOC_DEBUG
+    LOG_DEBUG(kalloc_log(), "Freeing %{type: hex} (%{type: str}:%{type: int})", (uint64_t)ptr, file, line);
 #endif
   }
 

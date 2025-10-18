@@ -2,6 +2,7 @@
 #include "limine_requests.h"
 #include <lib/panic.h>
 #include <lib/print.h>
+#include <lib/log.h>
 #include <lib/str.h>
 #include <limine.h>
 #include <stdint.h>
@@ -29,12 +30,19 @@ const char *get_memmap_type_name(uint32_t type) {
   }
 }
 
+static inline log_t *memmap_log() {
+  static log_t *l = NULL;
+  if (!l)
+    l = g_log_create("boot", "memmap");
+  return l;
+}
+
 void print_memory_map() {
-  print("Memory map:\n", PRINT_FLAG_TERM);
+  LOG_INFO(memmap_log(), "Memory map:");
   for (uint64_t i = 0; i < memory_map_entry_count; i++) {
     struct limine_memmap_entry *entry = memory_map_entries[i];
-    printf("  0x%{type: hex} - 0x%{type: hex} (%{type: int} bytes, %s)\n",
-           PRINT_FLAG_TERM, entry->base, entry->base + entry->length,
-           entry->length, get_memmap_type_name(entry->type));
+    LOG_DEBUG(memmap_log(), "  0x%{type: hex} - 0x%{type: hex} (%{type: int} bytes, %{type: str})",
+              entry->base, entry->base + entry->length,
+              entry->length, get_memmap_type_name(entry->type));
   }
 }

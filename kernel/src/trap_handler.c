@@ -1,5 +1,5 @@
 #include "trap_handler.h"
-#include "buddy_allocator.h"
+// #include "buddy_allocator.h"
 #include "device/plic.h"
 #include "device/shared.h"
 #include "lib/sbi.h"
@@ -13,12 +13,20 @@
 #include <lib/ansi.h>
 #include <lib/cpu.h>
 #include <lib/print.h>
+#include <lib/log.h>
 #include <lib/str.h>
 #include <platform/interrupts.h>
 #include <platform/registers.h>
 #include <stdint.h>
 
 static uint64_t next_deadline = 0;
+
+static inline log_t *trap_log() {
+  static log_t *l = NULL;
+  if (!l)
+    l = g_log_create("trap", NULL);
+  return l;
+}
 
 extern void trap_vector();
 
@@ -95,98 +103,62 @@ void exception_handler(uint64_t scause, uint64_t sepc, uint64_t stval,
                           : (cause_code == 13) ? "read"
                                                : "write";
         proc_t *gproc = &processes[i];
-        printf(ANSI_APPLY(
-                   ANSI_COLOR_RED,
-                   "Kernel stack guard page accessed by process pid=%{type: "
-                   "int} name=%{type: str}: %{type: str} at 0x%{type: hex} "
-                   "(guard [%{type: hex} - %{type: hex}])\n"),
-               PRINT_FLAG_BOTH, gproc->pid, gproc->name, acc, stval,
-               guard_start, guard_end - 1);
+        LOG_ERROR(trap_log(),
+                  "Kernel stack guard page accessed by process pid=%{type: int} name=%{type: str}: %{type: str} at 0x%{type: hex} (guard [%{type: hex} - %{type: hex}])",
+                  gproc->pid, gproc->name, acc, stval, guard_start,
+                  guard_end - 1);
         break;
       }
     }
   }
 
-  print("\n\n", PRINT_FLAG_BOTH);
-  print(
-      ANSI_APPLY(ANSI_COLOR_RED, ANSI_APPLY(ANSI_EFFECT_BOLD, "TRAP HANDLER")),
-      PRINT_FLAG_BOTH);
-  print("\nA trap has occurred. This is usually due to an unhandled "
-        "exception or a fatal error.\n\n",
-        PRINT_FLAG_BOTH);
+  LOG_ERROR(trap_log(), "TRAP HANDLER: A trap has occurred. This is usually due to an unhandled exception or a fatal error.");
 
   // Print exception information
   char buffer[64];
 
   // Print exception cause
-  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Exception Cause: "), PRINT_FLAG_BOTH);
   hexstrfuint(scause, buffer);
-  print("0x", PRINT_FLAG_BOTH);
-  print(buffer, PRINT_FLAG_BOTH);
-  print(" (", PRINT_FLAG_BOTH);
-  print(get_exception_cause_str(scause & 0x7FFFFFFFFFFFFFFF), PRINT_FLAG_BOTH);
-  print(")\n", PRINT_FLAG_BOTH);
+  LOG_ERROR(trap_log(), "Exception Cause: 0x%{type: str} (%{type: str})",
+            buffer, get_exception_cause_str(scause & 0x7FFFFFFFFFFFFFFF));
 
   // Print instruction pointer where exception occurred
-  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Exception PC: "), PRINT_FLAG_BOTH);
   hexstrfuint(sepc, buffer);
-  print("0x", PRINT_FLAG_BOTH);
-  print(buffer, PRINT_FLAG_BOTH);
-  print("\n", PRINT_FLAG_BOTH);
+  LOG_ERROR(trap_log(), "Exception PC: 0x%{type: str}", buffer);
 
   // Print bad address or instruction (if applicable)
-  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Trap Value: "), PRINT_FLAG_BOTH);
   hexstrfuint(stval, buffer);
-  print("0x", PRINT_FLAG_BOTH);
-  print(buffer, PRINT_FLAG_BOTH);
-  print("\n", PRINT_FLAG_BOTH);
+  LOG_ERROR(trap_log(), "Trap Value: 0x%{type: str}", buffer);
 
   // Print status register
-  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Status Register: "), PRINT_FLAG_BOTH);
   hexstrfuint(sstatus, buffer);
-  print("0x", PRINT_FLAG_BOTH);
-  print(buffer, PRINT_FLAG_BOTH);
-  print("\n\n", PRINT_FLAG_BOTH);
+  LOG_ERROR(trap_log(), "Status Register: 0x%{type: str}", buffer);
 
   // Print memory stats
-  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Buddy allocator status:\n"),
-        PRINT_FLAG_BOTH);
+  LOG_ERROR(trap_log(), "Buddy allocator status:");
 
   // might be bad idea but this uses no allocation like before so it could be ok
   // buddy_print_stats();
 
   // Print register dump
-  print(ANSI_APPLY(ANSI_EFFECT_BOLD, "Registers:\n"), PRINT_FLAG_BOTH);
+  LOG_ERROR(trap_log(), "Registers:");
   uint64_t sp_at_trap;
   sp_at_trap = PS_get_scratch();
-  printf("ra:  0x%{type: hex}\n", PRINT_FLAG_BOTH, regs->ra);
-  printf("sp:  0x%{type: hex}\n", PRINT_FLAG_BOTH, sp_at_trap);
-  printf("gp:  0x%{type: hex}\n", PRINT_FLAG_BOTH, regs->gp);
-  printf("tp:  0x%{type: hex}\n", PRINT_FLAG_BOTH, regs->tp);
-  printf("t0:  0x%{type: hex}  t1:  0x%{type: hex}  t2:  0x%{type: hex}\n",
-         PRINT_FLAG_BOTH, regs->t0, regs->t1, regs->t2);
-  printf("t3:  0x%{type: hex}  t4:  0x%{type: hex}  t5:  0x%{type: hex}  t6:  "
-         "0x%{type: hex}\n",
-         PRINT_FLAG_BOTH, regs->t3, regs->t4, regs->t5, regs->t6);
-  printf("s0:  0x%{type: hex}  s1:  0x%{type: hex}\n", PRINT_FLAG_BOTH,
-         regs->s0, regs->s1);
-  printf("s2:  0x%{type: hex}  s3:  0x%{type: hex}  s4:  0x%{type: hex}\n",
-         PRINT_FLAG_BOTH, regs->s2, regs->s3, regs->s4);
-  printf("s5:  0x%{type: hex}  s6:  0x%{type: hex}  s7:  0x%{type: hex}\n",
-         PRINT_FLAG_BOTH, regs->s5, regs->s6, regs->s7);
-  printf("s8:  0x%{type: hex}  s9:  0x%{type: hex}  s10: 0x%{type: hex}  s11: "
-         "0x%{type: hex}\n",
-         PRINT_FLAG_BOTH, regs->s8, regs->s9, regs->s10, regs->s11);
-  printf("a0:  0x%{type: hex}  a1:  0x%{type: hex}  a2:  0x%{type: hex}  a3:  "
-         "0x%{type: hex}\n",
-         PRINT_FLAG_BOTH, regs->a0, regs->a1, regs->a2, regs->a3);
-  printf("a4:  0x%{type: hex}  a5:  0x%{type: hex}  a6:  0x%{type: hex}  a7:  "
-         "0x%{type: hex}\n",
-         PRINT_FLAG_BOTH, regs->a4, regs->a5, regs->a6, regs->a7);
-  print("\n", PRINT_FLAG_BOTH);
+  LOG_ERROR(trap_log(), "ra:  0x%{type: hex}", regs->ra);
+  LOG_ERROR(trap_log(), "sp:  0x%{type: hex}", sp_at_trap);
+  LOG_ERROR(trap_log(), "gp:  0x%{type: hex}", regs->gp);
+  LOG_ERROR(trap_log(), "tp:  0x%{type: hex}", regs->tp);
+  LOG_ERROR(trap_log(), "t0:  0x%{type: hex}  t1:  0x%{type: hex}  t2:  0x%{type: hex}", regs->t0, regs->t1, regs->t2);
+  LOG_ERROR(trap_log(), "t3:  0x%{type: hex}  t4:  0x%{type: hex}  t5:  0x%{type: hex}  t6:  0x%{type: hex}", regs->t3, regs->t4, regs->t5, regs->t6);
+  LOG_ERROR(trap_log(), "s0:  0x%{type: hex}  s1:  0x%{type: hex}", regs->s0, regs->s1);
+  LOG_ERROR(trap_log(), "s2:  0x%{type: hex}  s3:  0x%{type: hex}  s4:  0x%{type: hex}", regs->s2, regs->s3, regs->s4);
+  LOG_ERROR(trap_log(), "s5:  0x%{type: hex}  s6:  0x%{type: hex}  s7:  0x%{type: hex}", regs->s5, regs->s6, regs->s7);
+  LOG_ERROR(trap_log(), "s8:  0x%{type: hex}  s9:  0x%{type: hex}  s10: 0x%{type: hex}  s11: 0x%{type: hex}", regs->s8, regs->s9, regs->s10, regs->s11);
+  LOG_ERROR(trap_log(), "a0:  0x%{type: hex}  a1:  0x%{type: hex}  a2:  0x%{type: hex}  a3:  0x%{type: hex}", regs->a0, regs->a1, regs->a2, regs->a3);
+  LOG_ERROR(trap_log(), "a4:  0x%{type: hex}  a5:  0x%{type: hex}  a6:  0x%{type: hex}  a7:  0x%{type: hex}", regs->a4, regs->a5, regs->a6, regs->a7);
 
   // Halt the system (or you could return to let the trap.s code handle it)
-  print("System halted.\n", PRINT_FLAG_BOTH);
+  LOG_ERROR(trap_log(), "System halted.");
   for (;;) {
     asm volatile("wfi");
   }
@@ -207,15 +179,13 @@ void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
   (void)spp;
 
   if (!spie) {
-    printf(ANSI_APPLY(ANSI_COLOR_YELLOW,
-                      "WARNING: Interrupt occurred while SIE was disabled "
-                      "(SPIE=0)! sret will restore disabled state.\n"),
-           PRINT_FLAG_BOTH);
+    LOG_WARN(trap_log(),
+             "WARNING: Interrupt occurred while SIE was disabled (SPIE=0)! sret will restore disabled state.");
   }
 
   switch (interrupt_code) {
   case 1: // Supervisor software interrupt
-    print("Supervisor software interrupt\n", PRINT_FLAG_BOTH);
+    LOG_INFO(trap_log(), "Supervisor software interrupt");
     break;
   case 5: // Supervisor timer interrupt
           // print("Supervisor timer interrupt\n", PRINT_FLAG_BOTH);
@@ -229,8 +199,7 @@ void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
     handle_external_interrupt();
     break;
   default:
-    printf("Unknown interrupt: %{type: int}\n", PRINT_FLAG_BOTH,
-           interrupt_code);
+    LOG_WARN(trap_log(), "Unknown interrupt: %{type: int}", interrupt_code);
     break;
   }
 }
@@ -273,8 +242,7 @@ void handle_external_interrupt() {
     if (irq >= 1 && irq <= 8) {
       virtio_shared_isr(irq);
     } else {
-      printf("Unknown external interrupt: %{type: int}\n", PRINT_FLAG_BOTH,
-             irq);
+      LOG_WARN(trap_log(), "Unknown external interrupt: %{type: int}", irq);
     }
     break;
   }

@@ -58,12 +58,38 @@ void g_log(log_t *logger, log_level_t level, const char *fmt, ...) {
     return;
   }
 
-  char *final_msg =
-      format("%{type: str}[%{type: str}:%{type: str}] " ANSI_EFFECT_RESET
-             "%{type: str}\n",
-             level_color, logger->subsystem, logger->category, msg);
+  if (!logger->subsystem) {
+    dbg("logger->subsystem == NULL");
+    return;
+  }
+
+  char *final_msg;
+
+  if (logger->category == NULL) {
+    final_msg =
+        format("%{type: str}[%{type: str}] " ANSI_EFFECT_RESET "%{type: str}\n",
+               level_color, logger->subsystem, msg);
+  } else {
+    final_msg =
+        format("%{type: str}[%{type: str}:%{type: str}] " ANSI_EFFECT_RESET
+               "%{type: str}\n",
+               level_color, logger->subsystem, logger->category, msg);
+  }
 
   print(final_msg, PRINT_FLAG_BOTH);
   kfree(msg);
   kfree(final_msg);
+}
+
+/**
+ * sets logger level. If you want debug logs, set level to LOG_LEVEL_DEBUG.
+ */
+
+void g_log_set_level(log_t *logger, log_level_t level) {
+  if (!logger) {
+    dbg("logger == NULL");
+    return;
+  }
+
+  logger->level = level;
 }

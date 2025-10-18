@@ -2,6 +2,22 @@
 #include "mmio.h"
 #include <lib/panic.h>
 #include <lib/print.h>
+#include <lib/log.h>
+
+
+static inline log_t *virtio_core_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("virtio", "core");
+    #if VIRTIO_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
+
 #include <device/virtio/virtio.h>
 #include <lib/print.h>
 
@@ -29,15 +45,11 @@ int virtio_device_init(virtio_device_t *dev, uintptr_t mmio_base, uint32_t irq) 
   uint32_t magic = virtio_mmio_read32(mmio_base, VIRTIO_MMIO_MAGIC_VALUE);
   uint32_t ver = virtio_mmio_read32(mmio_base, VIRTIO_MMIO_VERSION);
   if (magic != 0x74726976u) {
-    #if VIRTIO_DEBUG
-    printf("virtio: bad magic 0x%{type: hex} at base 0x%{type: hex}\n", PRINT_FLAG_BOTH, (uint64_t)magic, (uint64_t)mmio_base);
-    #endif
+    LOG_ERROR(virtio_core_log(), "bad magic 0x%{type: hex} at base 0x%{type: hex}", (uint64_t)magic, (uint64_t)mmio_base);
     return -2;
   }
   if (ver != 2u) {
-    #if VIRTIO_DEBUG
-    printf("virtio: wrong version %{type: int} (expect 2) at base 0x%{type: hex}\n", PRINT_FLAG_BOTH, ver, (uint64_t)mmio_base);
-    #endif
+    LOG_ERROR(virtio_core_log(), "wrong version %{type: int} (expect 2) at base 0x%{type: hex}", ver, (uint64_t)mmio_base);
     return -3; // require modern
   }
 
@@ -47,9 +59,7 @@ int virtio_device_init(virtio_device_t *dev, uintptr_t mmio_base, uint32_t irq) 
   set_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE | VIRTIO_CONFIG_S_DRIVER);
 
   virtio_mmio_read_features(mmio_base, &dev->device_features);
-  #if VIRTIO_DEBUG
-  printf("virtio: features=0x%{type: hex}\n", PRINT_FLAG_BOTH, dev->device_features);
-  #endif
+  LOG_DEBUG(virtio_core_log(), "features=0x%{type: hex}", dev->device_features);
   return 0;
 }
 
@@ -76,9 +86,8 @@ int virtio_device_negotiate(virtio_device_t *dev, uint64_t wanted, uint64_t requ
     return -4; // device cleared FEATURES_OK
 
   dev->negotiated_features = chosen;
-  #if VIRTIO_DEBUG
-  printf("virtio: negotiated=0x%{type: hex}\n", PRINT_FLAG_BOTH, chosen);
-  #endif
+  LOG_DEBUG(virtio_core_log(), "negotiated=0x%{type: hex}", chosen);
+
   dev->is_initialized = true;
   if (out) *out = chosen;
   return 0;

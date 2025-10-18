@@ -5,6 +5,21 @@
 #include <extern/smoldtb/smoldtb.h>
 #include <lib/kalloc.h>
 #include <lib/print.h>
+#include <lib/log.h>
+
+static inline log_t *virtio_reg_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("virtio", "registry");
+    #if VIRTIO_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
+
 
 #define MAX_DRIVERS 8
 #define MAX_DEVS 8
@@ -48,8 +63,7 @@ void virtio_bus_init_from_dtb(void) {
     dtb_read_prop_2(reg_prop, (dtb_pair){addr_cells, size_cells}, &pair);
     uintptr_t base = (uintptr_t)pair.a;
 #if VIRTIO_DEBUG
-    printf("virtio: mmio base=0x%{type: hex}\n", PRINT_FLAG_BOTH,
-           (uint64_t)base);
+    LOG_DEBUG(virtio_reg_log(), "mmio base=0x%{type: hex}", (uint64_t)base);
 #endif
 
     // Interrupts: assume integer value in "interrupts"; platform wires it
@@ -61,7 +75,7 @@ void virtio_bus_init_from_dtb(void) {
       irq = (uint32_t)val;
     }
 #if VIRTIO_DEBUG
-    printf("virtio: irq=%{type: int}\n", PRINT_FLAG_BOTH, irq);
+    LOG_DEBUG(virtio_reg_log(), "irq=%{type: int}", irq);
 #endif
 
     // Probe device header
@@ -72,7 +86,7 @@ void virtio_bus_init_from_dtb(void) {
       continue;
 
 #if VIRTIO_DEBUG
-    printf("virtio: device_id=%{type: int}\n", PRINT_FLAG_BOTH, dev->device_id);
+    LOG_DEBUG(virtio_reg_log(), "device_id=%{type: int}", dev->device_id);
 #endif
 
     // Register device for shared ISR dispatch (config change cb optional)
@@ -89,8 +103,8 @@ void virtio_bus_init_from_dtb(void) {
     }
     if (!matched) {
 #if VIRTIO_DEBUG
-      printf("virtio: no driver for device id %{type: int}\n", PRINT_FLAG_BOTH,
-             dev->device_id);
+      LOG_WARN(virtio_reg_log(), "no driver for device id %{type: int}",
+               dev->device_id);
 #endif
     }
   }
@@ -120,8 +134,7 @@ void virtio_bus_init_static(void) {
     }
     if (!matched) {
 #if VIRTIO_DEBUG
-      printf("virtio: no driver for device id %{type: int} at 0x%{type: hex}\n",
-             PRINT_FLAG_BOTH, dev->device_id, (uint64_t)base);
+      LOG_WARN(virtio_reg_log(), "no driver for device id %{type: int} at 0x%{type: hex}", dev->device_id, (uint64_t)base);
 #endif
     }
   }

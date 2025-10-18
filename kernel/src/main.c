@@ -1,10 +1,10 @@
 #include "earlyinit.h"
-#include "kprocs/tetris.h"
-#include "lib/canary.h"
+// #include "kprocs/tetris.h"
+// #include "lib/canary.h"
+// #include "lib/dyn_array.h"
+// #include "lib/macros.h"
 #include "lib/debug.h"
-#include "lib/dyn_array.h"
 #include "lib/log.h"
-#include "lib/macros.h"
 #include "lib/sbi.h"
 #include "lib/timer.h"
 #include "mem_layout.h"
@@ -64,15 +64,7 @@ void enable_interrupts() {
   PS_enable_all_interrupt_types();
 }
 
-G_INLINE void init_trap_vector(void) {
-  /* point stvec at trap_vector */
-  uintptr_t base = ((uintptr_t)&trap_vector) & ~0x3UL;
-  PS_set_trap_vector(base);
-
-  /* and preload sscratch with &trap_stack_top so the vector can
-     switch to it immediately. */
-  asm volatile("csrw sscratch, %0" ::"r"(&trap_stack_top));
-}
+/* init_trap_vector is no longer used */
 
 extern uint8_t proc_ecall7_start[];
 extern uint8_t proc_ecall7_end[];
@@ -105,15 +97,26 @@ EARLY_TEXT void main() {
   }
   set_shared_console(console);
 
-  printf("*. gizmOS %{type: str}\n\n\n", PRINT_FLAG_BOTH, VERSION);
+  log_t *kern_log = g_log_create("boot", NULL);
+  LOG_INFO(kern_log, "gizmOS %{type: str}", VERSION);
+
+  LOG_INFO(kern_log, "initializing memory mapped IO");
 
   mmio_map *mmap = alloc_mmio_map();
+
+  LOG_DEBUG(kern_log, "mapping uart");
   mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // UART
+
+  LOG_DEBUG(kern_log, "mapping rtc");
   mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // RTC
+
+  LOG_DEBUG(kern_log, "mapping plic");
   mmio_map_add(mmap, 0x0C000000, 0x00600000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // PLIC
+
+  LOG_DEBUG(kern_log, "mapping virtio devices");
   mmio_map_add(mmap, 0x10001000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // Virtio keyboard
   mmio_map_add(mmap, 0x10002000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
@@ -123,9 +126,13 @@ EARLY_TEXT void main() {
   mmio_map_add(mmap, 0x10004000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // Virtio block
 
+  LOG_DEBUG(kern_log, "applying mmio map to page table");
   mmio_map_pages(mmap, shared_page_table);
+
+  LOG_INFO(kern_log, "memory mapped IO initialized");
   activate_page_table(shared_page_table);
 
+  LOG_DEBUG(kern_log, "setting up trampoline mapping");
   bool success =
       map_page(shared_page_table, TRAMPOLINE, V2P((uint64_t)trampoline),
                PTE_R | PTE_W | PTE_X | PTE_V);
@@ -134,7 +141,12 @@ EARLY_TEXT void main() {
     panic("Failed to set up trampoline mapping");
   }
 
+  LOG_INFO(kern_log, "trampoline mapping set up");
   activate_page_table(shared_page_table);
+
+  LOG_INFO(kern_log, "initializing devices");
+
+  LOG_DEBUG(kern_log, "initializing uart");
 
   result_t ruart = make_uart(0x10000000);
   if (!result_is_ok(ruart)) {
@@ -147,7 +159,9 @@ EARLY_TEXT void main() {
     panic("Failed to initialize UART");
   }
   set_shared_uart(uart);
+  LOG_INFO(kern_log, "UART initialized");
 
+  LOG_DEBUG(kern_log, "initializing RTC");
   result_t rrtc = make_rtc(0x101000);
   if (!result_is_ok(rrtc)) {
     dbg("make_rtc(...) != OK");
@@ -159,7 +173,9 @@ EARLY_TEXT void main() {
     panic("Failed to initialize RTC");
   }
   set_shared_rtc(rtc);
+  LOG_INFO(kern_log, "RTC initialized");
 
+  LOG_DEBUG(kern_log, "initializing PLIC");
   result_t rplic = make_plic(0x0C000000);
   plic_t *plic = (plic_t *)result_unwrap(rplic);
   if (!plic_init(plic)) {
@@ -167,7 +183,9 @@ EARLY_TEXT void main() {
     panic("Failed to initialize PLIC");
   }
   set_shared_plic(plic);
+  LOG_INFO(kern_log, "PLIC initialized");
 
+  LOG_DEBUG(kern_log, "initializing cursor");
   result_t rcursor = make_cursor(fb);
   if (!result_is_ok(rcursor)) {
     dbg("make_cursor(...) != OK");
@@ -180,6 +198,10 @@ EARLY_TEXT void main() {
     panic("Failed to initialise cursor");
   }
   set_shared_cursor(cursor);
+  LOG_INFO(kern_log, "Cursor initialized");
+  LOG_INFO(kern_log, "devices initialized");
+
+  LOG_INFO(kern_log, "setting up PLIC");
 
   // uart interrupt
   plic_set_priority(plic, 10, 1);
@@ -196,29 +218,41 @@ EARLY_TEXT void main() {
 
   sbi_set_timer(UINT64_MAX);
 
+  LOG_INFO(kern_log, "PLIC setup complete");
+
+  LOG_INFO(kern_log, "initializing interrupts");
+
   enable_interrupts();
+
+  LOG_INFO(kern_log, "interrupts initialized");
+
   uart_enable_interrupts(uart);
 
-  printf("*. gizmOS %{type: str}\n\n\n", PRINT_FLAG_UART, VERSION);
+  LOG_DEBUG(kern_log, "uart is ready now");
 
-  log_t *klog = g_log_create("kernel", "main");
-  g_log(klog, LOG_LEVEL_INFO, "Kernel started successfully");
+  LOG_INFO(kern_log, "initializing processes");
 
   initialize_processes();
 
-  // Launch user process that registers for keypress notifications and prints
-  // keycodes via SYSCALL_PRINT_INT
   uint64_t size_keynotify =
       (uint64_t)user_keynotify_end - (uint64_t)user_keynotify_start;
   result_t ruser =
       proc_from_code(user_keynotify_start, size_keynotify, "ukeynotify");
   if (!result_is_ok(ruser)) {
-    printf("Failed to start user keynotify process\n", PRINT_FLAG_BOTH);
+    LOG_WARN(kern_log, "Failed to start user keynotify process");
   }
 
+  LOG_INFO(kern_log, "processes initialized");
+
+  LOG_INFO(kern_log, "initializing VirtIO bus and drivers");
+
   virtio_register_all_drivers();
-  printf("VirtIO: static bus scan...\n", PRINT_FLAG_BOTH);
+  LOG_INFO(kern_log, "VirtIO: static bus scan...");
   virtio_bus_init_static();
+
+  LOG_INFO(kern_log, "VirtIO bus and drivers initialized");
+
+  LOG_INFO(kern_log, "initializing disk device");
 
   virtio_block_dev_t *blk = virtio_blk_get();
   result_t rdisk = make_disk(blk);
@@ -233,7 +267,11 @@ EARLY_TEXT void main() {
   }
   set_shared_disk(disk);
 
+  LOG_INFO(kern_log, "disk device initialized");
+
   fat_list_root(disk);
+
+  LOG_INFO(kern_log, "starting scheduler");
 
   sbi_set_timer(get_csrr_time() + TICK_INTERVAL_CYCLES);
 

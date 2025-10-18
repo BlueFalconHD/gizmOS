@@ -10,6 +10,7 @@
 #include <lib/cpu.h>
 #include <lib/memory.h>
 #include <lib/print.h>
+#include <lib/log.h>
 #include <lib/str.h>
 #include <lib/usermem.h>
 #include <mem_layout.h>
@@ -18,6 +19,19 @@
 #define PROC_LIFECYCLE_DEBUG_LEVEL 0
 
 extern void forkret();
+
+static inline log_t *proc_lifecycle_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("proc", "lifecycle");
+    #if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
 
 g_bool killed(proc_t *p) {
   g_bool is_killed = false;
@@ -75,7 +89,8 @@ found:
   notification_init_proc(p);
 
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
-  printf("alloc proc kstack = %{type: hex}\n", PRINT_FLAG_BOTH, p->kstack);
+  LOG_DEBUG(proc_lifecycle_log(), "alloc proc kstack = %{type: hex}",
+            p->kstack);
 #endif
 
   return RESULT_SUCCESS(p);
@@ -144,8 +159,9 @@ uint64_t wait(uint64_t address) {
   proc_t *p = current_proc();
 
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 3
-  printf("proc %{type: int} (%s) entering wait\n", PRINT_FLAG_BOTH, p->pid,
-         p->name);
+  LOG_DEBUG(proc_lifecycle_log(),
+            "proc %{type: int} (%{type: str}) entering wait", p->pid,
+            p->name);
 #endif
 
   acquire(&wait_lock);
@@ -157,9 +173,9 @@ uint64_t wait(uint64_t address) {
       pp = &processes[i];
       if (pp->parent == p) {
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 3
-        printf("proc %{type: int} (%s) found child proc %{type: int} (%s) in "
-               "state %{type: int}\n",
-               PRINT_FLAG_BOTH, p->pid, p->name, pp->pid, pp->name, pp->state);
+        LOG_DEBUG(proc_lifecycle_log(),
+                  "proc %{type: int} (%{type: str}) found child proc %{type: int} (%{type: str}) in state %{type: int}",
+                  p->pid, p->name, pp->pid, pp->name, pp->state);
 #endif
 
         acquire(&pp->lock);
@@ -167,9 +183,9 @@ uint64_t wait(uint64_t address) {
 
         if (pp->state == ZOMBIE) {
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 2
-          printf(
-              "proc %{type: int} (%s) reaping child proc %{type: int} (%s)\n",
-              PRINT_FLAG_BOTH, p->pid, p->name, pp->pid, pp->name);
+          LOG_DEBUG(proc_lifecycle_log(),
+                    "proc %{type: int} (%{type: str}) reaping child proc %{type: int} (%{type: str})",
+                    p->pid, p->name, pp->pid, pp->name);
 #endif
 
           pid = pp->pid;
@@ -193,13 +209,15 @@ uint64_t wait(uint64_t address) {
       if (!has_children || killed(p)) {
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
         if (!has_children) {
-          printf("proc %{type: int} (%s) has no children\n", PRINT_FLAG _BOTH,
-                 p->pid, p->name);
+          LOG_DEBUG(proc_lifecycle_log(),
+                    "proc %{type: int} (%{type: str}) has no children",
+                    p->pid, p->name);
         }
 
         if (killed(p)) {
-          printf("proc %{type: int} (%s) was killed\n", PRINT_FLAG_BOTH, p->pid,
-                 p->name);
+          LOG_DEBUG(proc_lifecycle_log(),
+                    "proc %{type: int} (%{type: str}) was killed", p->pid,
+                    p->name);
         }
 #endif
 

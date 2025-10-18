@@ -5,6 +5,7 @@
 #include <lib/panic.h>
 #include <lib/gfx.h>
 #include <lib/print.h>
+#include <lib/log.h>
 #include <lib/gizm_font.h>
 #include <mem_layout.h>
 #include <lib/usermem.h>
@@ -19,6 +20,13 @@
 #ifndef NOTIF_DELIVERY_DEBUG_LEVEL
 #define NOTIF_DELIVERY_DEBUG_LEVEL 0
 #endif
+
+static inline log_t *user_trap_log() {
+  static log_t *l = NULL;
+  if (!l)
+    l = g_log_create("trap", "user");
+  return l;
+}
 
 extern char trampoline[];
 extern char uservec[];
@@ -55,8 +63,7 @@ void user_trap_ret(void) {
           }
           
 #if NOTIF_DELIVERY_DEBUG_LEVEL >= 1
-          printf("[notif] inject: pid=%{type: int} type=%{type: int} n=%{type: int} handler=%{type: hex}\n",
-                 PRINT_FLAG_BOTH, p->pid, (int)m.type, (int)n, h->handler_va);
+          LOG_DEBUG(user_trap_log(), "[notif] inject: pid=%{type: int} type=%{type: int} n=%{type: int} handler=%{type: hex}", p->pid, (int)m.type, (int)n, h->handler_va);
 #endif
           notif_ctx_save_from_trapframe(p);
           p->trapframe->a0 = m.type;
@@ -116,12 +123,10 @@ void usertrap(void) {
 
     if (get_physical_address(p->pagetable, faulting_address, &fault_pa)) {
       uint64_t fault_va = fault_pa + hhdm_offset;
-      printf("Faulting address: %{type: hex}\n", PRINT_FLAG_BOTH, fault_va);
-      printf("Data at faulting address: 0x%{type: hex}\n", PRINT_FLAG_BOTH,
-             *(uint64_t *)fault_va);
+      LOG_ERROR(user_trap_log(), "Faulting address: %{type: hex}", fault_va);
+      LOG_ERROR(user_trap_log(), "Data at faulting address: 0x%{type: hex}", *(uint64_t *)fault_va);
     } else {
-      print("Failed to get physical address for faulting address\n",
-            PRINT_FLAG_BOTH);
+      LOG_ERROR(user_trap_log(), "Failed to get physical address for faulting address");
     }
   }
 
@@ -160,7 +165,7 @@ void usertrap(void) {
     if (callnum == SYSCALL_PRINT_INT) {
       // a0 contains the number to print
       int64_t val = (int64_t)p->trapframe->a0;
-      printf("%{type: int}\n", PRINT_FLAG_BOTH, val);
+      LOG_DEBUG(user_trap_log(), "%{type: int}", val);
       goto out;
     } else if (callnum == 2) {
       // exit

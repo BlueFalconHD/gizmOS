@@ -3,6 +3,13 @@
 #include <extern/smoldtb/smoldtb.h>
 #include <lib/panic.h>
 #include <lib/print.h>
+#include <lib/log.h>
+static inline log_t *dtb_log() {
+  static log_t *l = NULL;
+  if (!l)
+    l = g_log_create("dtb", NULL);
+  return l;
+}
 #include <limine.h>
 #include <lib/kalloc.h>
 #include <stdint.h>
@@ -55,8 +62,7 @@ void dtb_dostuff() {
   size_t addr_cells = dtb_get_addr_cells_for(soc);
   size_t size_cells = dtb_get_size_cells_for(soc);
 
-  printf("Address cells: %{type: int}, Size cells: %{type: int}\n",
-         PRINT_FLAG_BOTH, addr_cells, size_cells);
+  LOG_INFO(dtb_log(), "Address cells: %{type: int}, Size cells: %{type: int}", addr_cells, size_cells);
 
   // Search for serial node
   dtb_node *serial = dtb_find_child(soc, "serial");
@@ -87,10 +93,10 @@ void dtb_dostuff() {
   dtb_read_prop_2(reg_prop, (dtb_pair){addr_cells, size_cells}, reg_values);
 
   // The address is in the first pair's 'a' field
-  printf("Serial address: 0x%{type: hex}\n", PRINT_FLAG_BOTH, reg_values[0].a);
+  LOG_INFO(dtb_log(), "Serial address: 0x%{type: hex}", reg_values[0].a);
 
   // The size is in the first pair's 'b' field
-  printf("Serial size: 0x%{type: hex}\n", PRINT_FLAG_BOTH, reg_values[0].b);
+  LOG_INFO(dtb_log(), "Serial size: 0x%{type: hex}", reg_values[0].b);
 
   // Don't forget to free the allocated memory
   kfree(reg_values);

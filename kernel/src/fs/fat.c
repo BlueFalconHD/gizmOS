@@ -1,19 +1,32 @@
 #include "fat.h"
+#include <lib/log.h>
 #include <lib/print.h>
-#include <lib/memory.h>
+static inline log_t *fat_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("fs", "fat");
+    #if FS_FAT_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
 #include <lib/kalloc.h>
+#include <lib/memory.h>
 
 /* Very small FAT12/16 boot sector fields */
 typedef struct __attribute__((packed)) {
-  uint8_t  jmp[3];
-  char     oem[8];
+  uint8_t jmp[3];
+  char oem[8];
   uint16_t bytes_per_sector;
-  uint8_t  sectors_per_cluster;
+  uint8_t sectors_per_cluster;
   uint16_t reserved_sectors;
-  uint8_t  num_fats;
+  uint8_t num_fats;
   uint16_t root_entries;
   uint16_t total_sectors16;
-  uint8_t  media;
+  uint8_t media;
   uint16_t sectors_per_fat16;
   uint16_t sectors_per_track;
   uint16_t num_heads;
@@ -32,25 +45,25 @@ typedef struct __attribute__((packed)) {
   uint32_t size;
 } fat_dirent_t;
 
-static void print_name(const fat_dirent_t *de)
-{
+static void print_name(const fat_dirent_t *de) {
   char n[13];
   int i = 0;
-  for (int k = 0; k < 8 && de->name[k] != ' '; k++) n[i++] = de->name[k];
+  for (int k = 0; k < 8 && de->name[k] != ' '; k++)
+    n[i++] = de->name[k];
   if (de->ext[0] != ' ')
-    n[i++]='.', n[i++]=de->ext[0], n[i++]=de->ext[1], n[i++]=de->ext[2];
+    n[i++] = '.', n[i++] = de->ext[0], n[i++] = de->ext[1], n[i++] = de->ext[2];
   n[i] = '\0';
-  print(n, PRINT_FLAG_BOTH);
+  LOG_INFO(fat_log(), "- %{type: str}", n);
 }
 
-g_bool fat_list_root(disk_t *disk)
-{
+g_bool fat_list_root(disk_t *disk) {
   if (!disk || !disk->is_initialized)
     return false;
 
   const uint32_t bs = disk->sector_size;
   uint8_t *sec = (uint8_t *)kalloc(bs);
-  if (!sec) return false;
+  if (!sec)
+    return false;
 
   if (!disk_read(disk, 0, sec, 1)) {
     kfree(sec);
@@ -60,31 +73,41 @@ g_bool fat_list_root(disk_t *disk)
   fat_bpb_t *bpb = (fat_bpb_t *)sec;
   uint32_t root_sectors = ((bpb->root_entries * 32) + (bs - 1)) / bs;
   uint32_t fat_sectors = bpb->sectors_per_fat16;
-  uint32_t first_data_sector = bpb->reserved_sectors + (bpb->num_fats * fat_sectors) + root_sectors;
+  uint32_t first_data_sector =
+      bpb->reserved_sectors + (bpb->num_fats * fat_sectors) + root_sectors;
   (void)first_data_sector;
-  uint32_t first_root_sector = bpb->reserved_sectors + (bpb->num_fats * fat_sectors);
+  uint32_t first_root_sector =
+      bpb->reserved_sectors + (bpb->num_fats * fat_sectors);
 
-  print("FAT root listing:\n", PRINT_FLAG_BOTH);
+  LOG_INFO(fat_log(), "FAT root listing:");
 
   uint32_t entries = bpb->root_entries;
   uint32_t ents_per_sector = bs / sizeof(fat_dirent_t);
   uint32_t sectors_to_scan = root_sectors;
 
   uint8_t *dirbuf = (uint8_t *)kalloc(bs);
-  if (!dirbuf) { kfree(sec); return false; }
+  if (!dirbuf) {
+    kfree(sec);
+    return false;
+  }
 
   for (uint32_t s = 0; s < sectors_to_scan; s++) {
     uint64_t lba = first_root_sector + s;
-    if (!disk_read(disk, lba, dirbuf, 1)) break;
+    if (!disk_read(disk, lba, dirbuf, 1))
+      break;
     fat_dirent_t *de = (fat_dirent_t *)dirbuf;
     for (uint32_t i = 0; i < ents_per_sector && entries; i++, entries--) {
-      if (de[i].name[0] == 0x00) { entries = 0; break; }
-      if ((uint8_t)de[i].name[0] == 0xE5) continue; /* deleted */
-      if (de[i].attrs & 0x08) continue; /* volume label */
-      if (de[i].name[0] == '.') continue; /* . or .. */
-      print(" - ", PRINT_FLAG_BOTH);
+      if (de[i].name[0] == 0x00) {
+        entries = 0;
+        break;
+      }
+      if ((uint8_t)de[i].name[0] == 0xE5)
+        continue; /* deleted */
+      if (de[i].attrs & 0x08)
+        continue; /* volume label */
+      if (de[i].name[0] == '.')
+        continue; /* . or .. */
       print_name(&de[i]);
-      print("\n", PRINT_FLAG_BOTH);
     }
   }
 
@@ -92,5 +115,3 @@ g_bool fat_list_root(disk_t *disk)
   kfree(sec);
   return true;
 }
-
-

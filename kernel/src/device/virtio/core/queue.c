@@ -3,6 +3,21 @@
 #include <lib/kalloc.h>
 #include <page_table.h>
 #include <lib/print.h>
+#include <lib/log.h>
+
+static inline log_t *virtio_q_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("virtio", "queue");
+    #if VIRTIO_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
+
 #include "mmio.h"
 #include <device/virtio/virtio.h>
 
@@ -24,7 +39,7 @@ int virtq_create(virtio_device_t *dev, uint16_t qidx, uint16_t requested_size, s
   uint16_t size = requested_size;
   if (size == 0 || size > max) size = (uint16_t)max;
 #if VIRTIO_DEBUG
-  printf("virtio[q%{type: int}]: create size=%{type: int} (max=%{type: int})\n", PRINT_FLAG_BOTH, qidx, size, max);
+  LOG_DEBUG(virtio_q_log(), "q%{type: int}: create size=%{type: int} (max=%{type: int})", qidx, size, max);
 #endif
 
   virtio_mmio_write32(dev->mmio_base, VIRTIO_MMIO_QUEUE_SEL, qidx);
@@ -55,7 +70,7 @@ int virtq_create(virtio_device_t *dev, uint16_t qidx, uint16_t requested_size, s
 
   virtio_mmio_write32(dev->mmio_base, VIRTIO_MMIO_QUEUE_READY, 1);
 #if VIRTIO_DEBUG
-  printf("virtio[q%{type: int}]: programmed ring desc=%{type: hex} avail=%{type: hex} used=%{type: hex}\n", PRINT_FLAG_BOTH, qidx, (uint64_t)p_desc, (uint64_t)p_avail, (uint64_t)p_used);
+  LOG_DEBUG(virtio_q_log(), "q%{type: int}: programmed ring desc=%{type: hex} avail=%{type: hex} used=%{type: hex}", qidx, (uint64_t)p_desc, (uint64_t)p_avail, (uint64_t)p_used);
 #endif
 
   struct virtq *q = (struct virtq *)kalloc(sizeof(struct virtq));
@@ -92,7 +107,7 @@ int virtq_create(virtio_device_t *dev, uint16_t qidx, uint16_t requested_size, s
 int virtq_kick(virtio_device_t *dev, uint16_t qidx) {
   virtio_mmio_write32(dev->mmio_base, VIRTIO_MMIO_QUEUE_NOTIFY, qidx);
 #if VIRTIO_DEBUG
-  printf("virtio[q%{type: int}]: kick\n", PRINT_FLAG_BOTH, qidx);
+  LOG_DEBUG(virtio_q_log(), "q%{type: int}: kick", qidx);
 #endif
   return 0;
 }
@@ -157,7 +172,7 @@ int virtq_submit(struct virtq *q, const struct iovec *out_sg, size_t out_cnt, co
   release(&q->lock);
   (void)cookie; // cookie is carried via head id; suppress unused warnings in other paths
 #if VIRTIO_DEBUG
-  printf("virtio[q%{type: int}]: submit head=%{type: int} out=%{type: int} in=%{type: int}\n", PRINT_FLAG_BOTH, q->qidx, head, (int)out_cnt, (int)in_cnt);
+  LOG_DEBUG(virtio_q_log(), "q%{type: int}: submit head=%{type: int} out=%{type: int} in=%{type: int}", q->qidx, head, (int)out_cnt, (int)in_cnt);
 #endif
   return 0;
 }

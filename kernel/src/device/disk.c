@@ -1,8 +1,26 @@
 #include "disk.h"
 #include <lib/kalloc.h>
+#include <lib/log.h>
 #include <lib/print.h>
 
-#define DISK_DRIVER_DEBUG 1
+__attribute__((unused)) static inline log_t *disk_log() {
+#if DISK_DRIVER_DEBUG
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("disk", NULL);
+    #if DISK_DRIVER_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+#else
+  return NULL;
+#endif
+}
+
+#define DISK_DRIVER_DEBUG 0
 
 RESULT_TYPE(disk_t *) make_disk(virtio_block_dev_t *vblk) {
   disk_t *d = (disk_t *)kalloc(sizeof(disk_t));
@@ -18,17 +36,19 @@ RESULT_TYPE(disk_t *) make_disk(virtio_block_dev_t *vblk) {
 g_bool disk_init(disk_t *d) {
   if (!d || !d->vblk) {
 #if DISK_DRIVER_DEBUG
-    printf("disk_init: failed to create disk. d: %{type: ptr}, d->vblk: "
-           "%{type: ptr}\n",
-           PRINT_FLAG_BOTH, d, d->vblk);
+    LOG_ERROR(disk_log(),
+              "disk_init: failed to create disk. d=%{type: ptr}, "
+              "d->vblk=%{type: ptr}",
+              d, d->vblk);
 #endif
     return false;
   }
   if (!d->vblk->vdev || !d->vblk->vdev->is_initialized) {
 #if DISK_DRIVER_DEBUG
-    printf("disk_init: failed to initialize disk. d->vblk->vdev: %{type: ptr}, "
-           "d->vblk->vdev->is_initialized: %{type: bool}\n",
-           PRINT_FLAG_BOTH, d->vblk->vdev, d->vblk->vdev->is_initialized);
+    LOG_ERROR(disk_log(),
+              "disk_init: failed to initialize disk. vdev=%{type: ptr} "
+              "is_initialized=%{type: bool}",
+              d->vblk->vdev, d->vblk->vdev->is_initialized);
 #endif
   }
   d->sector_size = d->vblk->sector_size;

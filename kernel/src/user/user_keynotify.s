@@ -20,6 +20,11 @@ user_keynotify_start:
 key_handler:
   # if payload length >= 1, print first byte (keycode)
   beqz a2, .Ldone
+
+  # if type != NOTIF_TYPE_KEYPRESS (1), just return
+  li t0, 1
+  bne a0, t0, .Ldone
+
   lbu t0, 0(a1)         # t0 = keycode
   mv a0, t0             # a0 = int to print
   li a7, 0x10           # SYSCALL_PRINT_INT
@@ -30,5 +35,3 @@ key_handler:
 
 .globl user_keynotify_end
 user_keynotify_end:
-
-

@@ -1,10 +1,9 @@
 #include "pixelcore_demo.h"
 #include "device/framebuffer.h"
 #include "device/shared.h"
-#include "dtb/dtb.h"
 #include "img/cursor.h"
 #include "lib/macros.h"
-#include "lib/print.h"
+#include <lib/log.h>
 #include "lib/timer.h"
 
 #include <lib/PixelCore/backbuffer.h>
@@ -33,22 +32,7 @@ G_INLINE uint32_t random_uint32(void) {
   return r;
 }
 
-G_INLINE uint32_t random_color(void) {
-  // Generate a random color in ARGB format
-  uint8_t r = random_byte();
-  uint8_t g = random_byte();
-  uint8_t b = random_byte();
-  return (0xFFu << 24) | (r << 16) | (g << 8) | b; // ARGB format
-}
-
-G_INLINE uint32_t random_color_with_alpha(void) {
-  // Generate a random color with alpha in ARGB format
-  uint8_t a = random_byte();
-  uint8_t r = random_byte();
-  uint8_t g = random_byte();
-  uint8_t b = random_byte();
-  return (a << 24) | (r << 16) | (g << 8) | b; // ARGB format
-}
+/* random_color and random_color_with_alpha are unused */
 
 G_INLINE uint32_t random_color_reasonable_opacity(void) {
   // Generate a random color with a reasonable opacity (alpha)
@@ -68,6 +52,19 @@ G_INLINE uint32_t rand_range(uint32_t min, uint32_t max) {
   return min + (random_uint32() % (max - min));
 }
 
+static inline log_t *pc_demo_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("kproc", "pixelcore_demo");
+    #if PIXELCORE_DEMO_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
+
 void pixelcore_demo(void *arg) {
   const uint64_t frame_us = 10;
 
@@ -76,17 +73,14 @@ void pixelcore_demo(void *arg) {
     panic("Pixelcore demo: framebuffer is null\n");
   }
 
-  printf("Pixelcore demo: framebuffer is at %{type: ptr}\n", PRINT_FLAG_BOTH,
-         fb);
+  LOG_INFO(pc_demo_log(), "framebuffer is at %{type: ptr}", fb);
 
   if (!fb->is_initialized) {
     panic("Pixelcore demo: framebuffer is not initialized\n");
   }
 
   if (!fb->framebuffer || !fb->framebuffer->width || !fb->framebuffer->height) {
-    printf("Pixelcore demo: framebuffer dimensions are invalid: "
-           "%{type: int}x%{type: int}\n",
-           PRINT_FLAG_BOTH, fb->framebuffer->width, fb->framebuffer->height);
+    LOG_ERROR(pc_demo_log(), "framebuffer dimensions are invalid: %{type: int}x%{type: int}", fb->framebuffer->width, fb->framebuffer->height);
     panic("Pixelcore demo: framebuffer dimensions are invalid\n");
   }
 

@@ -33,3 +33,5 @@ void g_log(log_t *logger, log_level_t level, const char *fmt, ...);
   g_log((logger), LOG_LEVEL_WARN, fmt, ##__VA_ARGS__)
 #define LOG_ERROR(logger, fmt, ...)                                            \
   g_log((logger), LOG_LEVEL_ERROR, fmt, ##__VA_ARGS__)
+
+void g_log_set_level(log_t *logger, log_level_t level);

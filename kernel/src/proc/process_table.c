@@ -3,6 +3,13 @@
 #include "process.h"
 #include <lib/panic.h>
 #include <lib/print.h>
+#include <lib/log.h>
+static inline log_t *proc_tbl_log() {
+  static log_t *l = NULL;
+  if (!l)
+    l = g_log_create("proc", "table");
+  return l;
+}
 #include <lib/spinlock.h>
 #include <mem_layout.h>
 #include <page_table.h>
@@ -27,7 +34,7 @@ g_bool setup_process_kernel_stack(proc_t *p, uint8_t pidx) {
       void *kpage = buddy_alloc_page();
       if (!kpage) {
         panic_msg("Kernel stack allocation failed");
-        printf("pidx: %{type: int}", PRINT_FLAG_BOTH, pidx);
+        LOG_ERROR(proc_tbl_log(), "pidx=%{type: int}", pidx);
         panic_loc("setup_process_kernel_stack");
       }
 
@@ -37,7 +44,7 @@ g_bool setup_process_kernel_stack(proc_t *p, uint8_t pidx) {
       if (!map_page(shared_page_table, vaddr, kstackpaddr,
                     PTE_R | PTE_W | PTE_X | PTE_V)) {
         panic_msg("Kernel stack mapping failed");
-        printf("pidx: %{type: int}", PRINT_FLAG_BOTH, pidx);
+        LOG_ERROR(proc_tbl_log(), "pidx=%{type: int}", pidx);
         panic_loc("setup_process_kernel_stack");
       }
     }

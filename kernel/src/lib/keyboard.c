@@ -1,6 +1,21 @@
 #include "keyboard.h"
 #include "lib/debug.h"
-#include "lib/print.h"
+#include <lib/log.h>
+
+#define KBD_DEBUG 1
+
+static inline log_t *kbd_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("input", "kbd");
+    #if KBD_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;
+}
 #include <lib/kalloc.h>
 #include <lib/str.h>
 
@@ -67,10 +82,7 @@ void keypress_debug(keypress_t *kp) {
     strcat(modifiers_str, "CAPSLOCK,");
   }
 
-  printf("<keypress:%{type: hex} keycode=%{type: hex} mods=%{type: hex} "
-         "[%{type: str}] type=%{type: int}>\n",
-         PRINT_FLAG_BOTH, (uint64_t)kp, kp->keycode, (uint64_t)kp->modifiers,
-         modifiers_str, kp->type);
+  LOG_DEBUG(kbd_log(), "<keypress:%{type: hex} keycode=%{type: hex} mods=%{type: hex} [%{type: str}] type=%{type: int}>", (uint64_t)kp, kp->keycode, (uint64_t)kp->modifiers, modifiers_str, kp->type);
 
   kfree(modifiers_str);
 }

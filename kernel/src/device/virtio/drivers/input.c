@@ -7,6 +7,7 @@
 #include <lib/keyboard.h>
 #include <lib/memory.h>
 #include <lib/print.h>
+#include <lib/log.h>
 #include <page_table.h>
 #include <proc/notification.h>
 #include <proc/notification_types.h>
@@ -17,6 +18,19 @@
 #ifndef INPUT_DEBUG_LEVEL
 #define INPUT_DEBUG_LEVEL 0
 #endif
+
+static inline log_t *input_log() {
+  static log_t *l = NULL;
+  if (!l) {
+    l = g_log_create("virtio", "input");
+    #if VIRTIO_DEBUG
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
+  return l;  
+}
 
 typedef struct {
   uint16_t select;
@@ -249,10 +263,7 @@ static void unified_on_event(const struct virtio_input_event *ev, void *user) {
     };
 
 #if INPUT_DEBUG_LEVEL >= 2
-    printf("[input] key event code=%{type: int} val=%{type: int} mods=%{type: "
-           "int}\n",
-           PRINT_FLAG_BOTH, (int)ev->code, (int)ev->value,
-           (int)inp->kbd_modifiers);
+    LOG_DEBUG(input_log(), "key event code=%{type: int} val=%{type: int} mods=%{type: int}", (int)ev->code, (int)ev->value, (int)inp->kbd_modifiers);
 #endif
 
     for (uint8_t i = 0; i < NPROC; i++) {
@@ -268,8 +279,7 @@ static void unified_on_event(const struct virtio_input_event *ev, void *user) {
         (void)ok;
 #endif
 #if INPUT_DEBUG_LEVEL >= 1
-        printf("[input] post keypress to pid=%{type: int} ok=%{type: int}\n",
-               PRINT_FLAG_BOTH, p->pid, ok ? 1 : 0);
+        LOG_INFO(input_log(), "post keypress to pid=%{type: int} ok=%{type: int}", p->pid, ok ? 1 : 0);
 #endif
       }
     }

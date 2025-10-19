@@ -116,8 +116,9 @@ EARLY_TEXT early_init_status early_init() {
       }
 
       // Map another equally sized portion immediately after the first
-      success = map_range(root_page_table, fb_phys_start + hhdm_offset + fb_map_size,
-                          fb_phys_start + fb_map_size, fb_map_size, PTE_R | PTE_W | PTE_V);
+      success = map_range(
+          root_page_table, fb_phys_start + hhdm_offset + fb_map_size,
+          fb_phys_start + fb_map_size, fb_map_size, PTE_R | PTE_W | PTE_V);
       if (!success) {
         return EARLY_INIT_FAIL_FULL_RAM_MAP;
       }

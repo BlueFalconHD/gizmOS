@@ -158,6 +158,15 @@ void realmain() {
   set_shared_uart(uart);
   LOG_INFO(kern_log, "UART initialized");
 
+  // before anything bad can happen, print framebuffer memory info
+  LOG_DEBUG(kern_log, "Framebuffer address: 0x%{type: hex}", lfb->address);
+  LOG_DEBUG(kern_log, "Framebuffer pitch: %{type: int}", lfb->pitch);
+  LOG_DEBUG(kern_log, "Framebuffer width: %{type: int}", lfb->width);
+  LOG_DEBUG(kern_log, "Framebuffer height: %{type: int}", lfb->height);
+  LOG_DEBUG(kern_log, "Framebuffer bpp: %{type: int}", lfb->bpp);
+  LOG_DEBUG(kern_log, "Framebuffer red mask size: %{type: int}",
+            lfb->red_mask_size);
+
   LOG_DEBUG(kern_log, "initializing RTC");
   result_t rrtc = make_rtc(0x101000);
   if (!result_is_ok(rrtc)) {

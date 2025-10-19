@@ -9,3 +9,6 @@
 // Simple printing syscall: prints signed int in a0 to UART and terminal
 #define SYSCALL_PRINT_INT        0x10
 
+// Process exit with status in a0
+#define SYSCALL_EXIT             0x02
+

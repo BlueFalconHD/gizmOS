@@ -6,6 +6,12 @@
 #include <lib/str.h>
 #include <limine.h>
 
+// internal malloc/free for flanterm
+//     void *(*_malloc)(size_t size),
+//     void (*_free)(void *ptr, size_t size),
+static void *flanterm_kalloc(size_t size) { return kalloc(size); }
+static void flanterm_kfree(void *ptr, size_t size) { kfree(ptr); }
+
 result_t make_console(framebuffer_t *framebuffer) {
   console_t *console = (console_t *)kalloc(sizeof(console_t));
   if (!console) {
@@ -33,8 +39,8 @@ g_bool console_init(console_t *console) {
   }
 
   console->flanterm_ctx = flanterm_fb_init(
-      NULL, NULL, framebuffer->address, framebuffer->width, framebuffer->height,
-      framebuffer->pitch, framebuffer->red_mask_size,
+      flanterm_kalloc, flanterm_kfree, framebuffer->address, framebuffer->width,
+      framebuffer->height, framebuffer->pitch, framebuffer->red_mask_size,
       framebuffer->red_mask_shift, framebuffer->green_mask_size,
       framebuffer->green_mask_shift, framebuffer->blue_mask_size,
       framebuffer->blue_mask_shift, NULL, NULL, NULL, NULL, NULL, NULL, NULL,

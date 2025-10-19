@@ -1,5 +1,6 @@
 #include "trap_handler.h"
 // #include "buddy_allocator.h"
+#include "buddy_allocator.h"
 #include "device/plic.h"
 #include "device/shared.h"
 #include "lib/sbi.h"
@@ -138,7 +139,7 @@ void exception_handler(uint64_t scause, uint64_t sepc, uint64_t stval,
   LOG_ERROR(trap_log(), "Buddy allocator status:");
 
   // might be bad idea but this uses no allocation like before so it could be ok
-  // buddy_print_stats();
+  buddy_print_stats();
 
   // Print register dump
   LOG_ERROR(trap_log(), "Registers:");

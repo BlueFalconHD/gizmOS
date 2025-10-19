@@ -1,7 +1,7 @@
 #include "plic.h"
 #include "lib/canary.h"
-#include <lib/result.h>
 #include <lib/kalloc.h>
+#include <lib/result.h>
 
 // PLIC register offsets (based on RISC-V PLIC specification)
 #define PLIC_PRIORITY_BASE 0x000000 // Priority registers (4 bytes per source)
@@ -98,8 +98,6 @@ g_bool plic_set_priority(plic_t *plic, uint32_t irq, uint32_t priority) {
   uint32_t *priority_addr =
       (uint32_t *)((uint64_t)plic->base + PLIC_PRIORITY_BASE + irq * 4);
   *priority_addr = priority;
-
-  canary_dbg_val((uint64_t)priority_addr);
 
   return true;
 }

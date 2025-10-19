@@ -1,20 +1,23 @@
 #include "user_trap.h"
-#include "scheduler.h"
-#include "process.h"
-#include <lib/cpu.h>
-#include <lib/panic.h>
-#include <lib/gfx.h>
-#include <lib/print.h>
-#include <lib/log.h>
-#include <lib/gizm_font.h>
-#include <mem_layout.h>
-#include <lib/usermem.h>
-#include <lib/kalloc.h>
+#include "lifecycle.h"
 #include "notification.h"
+#include "process.h"
+#include "scheduler.h"
+#include <lib/cpu.h>
+#include <lib/gfx.h>
+#include <lib/gizm_font.h>
+#include <lib/kalloc.h>
+#include <lib/log.h>
+#include <lib/panic.h>
+#include <lib/print.h>
+#include <lib/usermem.h>
+#include <mem_layout.h>
 #include <page_table.h>
 #include <platform/interrupts.h>
 #include <platform/registers.h>
 #include <syscall.h>
+// exit() is declared in lifecycle.h; keep implicit through user_trap.c's
+// existing includes
 
 // Debugging for notification injection into user trap return
 #ifndef NOTIF_DELIVERY_DEBUG_LEVEL
@@ -61,9 +64,12 @@ void user_trap_ret(void) {
           if (n < m.len) {
             m.flags |= NOTIF_DFLAG_TRUNCATED;
           }
-          
+
 #if NOTIF_DELIVERY_DEBUG_LEVEL >= 1
-          LOG_DEBUG(user_trap_log(), "[notif] inject: pid=%{type: int} type=%{type: int} n=%{type: int} handler=%{type: hex}", p->pid, (int)m.type, (int)n, h->handler_va);
+          LOG_DEBUG(user_trap_log(),
+                    "[notif] inject: pid=%{type: int} type=%{type: int} "
+                    "n=%{type: int} handler=%{type: hex}",
+                    p->pid, (int)m.type, (int)n, h->handler_va);
 #endif
           notif_ctx_save_from_trapframe(p);
           p->trapframe->a0 = m.type;
@@ -124,9 +130,11 @@ void usertrap(void) {
     if (get_physical_address(p->pagetable, faulting_address, &fault_pa)) {
       uint64_t fault_va = fault_pa + hhdm_offset;
       LOG_ERROR(user_trap_log(), "Faulting address: %{type: hex}", fault_va);
-      LOG_ERROR(user_trap_log(), "Data at faulting address: 0x%{type: hex}", *(uint64_t *)fault_va);
+      LOG_ERROR(user_trap_log(), "Data at faulting address: 0x%{type: hex}",
+                *(uint64_t *)fault_va);
     } else {
-      LOG_ERROR(user_trap_log(), "Failed to get physical address for faulting address");
+      LOG_ERROR(user_trap_log(),
+                "Failed to get physical address for faulting address");
     }
   }
 
@@ -143,6 +151,11 @@ void usertrap(void) {
     if (callnum == SYSCALL_NOTIF_DONE) {
       notif_ctx_restore_to_trapframe(p);
       goto out;
+    }
+    if (callnum == 0x02 /* SYSCALL_EXIT */) {
+      int status = (int)p->trapframe->a0;
+      exit((uint64_t)status);
+      // not reached
     }
     if (callnum == SYSCALL_NOTIF_REGISTER) {
       // a0=type, a1=handler, a2=arg, a3=flags
@@ -165,10 +178,8 @@ void usertrap(void) {
     if (callnum == SYSCALL_PRINT_INT) {
       // a0 contains the number to print
       int64_t val = (int64_t)p->trapframe->a0;
-      LOG_DEBUG(user_trap_log(), "%{type: int}", val);
+      printf("%{type: int}\n", PRINT_FLAG_BOTH, val);
       goto out;
-    } else if (callnum == 2) {
-      // exit
     } else if (callnum == 6) {
       fill_screen_with_color(25, 25, 25);
     } else if (callnum == 7) {
@@ -184,5 +195,3 @@ void usertrap(void) {
 out:
   user_trap_ret();
 }
-
-

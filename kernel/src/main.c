@@ -73,10 +73,7 @@ extern uint8_t proc_ecall8_end[];
 extern uint8_t user_keynotify_start[];
 extern uint8_t user_keynotify_end[];
 
-EARLY_TEXT void main() {
-  early_init_status eastat = early_init();
-  (void)eastat;
-
+void realmain() {
   struct limine_framebuffer *lfb =
       limine_req_framebuffer.response->framebuffers[0];
   result_t rfb = make_framebuffer(lfb);
@@ -271,6 +268,12 @@ EARLY_TEXT void main() {
 
   fat_list_root(disk);
 
+  // Attempt to start a Vessel user program from the FAT root
+  result_t rvessel = proc_from_vessel_path("HELLO.VES", "hello");
+  if (!result_is_ok(rvessel)) {
+    LOG_WARN(kern_log, "Failed to start hello.vessel (HELLO.VES)");
+  }
+
   LOG_INFO(kern_log, "starting scheduler");
 
   sbi_set_timer(get_csrr_time() + TICK_INTERVAL_CYCLES);
@@ -278,4 +281,11 @@ EARLY_TEXT void main() {
   scheduler();
 
   panic("hi");
+}
+
+EARLY_TEXT void main() {
+  early_init_status eastat = early_init();
+  (void)eastat;
+
+  realmain();
 }

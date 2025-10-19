@@ -1,7 +1,7 @@
 #pragma once
 
-#include "types.h"
 #include <stddef.h>
+#include <stdbool.h>
 
 // uncomment to enable simple allocation tracing
 // CURRENTLY BROKEN B/C OF RECURSION
@@ -84,3 +84,9 @@ void *kresize_impl(void *ptr, size_t new_size);
  * rounding. Returns 0 if ptr is NULL or not a kalloc()-managed pointer.
  */
 size_t kalloc_usable_size(void *ptr);
+
+/**
+ * Returns true if ptr appears to be a kalloc-managed pointer
+ * based on the expected kalloc header magic.
+ */
+bool kalloc_is_managed_pointer(void *ptr);

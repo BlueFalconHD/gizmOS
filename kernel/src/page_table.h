@@ -37,7 +37,6 @@ enum page_entry_flags {
  */
 typedef uint64_t pte_t;
 
-
 /**
  * @brief Definition of a page table, consisting of 512 entries.
  */
@@ -113,7 +112,6 @@ void activate_page_table(page_table_t *root_table);
 
 extern page_table_t *shared_page_table;
 
-
 g_bool is_addr_mapped(page_table_t *root_table, uint64_t virtual_address);
 
 G_INLINE uint64_t V2P(uint64_t va) {
@@ -127,4 +125,5 @@ G_INLINE uint64_t V2P(uint64_t va) {
   }
 
   panic_loc("get_physical_address failed");
+  return 0;
 }

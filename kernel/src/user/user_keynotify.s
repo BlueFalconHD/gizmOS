@@ -21,9 +21,10 @@ key_handler:
   # if payload length >= 1, print first byte (keycode)
   beqz a2, .Ldone
 
-  # if type != NOTIF_TYPE_KEYPRESS (1), just return
-  li t0, 1
-  bne a0, t0, .Ldone
+  # load byte 3 of payload and only continue if == 1
+  lbu t0, 3(a1)         # t0 = payload[3]
+  li t1, 0
+  bne t0, t1, .Ldone   # if payload[3] != 1, done
 
   lbu t0, 0(a1)         # t0 = keycode
   mv a0, t0             # a0 = int to print

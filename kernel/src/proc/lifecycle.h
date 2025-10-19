@@ -16,4 +16,7 @@ uint64_t fork(void);
 RESULT_TYPE(proc_t *) proc_from_code(uint8_t code[], uint64_t size,
                                      const char *name);
 
+// Create a user process by loading and mapping a Vessel at a disk root path (8.3)
+RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name);
+
 

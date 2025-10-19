@@ -3,24 +3,17 @@
 #include <lib/macros.h>
 #include <platform/exception.h>
 
+// #define G_DEBUG
+
 /*
  * The trap() macro triggers a breakpoint exception in debug builds,
  * allowing a debugger to catch the event. In non-debug builds, it does nothing.
  */
 
 #ifdef G_DEBUG
-G_INLINE void dbg_internal(const char *msg, const char *file, int line) {
-  (void)msg;
-  (void)file;
-  (void)line;
 
-#ifdef G_BREAKPOINTS
-  // Only trigger a breakpoint if explicitly enabled
-  force_breakpoint_exception();
-#endif
-
-  return;
-}
+// non-inline to allow debugger breakpoint setting
+void dbg_internal(const char *msg, const char *file, int line);
 
 #define dbg(msg) dbg_internal((msg), __FILE__, __LINE__)
 

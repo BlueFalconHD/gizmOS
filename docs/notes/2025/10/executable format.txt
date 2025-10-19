@@ -1,0 +1,51 @@
+gizmOS has a custom executable container format which suits its needs. The format is designed to be simple and efficient, while also providing the necessary metadata for the operating system to properly load and execute the binary.
+
+To load an executable, gizmOS's kernel reads the executable file and parses its header to extract important information such as the entry point, segment locations, and required resources. The kernel then maps the segments into the process's address space and sets up the necessary environment for execution.
+
+Once the executable is loaded, the kernel transfers control to the entry point specified in the header, allowing the process to begin execution.
+
+Vessel object files (.vessel) are the standard executable format used by gizmOS. They contain the following key components:
+
+- the header, which includes metadata such as the entry point, segment sizes, and resource requirements.
+- code, data, and other segments, which are mapped into the process's address space.
+
+Code is expected to be Position Independent Code (PIC) to allow for flexible loading addresses, however at the current development stage, all executables are loaded at their specified virtual addresses rather than having ASLR applied so it isn't currently a strict requirement.
+
+# Vessel Header Structure
+
+The file begins with the packed struct described below:
+
+struct vessel_hdr {
+    uint64_t magic;         // "vessel  " (space padded)
+    uint32_t version;       // version of the vessel format, split into major/minor (upper 16 bits = major, lower 16 bits = minor)
+    uint32_t commands_size; // size of the commands section
+}
+
+Following the header is the commands section, which contains a series of commands that describe how to load and execute the binary. Each command has the following structure:
+
+struct vessel_cmd {
+    uint32_t type; // type of command
+    uint32_t size; // size of the command, including this header
+    // command-specific data follows
+}
+
+The following command types are defined:
+
+#define VESSEL_CMD_SEGMENT 1
+struct vessel_cmd_segment {
+    uint32_t type;        // VESSEL_CMD_SEGMENT
+    uint32_t size;        // size of this command
+    uint64_t vaddr;       // virtual address to load the segment
+    uint64_t mem_size;    // size of the segment in memory
+    uint64_t file_offset; // offset in the file where the segment data is located
+    uint64_t file_size;   // size of the segment data in the file
+    uint32_t flags;       // segment flags (read, write, execute)
+    uint32_t reserved;    // reserved for future use
+}
+
+#define VESSEL_CMD_ENTRY_POINT 2
+struct vessel_cmd_entry_point {
+    uint32_t type;      // VESSEL_CMD_ENTRY_POINT
+    uint32_t size;      // size of this command
+    uint64_t entry;     // virtual address of the entry point. this must correspond to an executable segment.
+}

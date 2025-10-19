@@ -77,8 +77,10 @@ void g_log(log_t *logger, log_level_t level, const char *fmt, ...) {
   }
 
   print(final_msg, PRINT_FLAG_BOTH);
-  kfree(msg);
-  kfree(final_msg);
+  if (kalloc_is_managed_pointer(msg))
+    kfree(msg);
+  if (kalloc_is_managed_pointer(final_msg))
+    kfree(final_msg);
 }
 
 /**

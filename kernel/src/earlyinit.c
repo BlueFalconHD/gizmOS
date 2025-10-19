@@ -49,9 +49,15 @@ EARLY_TEXT early_init_status early_init() {
     return EARLY_INIT_FAIL_CREATE_TABLE;
   }
 
-  bool success = map_range(
-      root_page_table, executable_virtual_base, executable_physical_base,
-      (uint64_t)kend - (uint64_t)kstart, PTE_R | PTE_W | PTE_X | PTE_V);
+  // Map the full kernel image (.text/.rodata/.data/.bss). Round the size up to
+  // a page boundary so the tail of the last page is included even when the
+  // image size is not a multiple of PAGE_SIZE.
+  uint64_t kernel_map_size =
+      ((uint64_t)kend - (uint64_t)kstart + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+  bool success = map_range(root_page_table, executable_virtual_base,
+                           executable_physical_base, kernel_map_size,
+                           PTE_R | PTE_W | PTE_X | PTE_V);
 
   if (!success) {
     panic("Failed to set up kernel mapping");
@@ -84,6 +90,38 @@ EARLY_TEXT early_init_status early_init() {
 
   if (!success) {
     return EARLY_INIT_FAIL_FULL_RAM_MAP;
+  }
+
+  // Ensure the bootloader framebuffers live in the HHDM mapping as well.
+  struct limine_framebuffer_response *fb_resp = limine_req_framebuffer.response;
+  if (fb_resp != NULL) {
+    for (uint64_t i = 0; i < fb_resp->framebuffer_count; i++) {
+      struct limine_framebuffer *fb = fb_resp->framebuffers[i];
+      if (fb == NULL || fb->address == 0 || fb->pitch == 0 || fb->height == 0) {
+        continue;
+      }
+
+      uint64_t fb_virt = (uint64_t)fb->address;
+      uint64_t fb_phys = fb_virt - hhdm_offset;
+      uint64_t fb_size = (uint64_t)fb->pitch * fb->height;
+
+      uint64_t fb_phys_start = ALIGNDOWN(fb_phys, PAGE_SIZE);
+      uint64_t fb_phys_end = ALIGNUP(fb_phys + fb_size, PAGE_SIZE);
+      uint64_t fb_map_size = fb_phys_end - fb_phys_start;
+
+      success = map_range(root_page_table, fb_phys_start + hhdm_offset,
+                          fb_phys_start, fb_map_size, PTE_R | PTE_W | PTE_V);
+      if (!success) {
+        return EARLY_INIT_FAIL_FULL_RAM_MAP;
+      }
+
+      // Map another equally sized portion immediately after the first
+      success = map_range(root_page_table, fb_phys_start + hhdm_offset + fb_map_size,
+                          fb_phys_start + fb_map_size, fb_map_size, PTE_R | PTE_W | PTE_V);
+      if (!success) {
+        return EARLY_INIT_FAIL_FULL_RAM_MAP;
+      }
+    }
   }
 
   activate_page_table(root_page_table);

@@ -8,7 +8,6 @@ ARCH := riscv64
 # Uncomment following line to enable debugging.
 # NOTE TO SELF: IF I NEED TO DEBUG STRUCT VALUES, SET OPTIMIZE TO -O0
 DEBUG := 1
-# MONITOR := 1
 # SHOW_INTERRUPT := 1
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
@@ -28,11 +27,8 @@ ifdef SHOW_INTERRUPT
 QEMUFLAGS += -d int
 endif
 
-ifdef MONITOR
-QEMUFLAGS += -monitor stdio
-else
+QEMUFLAGS += -monitor telnet:127.0.0.1:6767,server,nowait
 QEMUFLAGS += -serial stdio
-endif
 
 override IMAGE_NAME := template-$(ARCH)
 
@@ -50,7 +46,7 @@ HOST_LDFLAGS :=
 HOST_LIBS :=
 
 .PHONY: all
-all: $(IMAGE_NAME).iso
+all: userland $(IMAGE_NAME).iso
 
 .PHONY: all-hdd
 all-hdd: $(IMAGE_NAME).hdd
@@ -58,8 +54,12 @@ all-hdd: $(IMAGE_NAME).hdd
 .PHONY: run
 run: run-$(ARCH)
 
+.PHONY: userland
+userland: kernel-deps
+	$(MAKE) -C userland
+
 .PHONY: data.img
-data.img: $(DISK_SRCS)
+data.img: userland $(DISK_SRCS)
 	rm -f data.img
 	dd if=/dev/zero bs=1M count=0 seek=$(DISK_SIZE_MB) of=data.img
 	@if command -v mformat >/dev/null 2>&1; then \

@@ -57,7 +57,11 @@ static inline uint64_t buddy_index_to_addr(uint64_t index, int order) {
 
 // Get buddy index for a given block index
 static inline uint64_t buddy_get_buddy_index(uint64_t index, int order) {
-  return index ^ (1ULL << order);
+  (void)order;
+  // For a block at a given order, its buddy is the adjacent block at the same
+  // order. That corresponds to flipping the least-significant bit of the
+  // order-specific index.
+  return index ^ 1ULL;
 }
 
 // Check if a block is allocated in the bitmap
@@ -131,7 +135,6 @@ static inline int buddy_is_buddy_free(uint64_t buddy_addr, int order) {
     uint64_t bit_index = page_index % 64;
 
     if (word_index >= bitmap_size_words) {
-      dbg("word_index >= bitmap_size_words");
       return 0;
     }
     if ((allocation_bitmap[word_index] >> bit_index) & 1) {
@@ -387,8 +390,6 @@ uint64_t buddy_get_allocated_page_count(void) {
 }
 
 void buddy_print_stats(void) {
-  print("Buddy Allocator Stats:\n", PRINT_FLAG_BOTH);
-
   char buffer[128];
   print("  Total pages: ", PRINT_FLAG_BOTH);
   strfuint(buddy_total_pages, buffer);

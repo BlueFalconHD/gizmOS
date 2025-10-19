@@ -91,7 +91,7 @@ clone_repo_commit \
 clone_repo_commit \
     https://codeberg.org/BlueFalconHD/Flanterm.git \
     src/extern/flanterm \
-    56ceb16721aec7c97c258effe5f2fe16e53e9841
+    be61850b2204ba7e11793c68b4c9d580fc9a1e5f
 
 # clone_repo_commit \
 #     https://github.com/cute-engineering/ce-base.git \

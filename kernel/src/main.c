@@ -3,8 +3,10 @@
 // #include "lib/canary.h"
 // #include "lib/dyn_array.h"
 // #include "lib/macros.h"
+#include "img/ppm_fs.h"
 #include "lib/debug.h"
 #include "lib/log.h"
+#include "lib/panic.h"
 #include "lib/sbi.h"
 #include "lib/timer.h"
 #include "mem_layout.h"
@@ -72,6 +74,20 @@ extern uint8_t proc_ecall8_start[];
 extern uint8_t proc_ecall8_end[];
 extern uint8_t user_keynotify_start[];
 extern uint8_t user_keynotify_end[];
+
+/*
+ * Basic integer-only RNG for kernel main, no floating point.
+ * Linear Congruential Generator (LCG): 64-bit state, 32-bit output.
+ */
+static uint64_t g_rand_state = 0x9e3779b97f4a7c15ULL; /* non-zero default */
+static inline void rand_seed(uint64_t seed) {
+  if (seed)
+    g_rand_state ^= seed;
+}
+static inline uint32_t rand(void) {
+  g_rand_state = g_rand_state * 6364136223846793005ULL + 1ULL;
+  return (uint32_t)(g_rand_state >> 32);
+}
 
 void realmain() {
   struct limine_framebuffer *lfb =

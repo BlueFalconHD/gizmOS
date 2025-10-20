@@ -1,9 +1,9 @@
 #include "process_table.h"
 #include "buddy_allocator.h"
 #include "process.h"
+#include <lib/log.h>
 #include <lib/panic.h>
 #include <lib/print.h>
-#include <lib/log.h>
 static inline log_t *proc_tbl_log() {
   static log_t *l = NULL;
   if (!l)
@@ -65,6 +65,7 @@ g_bool initialize_processes() {
 
   // lock init
   initlock(&current_pid_lock, "pid_lock");
+  initlock(&wait_lock, "wait");
   return true;
 }
 

@@ -180,12 +180,25 @@ void usertrap(void) {
       int64_t val = (int64_t)p->trapframe->a0;
       printf("%{type: int}\n", PRINT_FLAG_BOTH, val);
       goto out;
-    } else if (callnum == 6) {
-      fill_screen_with_color(25, 25, 25);
-    } else if (callnum == 7) {
-      gizm_font_draw_text(20, 20, "Proc A", GIZM_COLOR_BLUE);
-    } else if (callnum == 8) {
-      gizm_font_draw_text(20, 20, "Proc B", GIZM_COLOR_RED);
+    }
+    if (callnum == SYSCALL_PRINT_STR) {
+      // a0=string pointer
+      uint64_t ustr = p->trapframe->a0;
+      char buf[256];
+      size_t i = 0;
+      for (i = 0; i < sizeof(buf) - 1; i++) {
+        result_t rc = copyin(p->pagetable, (uint8_t *)&buf[i], ustr + i, 1);
+        if (!result_is_ok(rc)) {
+          buf[i] = '\0';
+          break;
+        }
+        if (buf[i] == '\0') {
+          break;
+        }
+      }
+      buf[i] = '\0';
+      printf("%{type: str}", PRINT_FLAG_BOTH, buf);
+      goto out;
     }
   }
 

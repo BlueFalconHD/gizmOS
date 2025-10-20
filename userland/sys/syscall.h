@@ -9,6 +9,13 @@ static inline long sys_print_int(long v) {
   return a0;
 }
 
+static inline long sys_print_str(const char *str) {
+  register long a0 asm("a0") = (long)str;
+  register long a7 asm("a7") = 0x11; /* SYSCALL_PRINT_STR */
+  asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
+  return a0;
+}
+
 static inline void sys_exit(int status) {
   register long a0 asm("a0") = status;
   register long a7 asm("a7") = 0x02; /* SYSCALL_EXIT */
@@ -16,13 +23,17 @@ static inline void sys_exit(int status) {
   __builtin_unreachable();
 }
 
-static inline uint32_t sys_notif_register(uint16_t type, uint64_t handler, uint64_t arg, uint32_t flags) {
+static inline uint32_t sys_notif_register(uint16_t type, uint64_t handler,
+                                          uint64_t arg, uint32_t flags) {
   register long a0 asm("a0") = (long)type;
   register long a1 asm("a1") = (long)handler;
   register long a2 asm("a2") = (long)arg;
   register long a3 asm("a3") = (long)flags;
   register long a7 asm("a7") = 0x90; /* SYSCALL_NOTIF_REGISTER */
-  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
+  asm volatile("ecall"
+               : "+r"(a0)
+               : "r"(a1), "r"(a2), "r"(a3), "r"(a7)
+               : "memory");
   return (uint32_t)a0;
 }
 
@@ -34,4 +45,7 @@ static inline int sys_notif_unregister(uint16_t type, uint32_t id) {
   return (int)a0;
 }
 
-
+static inline void sys_notif_done() {
+  register long a7 asm("a7") = 0x100; /* SYSCALL_NOTIF_DONE */
+  asm volatile("ecall" : : "r"(a7) : "memory");
+}

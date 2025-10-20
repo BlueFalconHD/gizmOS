@@ -3,19 +3,20 @@
 #include "../core/queue.h"
 #include <device/virtio/virtio.h>
 #include <lib/kalloc.h>
+#include <lib/log.h>
 #include <lib/memory.h>
 #include <lib/print.h>
-#include <lib/log.h>
+#include <lib/spinlock.h>
 
 static inline log_t *virtio_blk_log() {
   static log_t *l = NULL;
   if (!l) {
     l = g_log_create("virtio", "block");
-    #if VIRTIO_DEBUG
+#if VIRTIO_DEBUG
     g_log_set_level(l, LOG_LEVEL_DEBUG);
-    #else
+#else
     g_log_set_level(l, LOG_LEVEL_INFO);
-    #endif
+#endif
   }
   return l;
 }
@@ -44,6 +45,9 @@ static int blk_init(virtio_block_dev_t *blk) {
   rc = virtq_create(blk->vdev, 0, 8, &blk->rq);
   if (rc)
     return rc;
+
+  // Initialize per-device lock to serialize synchronous requests
+  initlock(&blk->lock, "virtio_blk");
 
   // Driver OK
   uint32_t s = virtio_mmio_read32(blk->vdev->mmio_base, VIRTIO_MMIO_STATUS);
@@ -79,9 +83,13 @@ typedef struct {
 
 static g_bool submit_rw(virtio_block_dev_t *blk, uint32_t type, uint64_t sector,
                         void *buf, uint32_t num_sectors, g_bool is_write) {
+  acquire(&blk->lock);
+
   blk_sync_tail_t *tail = (blk_sync_tail_t *)kalloc(sizeof(blk_sync_tail_t));
-  if (!tail)
+  if (!tail) {
+    release(&blk->lock);
     return false;
+  }
   tail->hdr.type = type;
   tail->hdr.reserved = 0;
   tail->hdr.sector = sector;
@@ -120,10 +128,14 @@ static g_bool submit_rw(virtio_block_dev_t *blk, uint32_t type, uint64_t sector,
   }
   g_bool ok = (tail->status == VIRTIO_BLK_S_OK);
 #if VIRTIO_DEBUG
-  LOG_DEBUG(virtio_blk_log(), "%{type: str} sector=%{type: int} n=%{type: int} status=%{type: int}",
-            is_write ? "write" : "read", (int)sector, (int)num_sectors,
-            (int)tail->status);
+  LOG_DEBUG(
+      virtio_blk_log(),
+      "%{type: str} sector=%{type: int} n=%{type: int} status=%{type: int}",
+      is_write ? "write" : "read", (int)sector, (int)num_sectors,
+      (int)tail->status);
 #endif
+  kfree(tail);
+  release(&blk->lock);
   return ok;
 }
 

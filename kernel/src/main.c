@@ -240,16 +240,6 @@ void realmain() {
 
   initialize_processes();
 
-  uint64_t size_keynotify =
-      (uint64_t)user_keynotify_end - (uint64_t)user_keynotify_start;
-  result_t ruser =
-      proc_from_code(user_keynotify_start, size_keynotify, "ukeynotify");
-  if (!result_is_ok(ruser)) {
-    LOG_WARN(kern_log, "Failed to start user keynotify process");
-  }
-
-  LOG_INFO(kern_log, "processes initialized");
-
   LOG_INFO(kern_log, "initializing VirtIO bus and drivers");
 
   virtio_register_all_drivers();
@@ -278,9 +268,14 @@ void realmain() {
   fat_list_root(disk);
 
   // Attempt to start a Vessel user program from the FAT root
-  result_t rvessel = proc_from_vessel_path("HELLO.VES", "hello");
-  if (!result_is_ok(rvessel)) {
+  result_t rvesselh = proc_from_vessel_path("HELLO.VES", "hello");
+  if (!result_is_ok(rvesselh)) {
     LOG_WARN(kern_log, "Failed to start hello.vessel (HELLO.VES)");
+  }
+
+  result_t rvesselk = proc_from_vessel_path("KEYNOTFY.VES", "keynotify");
+  if (!result_is_ok(rvesselk)) {
+    LOG_WARN(kern_log, "Failed to start keynotfy.vessel (KEYNOTFY.VES)");
   }
 
   LOG_INFO(kern_log, "starting scheduler");

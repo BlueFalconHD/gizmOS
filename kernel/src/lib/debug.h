@@ -3,8 +3,6 @@
 #include <lib/macros.h>
 #include <platform/exception.h>
 
-// #define G_DEBUG
-
 /*
  * The trap() macro triggers a breakpoint exception in debug builds,
  * allowing a debugger to catch the event. In non-debug builds, it does nothing.

@@ -20,9 +20,9 @@ static inline log_t *kalloc_log() {
 }
 
 #include <lib/memory.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 allocation_t recent_allocations[100];
 static int allocation_index = 0;

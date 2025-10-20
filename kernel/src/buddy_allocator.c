@@ -3,6 +3,7 @@
 #include "lib/fmt.h"
 #include "lib/panic.h"
 #include "lib/print.h"
+#include "lib/spinlock.h"
 #include "lib/str.h"
 #include "lib/types.h"
 #include "limine_requests.h"
@@ -10,7 +11,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// #define BUDDY_ALLOCATOR_DEBUG
+#define BUDDY_ALLOCATOR_DEBUG
 
 extern char kstart[];
 extern char kend[];
@@ -39,6 +40,10 @@ static uint64_t buddy_total_size;
 
 static uint64_t buddy_free_pages_count;
 static uint64_t buddy_allocated_pages_count;
+
+// Serialize allocator operations across traps/interrupts and kernel paths.
+// This prevents free-list/bitmap corruption from re-entrant kalloc/kfree.
+static struct spinlock buddy_lock; // initialized in buddy_allocator_init()
 
 #define BUDDY_BLOCK_SIZE(order) (BUDDY_PAGE_SIZE << (order))
 #define BUDDY_BLOCKS_PER_ORDER(order) (buddy_total_pages >> (order))
@@ -209,6 +214,9 @@ void buddy_allocator_init(struct limine_memmap_entry **entries,
   buddy_free_pages_count = 0;
   buddy_allocated_pages_count = 0;
 
+  // Initialize allocator lock early; safe to call even before first use.
+  initlock(&buddy_lock, "buddy_alloc");
+
   uint64_t best_base = 0;
   uint64_t best_size = 0;
 
@@ -305,8 +313,12 @@ void buddy_allocator_init(struct limine_memmap_entry **entries,
 
 void *buddy_alloc_pages(int order) {
   if (order < 0 || order > BUDDY_MAX_ORDER) {
+    dbg("order < 0 || order > BUDDY_MAX_ORDER");
     return NULL;
   }
+
+  void *ret = NULL;
+  acquire(&buddy_lock);
 
   int current_order = order;
   while (current_order <= BUDDY_MAX_ORDER && !free_lists[current_order]) {
@@ -315,7 +327,7 @@ void *buddy_alloc_pages(int order) {
 
   if (current_order > BUDDY_MAX_ORDER) {
     dbg("current_order > BUDDY_MAX_ORDER");
-    return NULL;
+    goto out;
   }
 
   struct buddy_block *block = free_lists[current_order];
@@ -335,13 +347,24 @@ void *buddy_alloc_pages(int order) {
   buddy_allocated_pages_count += BUDDY_BLOCK_SIZE(order) / BUDDY_PAGE_SIZE;
   buddy_free_pages_count -= BUDDY_BLOCK_SIZE(order) / BUDDY_PAGE_SIZE;
 
-  return block;
+  if (!block) {
+    dbg("!block");
+    goto out;
+  }
+
+  ret = block;
+
+out:
+  release(&buddy_lock);
+  return ret;
 }
 
 void buddy_free_pages(void *ptr, int order) {
   if (!ptr || order < 0 || order > BUDDY_MAX_ORDER) {
     return;
   }
+
+  acquire(&buddy_lock);
 
   uint64_t block_addr = BUDDY_VIRT_TO_PHYS((uint64_t)ptr);
 
@@ -377,6 +400,8 @@ void buddy_free_pages(void *ptr, int order) {
   struct buddy_block *final_block =
       (struct buddy_block *)BUDDY_PHYS_TO_VIRT(current_addr);
   buddy_add_to_free_list(final_block, current_order);
+
+  release(&buddy_lock);
 }
 
 void *buddy_alloc_page(void) { return buddy_alloc_pages(BUDDY_MIN_ORDER); }

@@ -289,6 +289,12 @@ void realmain() {
     LOG_WARN(kern_log, "Failed to start hello.vessel (HELLO.VES)");
   }
 
+  // Attempt to start a Vessel user program from the FAT root
+  result_t rvesself = proc_from_vessel_path("FIZZBUZ.VES", "fizzbuzz");
+  if (!result_is_ok(rvesself)) {
+    LOG_WARN(kern_log, "Failed to start fizzbuzz.vessel (FIZZBUZ.VES)");
+  }
+
   result_t rvesselk = proc_from_vessel_path("KEYNOTFY.VES", "keynotify");
   if (!result_is_ok(rvesselk)) {
     LOG_WARN(kern_log, "Failed to start keynotfy.vessel (KEYNOTFY.VES)");

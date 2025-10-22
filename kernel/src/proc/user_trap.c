@@ -1,6 +1,7 @@
 #include "user_trap.h"
 #include "lifecycle.h"
 #include "notification.h"
+#include "proc/syscall.h"
 #include "process.h"
 #include "scheduler.h"
 #include <lib/cpu.h>
@@ -146,60 +147,9 @@ void usertrap(void) {
     PS_enable_interrupts();
 
     int callnum = p->trapframe->a7;
-    // Detect end of a notification handler: we choose a dedicated syscall id
-    // to mark completion and restore context.
-    if (callnum == SYSCALL_NOTIF_DONE) {
-      notif_ctx_restore_to_trapframe(p);
-      goto out;
-    }
-    if (callnum == 0x02 /* SYSCALL_EXIT */) {
-      int status = (int)p->trapframe->a0;
-      exit((uint64_t)status);
-      // not reached
-    }
-    if (callnum == SYSCALL_NOTIF_REGISTER) {
-      // a0=type, a1=handler, a2=arg, a3=flags
-      uint16_t type = (uint16_t)p->trapframe->a0;
-      uint64_t handler = p->trapframe->a1;
-      uint64_t arg = p->trapframe->a2;
-      uint32_t flags = (uint32_t)p->trapframe->a3;
-      uint32_t id = notification_register(p, type, handler, arg, flags);
-      p->trapframe->a0 = id; // return id
-      goto out;
-    }
-    if (callnum == SYSCALL_NOTIF_UNREGISTER) {
-      // a0=type, a1=id
-      uint16_t type = (uint16_t)p->trapframe->a0;
-      uint32_t id = (uint32_t)p->trapframe->a1;
-      g_bool ok = notification_unregister(p, type, id);
-      p->trapframe->a0 = ok ? 0 : (uint64_t)-1;
-      goto out;
-    }
-    if (callnum == SYSCALL_PRINT_INT) {
-      // a0 contains the number to print
-      int64_t val = (int64_t)p->trapframe->a0;
-      printf("%{type: int}\n", PRINT_FLAG_BOTH, val);
-      goto out;
-    }
-    if (callnum == SYSCALL_PRINT_STR) {
-      // a0=string pointer
-      uint64_t ustr = p->trapframe->a0;
-      char buf[256];
-      size_t i = 0;
-      for (i = 0; i < sizeof(buf) - 1; i++) {
-        result_t rc = copyin(p->pagetable, (uint8_t *)&buf[i], ustr + i, 1);
-        if (!result_is_ok(rc)) {
-          buf[i] = '\0';
-          break;
-        }
-        if (buf[i] == '\0') {
-          break;
-        }
-      }
-      buf[i] = '\0';
-      printf("%{type: str}", PRINT_FLAG_BOTH, buf);
-      goto out;
-    }
+    syscall_err_t e = syscall_dispatch(p, callnum);
+    p->trapframe->a7 = (uint64_t)e;
+    goto out;
   }
 
   if (PS_get_exception_cause() == 0x8000000000000005) {

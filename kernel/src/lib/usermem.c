@@ -1,4 +1,5 @@
 #include "lib/debug.h"
+#include "lib/kalloc.h"
 #include <lib/memory.h>
 #include <lib/result.h>
 #include <limine_requests.h>
@@ -66,3 +67,34 @@ copyin(page_table_t *pagetable, void *dst, uint64_t srcva, uint64_t len) {
 
   return RESULT_SUCCESS(0);
 }
+
+RESULT_TYPE(char *)
+copyinstr(page_table_t *pagetable, uint64_t srcva, uint64_t maxlen) {
+  char *str = kalloc(maxlen + 1);
+  if (!str) {
+    return RESULT_FAILURE(RESULT_ERROR);
+  }
+
+  uint64_t i = 0;
+  while (i < maxlen) {
+    uint64_t pa;
+    if (!get_physical_address(pagetable, srcva + i, &pa)) {
+      kfree(str);
+      return RESULT_FAILURE(RESULT_ERROR);
+    }
+
+    uint64_t n = min_u64(maxlen - i, PAGE_REMAIN(srcva + i));
+    uint8_t *src_kva = (uint8_t *)(pa + hhdm_offset);
+
+    for (uint64_t j = 0; j < n; j++) {
+      str[i] = src_kva[j];
+      if (str[i] == '\0') {
+        return RESULT_SUCCESS(str);
+      }
+      i++;
+    }
+  }
+
+  str[maxlen] = '\0';
+  return RESULT_SUCCESS(str);
+};

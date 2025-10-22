@@ -1,0 +1,1 @@
+gizmOS runs on a custom simple filesystem format known as GZFS (gizmOS File System). GZFS is designed to be lightweight and efficient, suitable for the needs of the gizmOS operating system. It supports basic file operations such as reading, writing, creating, and deleting files and directories.

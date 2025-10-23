@@ -60,26 +60,14 @@ userland: kernel-deps
 
 .PHONY: data.img
 data.img: userland $(DISK_SRCS)
-	rm -f data.img
-	dd if=/dev/zero bs=1M count=0 seek=$(DISK_SIZE_MB) of=data.img
-	@if command -v mformat >/dev/null 2>&1; then \
-	  echo "[mformat] creating FAT filesystem in data.img"; \
-	  mformat -i data.img@@0 ; \
-	  if [ -d "$(DISK_DIR)" ] && ls "$(DISK_DIR)"/* >/dev/null 2>&1; then \
-	    echo "[mcopy] copying $(DISK_DIR)/* -> ::/"; \
-	    mcopy -s -i data.img@@0 "$(DISK_DIR)"/* ::/ ; \
-	  fi; \
-	else \
-	  echo "Note: mtools not found; created raw data.img without filesystem"; \
-	fi
+	@echo "[mkfs_gzfs] building data.img from $(DISK_DIR)"
+	@chmod +x tools/gzfs/mkfs_gzfs.py
+	@./tools/gzfs/mkfs_gzfs.py --diskdir "$(DISK_DIR)" --out data.img --size-mb $(DISK_SIZE_MB)
 
 .PHONY: disk-add
 # Usage: make disk-add SRC=path/in/host DEST=path/in/disk (e.g., DEST=/hello)
-disk-add: data.img
-	$(if $(SRC),,$(error SRC not set))
-	$(if $(DEST),,$(error DEST not set))
-	$(if $(shell command -v mcopy 2>/dev/null),mcopy -i data.img@@0 $(SRC) ::$(DEST),
-		@echo "mcopy not found; cannot add files. Install mtools.")
+disk-add:
+	$(info disk-add is not supported for GZFS images; rebuild data.img)
 
 .PHONY: run-hdd
 run-hdd: run-hdd-$(ARCH)

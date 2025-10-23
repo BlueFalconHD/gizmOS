@@ -1,11 +1,14 @@
 #include "lifecycle.h"
 #include <fs/fat.h>
+#include <fs/vfs.h>
 #include <include/vessel.h>
 #include <limine_requests.h>
 #include "lib/kalloc.h"
 #include "buddy_allocator.h"
 #include "memory.h"
+#include "fs.h"
 #include "notification.h"
+#include "fs.h"
 #include "process.h"
 #include "process_table.h"
 #include "scheduler.h"
@@ -91,6 +94,10 @@ found:
   // Initialize notification subsystem for this process
   notification_init_proc(p);
 
+  // Initialize FD table
+  for (int i = 0; i < PROC_MAX_FD; i++) p->fd_table[i] = NULL;
+  fs_install_standard_fds(p);
+
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
   LOG_DEBUG(proc_lifecycle_log(), "alloc proc kstack = %{type: hex}",
             p->kstack);
@@ -102,6 +109,9 @@ found:
 void free_process(proc_t *p) {
   if (!p)
     return;
+
+  // Close any open file descriptors
+  fs_close_all(p);
 
   if (p->pagetable) {
     buddy_free_page(p->pagetable);
@@ -357,10 +367,16 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
   uint8_t *filebuf = (uint8_t *)kalloc(MAX_VESSEL_BYTES);
   if (!filebuf) return RESULT_FAILURE(RESULT_NOMEM);
 
-  uint32_t nbytes = 0;
-  if (!fat_read_root_file(shared_disk, path83, filebuf, MAX_VESSEL_BYTES, &nbytes)) {
-    kfree(filebuf);
-    return RESULT_FAILURE(RESULT_NOT_FOUND);
+  size_t nbytes = 0;
+  result_t rread = vfs_read_entire(path83, filebuf, MAX_VESSEL_BYTES, &nbytes);
+  if (!result_is_ok(rread)) {
+    // fallback to FAT for transition period
+    uint32_t oldn = 0;
+    if (!fat_read_root_file(shared_disk, path83, filebuf, MAX_VESSEL_BYTES, &oldn)) {
+      kfree(filebuf);
+      return RESULT_FAILURE(RESULT_NOT_FOUND);
+    }
+    nbytes = oldn;
   }
   if (nbytes < sizeof(vessel_hdr_t)) {
     kfree(filebuf);

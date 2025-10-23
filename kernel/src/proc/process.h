@@ -87,4 +87,8 @@ typedef struct proc {
   notif_ctx_t     notif_ctx;
   uint64_t        notif_userbuf_base; // user VA for buffer+stub
   uint64_t        notif_userbuf_size;
+
+  /* File descriptors */
+  #define PROC_MAX_FD 32
+  struct fs_file *fd_table[PROC_MAX_FD];
 } proc_t;

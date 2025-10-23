@@ -22,6 +22,8 @@
 #include <device/virtio/virtio.h>
 #include <dtb/dtb.h>
 #include <fs/fat.h>
+#include <fs/gzfs/gzfs.h>
+#include <fs/vfs.h>
 #include <kprocs/pixelcore_demo.h>
 #include <lib/PixelCore/backbuffer.h>
 #include <lib/PixelCore/rect.h>
@@ -87,6 +89,65 @@ static inline void rand_seed(uint64_t seed) {
 static inline uint32_t rand(void) {
   g_rand_state = g_rand_state * 6364136223846793005ULL + 1ULL;
   return (uint32_t)(g_rand_state >> 32);
+}
+
+typedef struct {
+  vfs_mount_t *mnt;
+  vfs_node_t *dir;
+  log_t *log;
+  int depth;
+} vfs_tree_ctx_t;
+
+static g_bool name_is_dot_or_dotdot(const char *s) {
+  if (!s)
+    return false;
+  if (s[0] == '.' && s[1] == '\0')
+    return true;
+  if (s[0] == '.' && s[1] == '.' && s[2] == '\0')
+    return true;
+  return false;
+}
+
+static void vfs_tree_emit(const char *name, uint32_t type, void *arg) {
+  vfs_tree_ctx_t *ctx = (vfs_tree_ctx_t *)arg;
+  if (!ctx || !ctx->mnt || !ctx->dir)
+    return;
+
+  // Build indented label
+  char label[128];
+  int pos = 0;
+  for (int i = 0; i < ctx->depth && pos + 2 < (int)sizeof(label); i++) {
+    label[pos++] = ' ';
+    label[pos++] = ' ';
+  }
+  label[pos++] = '-';
+  label[pos++] = ' ';
+  // Append name
+  int i = 0;
+  while (name[i] && pos + 1 < (int)sizeof(label)) {
+    label[pos++] = name[i++];
+  }
+  label[pos] = '\0';
+  LOG_INFO(ctx->log, "%{type: str}", label);
+
+  if (type == VFS_NODE_DIR && !name_is_dot_or_dotdot(name)) {
+    vfs_node_t *child = NULL;
+    if (result_is_ok(ctx->mnt->ops->lookup(ctx->mnt, ctx->dir, name, &child)) &&
+        child) {
+      vfs_tree_ctx_t sub = *ctx;
+      sub.dir = child;
+      sub.depth = ctx->depth + 1;
+      if (ctx->mnt->ops->readdir)
+        ctx->mnt->ops->readdir(ctx->mnt, child, vfs_tree_emit, &sub);
+    }
+  }
+}
+
+static void vfs_list_tree(vfs_mount_t *mnt, vfs_node_t *root, log_t *log) {
+  if (!mnt || !root || !mnt->ops || !mnt->ops->readdir)
+    return;
+  vfs_tree_ctx_t ctx = {.mnt = mnt, .dir = root, .log = log, .depth = 0};
+  mnt->ops->readdir(mnt, root, vfs_tree_emit, &ctx);
 }
 
 void realmain() {
@@ -281,7 +342,19 @@ void realmain() {
 
   LOG_INFO(kern_log, "disk device initialized");
 
-  fat_list_root(disk);
+  // Mount GZFS as root and list directory for sanity
+  vfs_init();
+  result_t rmnt = vfs_mount_root(disk, &gzfs_type);
+  if (!result_is_ok(rmnt)) {
+    LOG_WARN(kern_log, "GZFS mount failed; falling back to FAT root listing");
+    fat_list_root(disk);
+  } else {
+    LOG_INFO(kern_log, "GZFS mounted as root");
+    if (vfs_root_mount() && vfs_root_mount()->ops && vfs_root_mount()->root) {
+      LOG_INFO(kern_log, "GZFS root tree:");
+      vfs_list_tree(vfs_root_mount(), vfs_root_mount()->root, kern_log);
+    }
+  }
 
   // Attempt to start a Vessel user program from the FAT root
   result_t rvesselh = proc_from_vessel_path("HELLO.VES", "hello");
@@ -289,11 +362,11 @@ void realmain() {
     LOG_WARN(kern_log, "Failed to start hello.vessel (HELLO.VES)");
   }
 
-  // Attempt to start a Vessel user program from the FAT root
-  result_t rvesself = proc_from_vessel_path("FIZZBUZ.VES", "fizzbuzz");
-  if (!result_is_ok(rvesself)) {
-    LOG_WARN(kern_log, "Failed to start fizzbuzz.vessel (FIZZBUZ.VES)");
-  }
+  // // Attempt to start a Vessel user program from the FAT root
+  // result_t rvesself = proc_from_vessel_path("FIZZBUZ.VES", "fizzbuzz");
+  // if (!result_is_ok(rvesself)) {
+  //   LOG_WARN(kern_log, "Failed to start fizzbuzz.vessel (FIZZBUZ.VES)");
+  // }
 
   result_t rvesselk = proc_from_vessel_path("KEYNOTFY.VES", "keynotify");
   if (!result_is_ok(rvesselk)) {

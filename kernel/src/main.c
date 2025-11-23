@@ -22,8 +22,7 @@
 #include <device/virtio/virtio.h>
 #include <dtb/dtb.h>
 #include <fs/fat.h>
-#include <fs/gzfs/gzfs.h>
-#include <fs/vfs.h>
+#include <fs/objectfs/objfs.h>
 #include <kprocs/pixelcore_demo.h>
 #include <lib/PixelCore/backbuffer.h>
 #include <lib/PixelCore/rect.h>
@@ -91,63 +90,22 @@ static inline uint32_t rand(void) {
   return (uint32_t)(g_rand_state >> 32);
 }
 
-typedef struct {
-  vfs_mount_t *mnt;
-  vfs_node_t *dir;
-  log_t *log;
-  int depth;
-} vfs_tree_ctx_t;
-
-static g_bool name_is_dot_or_dotdot(const char *s) {
-  if (!s)
-    return false;
-  if (s[0] == '.' && s[1] == '\0')
-    return true;
-  if (s[0] == '.' && s[1] == '.' && s[2] == '\0')
-    return true;
-  return false;
-}
-
-static void vfs_tree_emit(const char *name, uint32_t type, void *arg) {
-  vfs_tree_ctx_t *ctx = (vfs_tree_ctx_t *)arg;
-  if (!ctx || !ctx->mnt || !ctx->dir)
-    return;
-
-  // Build indented label
-  char label[128];
-  int pos = 0;
-  for (int i = 0; i < ctx->depth && pos + 2 < (int)sizeof(label); i++) {
-    label[pos++] = ' ';
-    label[pos++] = ' ';
+static void objfs_list_root_once(log_t *log) {
+  uint64_t root = objfs_global()->sb.root_object_id;
+  void emit(const char *name, uint8_t kind, uint64_t id, void *arg) {
+    (void)arg; (void)id;
+    const char *t = (kind == 2) ? "[DIR] " : (kind == 1) ? "[FILE]" : "[?]  ";
+    char line[128];
+    int pos = 0;
+    for (int i = 0; i < 0 && pos + 1 < (int)sizeof(line); i++) line[pos++] = ' ';
+    // prefix
+    for (int i = 0; t[i] && pos + 1 < (int)sizeof(line); i++) line[pos++] = t[i];
+    line[pos++] = ' ';
+    for (int i = 0; name[i] && pos + 1 < (int)sizeof(line); i++) line[pos++] = name[i];
+    line[pos] = '\0';
+    LOG_INFO(log, "%{type: str}", line);
   }
-  label[pos++] = '-';
-  label[pos++] = ' ';
-  // Append name
-  int i = 0;
-  while (name[i] && pos + 1 < (int)sizeof(label)) {
-    label[pos++] = name[i++];
-  }
-  label[pos] = '\0';
-  LOG_INFO(ctx->log, "%{type: str}", label);
-
-  if (type == VFS_NODE_DIR && !name_is_dot_or_dotdot(name)) {
-    vfs_node_t *child = NULL;
-    if (result_is_ok(ctx->mnt->ops->lookup(ctx->mnt, ctx->dir, name, &child)) &&
-        child) {
-      vfs_tree_ctx_t sub = *ctx;
-      sub.dir = child;
-      sub.depth = ctx->depth + 1;
-      if (ctx->mnt->ops->readdir)
-        ctx->mnt->ops->readdir(ctx->mnt, child, vfs_tree_emit, &sub);
-    }
-  }
-}
-
-static void vfs_list_tree(vfs_mount_t *mnt, vfs_node_t *root, log_t *log) {
-  if (!mnt || !root || !mnt->ops || !mnt->ops->readdir)
-    return;
-  vfs_tree_ctx_t ctx = {.mnt = mnt, .dir = root, .log = log, .depth = 0};
-  mnt->ops->readdir(mnt, root, vfs_tree_emit, &ctx);
+  objfs_list_children(root, emit, NULL);
 }
 
 void realmain() {
@@ -342,18 +300,14 @@ void realmain() {
 
   LOG_INFO(kern_log, "disk device initialized");
 
-  // Mount GZFS as root and list directory for sanity
-  vfs_init();
-  result_t rmnt = vfs_mount_root(disk, &gzfs_type);
+  // Mount ObjectFS as root and list directory once
+  result_t rmnt = objfs_mount_root(disk);
   if (!result_is_ok(rmnt)) {
-    LOG_WARN(kern_log, "GZFS mount failed; falling back to FAT root listing");
+    LOG_WARN(kern_log, "ObjectFS mount failed; falling back to FAT root listing");
     fat_list_root(disk);
   } else {
-    LOG_INFO(kern_log, "GZFS mounted as root");
-    if (vfs_root_mount() && vfs_root_mount()->ops && vfs_root_mount()->root) {
-      LOG_INFO(kern_log, "GZFS root tree:");
-      vfs_list_tree(vfs_root_mount(), vfs_root_mount()->root, kern_log);
-    }
+    LOG_INFO(kern_log, "ObjectFS mounted as root");
+    objfs_list_root_once(kern_log);
   }
 
   // Attempt to start a Vessel user program from the FAT root

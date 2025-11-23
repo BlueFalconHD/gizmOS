@@ -1,6 +1,6 @@
 #include "lifecycle.h"
 #include <fs/fat.h>
-#include <fs/vfs.h>
+#include <fs/objectfs/objfs.h>
 #include <include/vessel.h>
 #include <limine_requests.h>
 #include "lib/kalloc.h"
@@ -97,6 +97,11 @@ found:
   // Initialize FD table
   for (int i = 0; i < PROC_MAX_FD; i++) p->fd_table[i] = NULL;
   fs_install_standard_fds(p);
+  // Initialize ObjectFS handle table
+  for (int i = 0; i < PROC_MAX_OBJH; i++) {
+    p->objh_ids[i] = (uint64_t)-1; /* UINT64_MAX sentinel for free */
+    p->objh_flags[i] = 0;
+  }
 
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
   LOG_DEBUG(proc_lifecycle_log(), "alloc proc kstack = %{type: hex}",
@@ -368,8 +373,23 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
   if (!filebuf) return RESULT_FAILURE(RESULT_NOMEM);
 
   size_t nbytes = 0;
-  result_t rread = vfs_read_entire(path83, filebuf, MAX_VESSEL_BYTES, &nbytes);
-  if (!result_is_ok(rread)) {
+  // Try ObjectFS at root ("/<name>")
+  char objpath[128];
+  objpath[0] = '/';
+  uint64_t i = 0;
+  while (path83[i] && i + 2 < sizeof(objpath)) { objpath[i+1] = path83[i]; i++; }
+  objpath[i+1] = '\0';
+  uint64_t file_id = 0;
+  result_t rlp = objfs_lookup_path(objpath, &file_id);
+  if (result_is_ok(rlp)) {
+    size_t outn = 0;
+    result_t rr = objfs_read(file_id, 0, filebuf, MAX_VESSEL_BYTES, &outn);
+    if (result_is_ok(rr)) {
+      nbytes = outn;
+    } else {
+      nbytes = 0;
+    }
+  } else {
     // fallback to FAT for transition period
     uint32_t oldn = 0;
     if (!fat_read_root_file(shared_disk, path83, filebuf, MAX_VESSEL_BYTES, &oldn)) {

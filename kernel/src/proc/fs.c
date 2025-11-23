@@ -33,11 +33,11 @@ void fs_close_all(struct proc *p) {
 int fs_open_path(struct proc *p, const char *kpath, uint32_t flags) {
   (void)flags;
   /* Synthetic device outputs */
-  if (strcmp(kpath, "/Devices/Console.out")) {
+  if (!strcmp(kpath, "/Devices/Console.out")) {
     fs_file_t *f = (fs_file_t *)kalloc(sizeof(fs_file_t));
     if (!f)
       return -1;
-    f->node = NULL;
+    f->obj_id = 0;
     f->offset = 0;
     f->flags = flags;
     f->kind = FS_FKIND_STDOUT;
@@ -48,11 +48,11 @@ int fs_open_path(struct proc *p, const char *kpath, uint32_t flags) {
     }
     return fd;
   }
-  if (strcmp(kpath, "/Devices/Uart.out")) {
+  if (!strcmp(kpath, "/Devices/Uart.out")) {
     fs_file_t *f = (fs_file_t *)kalloc(sizeof(fs_file_t));
     if (!f)
       return -1;
-    f->node = NULL;
+    f->obj_id = 0;
     f->offset = 0;
     f->flags = flags;
     f->kind = FS_FKIND_UART_OUT;
@@ -63,42 +63,28 @@ int fs_open_path(struct proc *p, const char *kpath, uint32_t flags) {
     }
     return fd;
   }
-  vfs_node_t *vn = NULL;
-  result_t rl = vfs_lookup(kpath, &vn);
-  if (!result_is_ok(rl))
-    return -1;
-  fs_file_t *f = (fs_file_t *)kalloc(sizeof(fs_file_t));
-  if (!f)
-    return -1;
-  f->node = vn;
-  f->offset = 0;
-  f->flags = flags;
-  f->kind = FS_FKIND_VNODE;
-  int fd = fs_fd_alloc(p, f);
-  if (fd < 0) {
-    kfree(f);
-    return -1;
-  }
-  return fd;
+  // Legacy FS paths are no longer supported (ObjectFS uses new syscalls)
+  return -1;
 }
 
 int fs_stat_path(struct proc *p, const char *kpath, vfs_stat_t *out) {
   (void)p;
-  if (strcmp(kpath, "/Devices/Console.out")) {
+  if (!strcmp(kpath, "/Devices/Console.out")) {
     out->size = 0;
     out->mode = 0666;
     out->type = VFS_NODE_FILE;
     out->nlink = 1;
     return 0;
   }
-  if (strcmp(kpath, "/Devices/Uart.out")) {
+  if (!strcmp(kpath, "/Devices/Uart.out")) {
     out->size = 0;
     out->mode = 0666;
     out->type = VFS_NODE_FILE;
     out->nlink = 1;
     return 0;
   }
-  return result_is_ok(vfs_getattr(kpath, out)) ? 0 : -1;
+  // Unsupported for legacy paths
+  return -1;
 }
 
 typedef struct __attribute__((packed)) {
@@ -139,7 +125,7 @@ static void readdir_emit_to_user(const char *name, uint32_t type, void *arg) {
 
 int fs_listdir_path(struct proc *p, const char *kpath, void *user_buf,
                     uint64_t user_cap, uint64_t *out_bytes) {
-  if (strcmp(kpath, "/Devices")) {
+  if (!strcmp(kpath, "/Devices")) {
     readdir_ctx_t ctx = {
         .user_buf = user_buf, .cap = user_cap, .wrote = 0, .p = p};
     // Emit Console.out
@@ -149,46 +135,18 @@ int fs_listdir_path(struct proc *p, const char *kpath, void *user_buf,
       *out_bytes = ctx.wrote;
     return 0;
   }
-  vfs_node_t *vn = NULL;
-  result_t rl = vfs_lookup(kpath, &vn);
-  if (!result_is_ok(rl))
-    return -1;
-  readdir_ctx_t ctx = {
-      .user_buf = user_buf, .cap = user_cap, .wrote = 0, .p = p};
-  result_t rr = vfs_root_mount()->ops->readdir(vfs_root_mount(), vn,
-                                               readdir_emit_to_user, &ctx);
-  if (!result_is_ok(rr))
-    return -1;
-  if (out_bytes)
-    *out_bytes = ctx.wrote;
-  return 0;
+  // Unsupported for legacy paths
+  return -1;
 }
 
 int fs_read_fd(struct proc *p, int fd, uint64_t user_dst, uint64_t nbytes) {
   if (fd < 0 || fd >= PROC_MAX_FD)
     return -1;
   fs_file_t *f = p->fd_table[fd];
-  if (!f || !f->node)
+  if (!f || f->kind != FS_FKIND_VNODE)
     return -1;
-  uint8_t kbuf[4096];
-  uint64_t total = 0;
-  while (total < nbytes) {
-    uint64_t chunk = nbytes - total;
-    if (chunk > sizeof(kbuf))
-      chunk = sizeof(kbuf);
-    size_t outn = 0;
-    result_t rr = vfs_root_mount()->ops->read(vfs_root_mount(), f->node,
-                                              f->offset, kbuf, chunk, &outn);
-    if (!result_is_ok(rr))
-      return -1;
-    if (outn == 0)
-      break;
-    if (!result_is_ok(copyout(p->pagetable, user_dst + total, kbuf, outn)))
-      return -1;
-    f->offset += outn;
-    total += outn;
-  }
-  return (int)total;
+  // No legacy file reading via path
+  return -1;
 }
 
 int fs_write_fd(proc_t *p, int fd, uint64_t user_src, uint64_t nbytes) {
@@ -284,7 +242,7 @@ void fs_install_standard_fds(proc_t *p) {
   if (p->fd_table[0] == NULL) {
     fs_file_t *f = (fs_file_t *)kalloc(sizeof(fs_file_t));
     if (f) {
-      f->node = NULL;
+      f->obj_id = 0;
       f->offset = 0;
       f->flags = 0;
       f->kind = FS_FKIND_STDIN;
@@ -295,7 +253,7 @@ void fs_install_standard_fds(proc_t *p) {
   if (p->fd_table[1] == NULL) {
     fs_file_t *f = (fs_file_t *)kalloc(sizeof(fs_file_t));
     if (f) {
-      f->node = NULL;
+      f->obj_id = 0;
       f->offset = 0;
       f->flags = 0;
       f->kind = FS_FKIND_STDOUT;
@@ -306,7 +264,7 @@ void fs_install_standard_fds(proc_t *p) {
   if (p->fd_table[2] == NULL) {
     fs_file_t *f = (fs_file_t *)kalloc(sizeof(fs_file_t));
     if (f) {
-      f->node = NULL;
+      f->obj_id = 0;
       f->offset = 0;
       f->flags = 0;
       f->kind = FS_FKIND_UART_OUT;

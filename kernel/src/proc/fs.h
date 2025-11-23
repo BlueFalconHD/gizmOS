@@ -1,11 +1,25 @@
 #pragma once
 
-#include <fs/vfs.h>
 #include <lib/types.h>
 #include "process.h"
 
+// Minimal legacy VFS stat/types to keep old syscalls compiling
+typedef enum {
+  VFS_NODE_UNKNOWN = 0,
+  VFS_NODE_FILE = 1,
+  VFS_NODE_DIR = 2,
+  VFS_NODE_SYMLINK = 3,
+} vfs_node_kind_t;
+
+typedef struct vfs_stat {
+  uint64_t size;
+  uint16_t mode;
+  uint16_t type; /* vfs_node_kind_t */
+  uint32_t nlink;
+} vfs_stat_t;
+
 typedef struct fs_file {
-  vfs_node_t *node;
+  uint64_t    obj_id;  /* reserved for future */
   uint64_t    offset;
   uint32_t    flags;
   uint32_t    kind;   /* 0=vnode, 1=console.out */

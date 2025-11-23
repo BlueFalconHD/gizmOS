@@ -7,7 +7,7 @@ ARCH := riscv64
 
 # Uncomment following line to enable debugging.
 # NOTE TO SELF: IF I NEED TO DEBUG STRUCT VALUES, SET OPTIMIZE TO -O0
-# DEBUG := 1
+DEBUG := 1
 # SHOW_INTERRUPT := 1
 
 # Default user QEMU flags. These are appended to the QEMU command calls.
@@ -15,7 +15,7 @@ ARCH := riscv64
 # -s: Enable the GDB stub.
 # -S: Wait for a GDB connection before starting the CPU.
 
-QEMUFLAGS := -m 2G
+QEMUFLAGS := -m 4G
 
 
 
@@ -60,14 +60,14 @@ userland: kernel-deps
 
 .PHONY: data.img
 data.img: userland $(DISK_SRCS)
-	@echo "[mkfs_gzfs] building data.img from $(DISK_DIR)"
-	@chmod +x tools/gzfs/mkfs_gzfs.py
-	@./tools/gzfs/mkfs_gzfs.py --diskdir "$(DISK_DIR)" --out data.img --size-mb $(DISK_SIZE_MB)
+	@echo "[mkobjfs] building data.img from $(DISK_DIR)"
+	@chmod +x tools/objfs/mkobjfs.py
+	@./tools/objfs/mkobjfs.py --diskdir "$(DISK_DIR)" --out data.img --size-mb $(DISK_SIZE_MB)
 
 .PHONY: disk-add
 # Usage: make disk-add SRC=path/in/host DEST=path/in/disk (e.g., DEST=/hello)
 disk-add:
-	$(info disk-add is not supported for GZFS images; rebuild data.img)
+	$(info disk-add is not supported for ObjectFS images; rebuild data.img)
 
 .PHONY: run-hdd
 run-hdd: run-hdd-$(ARCH)

@@ -91,4 +91,9 @@ typedef struct proc {
   /* File descriptors */
   #define PROC_MAX_FD 32
   struct fs_file *fd_table[PROC_MAX_FD];
+
+  /* Object handles (ObjectFS) */
+  #define PROC_MAX_OBJH 128
+  uint64_t objh_ids[PROC_MAX_OBJH];   /* UINT64_MAX means free slot */
+  uint32_t objh_flags[PROC_MAX_OBJH]; /* open flags */
 } proc_t;

@@ -18,13 +18,13 @@ static inline g_bool get_bit(const uint8_t *buf, uint64_t bit) {
 }
 
 // Scan free map for a contiguous run of free blocks of length 'need'
-static result_t objfs_alloc_run(uint32_t need, uint64_t *out_first) {
+result_t objfs_alloc_run(uint32_t need, uint64_t *out_first) {
   objfs_fs_t *fs = objfs_global();
   if (!fs || need == 0)
     return RESULT_FAILURE(RESULT_INVALID);
   uint32_t bs = fs->sb.block_size;
   uint64_t total = fs->blocks_total;
-  uint64_t freemap_bits = fs->free_map_blocks * (uint64_t)(bs * 8);
+  uint64_t freemap_bits = fs->sb.free_map_blocks * (uint64_t)(bs * 8);
   if (freemap_bits < total)
     total = freemap_bits;
 
@@ -35,7 +35,7 @@ static result_t objfs_alloc_run(uint32_t need, uint64_t *out_first) {
   uint64_t run_start = 0;
   uint32_t run_len = 0;
   uint64_t inspected = 0;
-  for (uint64_t mblk = 0; mblk < fs->free_map_blocks; mblk++) {
+  for (uint64_t mblk = 0; mblk < fs->sb.free_map_blocks; mblk++) {
     uint64_t map_block_idx = fs->sb.free_map_start + mblk;
     result_t rr = objfs_block_read(fs->bc, map_block_idx, buf);
     if (!result_is_ok(rr)) {
@@ -82,7 +82,7 @@ static result_t objfs_alloc_run(uint32_t need, uint64_t *out_first) {
   return RESULT_FAILURE(RESULT_NOT_FOUND);
 }
 
-static result_t objfs_free_run(uint64_t first, uint32_t count) {
+result_t objfs_free_run(uint64_t first, uint32_t count) {
   objfs_fs_t *fs = objfs_global();
   if (!fs || count == 0)
     return RESULT_FAILURE(RESULT_INVALID);

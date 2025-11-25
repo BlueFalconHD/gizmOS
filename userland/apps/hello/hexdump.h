@@ -8,3 +8,4 @@ typedef struct {
 } hexdump_opts_t;
 
 void hexdump(const void *data, unsigned long long size, hexdump_opts_t opts);
+void hexdump_set_out(long handle);

@@ -1,9 +1,22 @@
 #include "objfs.h"
+#include "objfs_virtual.h"
 #include <lib/kalloc.h>
 #include <lib/memory.h>
 #include <lib/str.h>
 
-static result_t objfs_load_object(uint64_t obj_id, objfs_object_disk_t *out) {
+result_t objfs_read_descriptor(uint64_t obj_id, objfs_object_disk_t *out) {
+  // Virtual?
+  {
+    const objfs_vops_t *ops = NULL;
+    uint64_t local = 0;
+    if (objfs_vreg_resolve(obj_id, &ops, &local)) {
+      if (ops && ops->desc) return ops->desc(local, out);
+      // provide minimal synthetic desc
+      memset(out, 0, sizeof(*out));
+      out->id = obj_id;
+      return RESULT_SUCCESS(0);
+    }
+  }
   objfs_fs_t *fs = objfs_global();
   if (!fs || !out)
     return RESULT_FAILURE(RESULT_INVALID);
@@ -33,8 +46,15 @@ static result_t objfs_load_object(uint64_t obj_id, objfs_object_disk_t *out) {
 static result_t objfs_resolve_reference(uint64_t obj_id, uint64_t *out_id) {
   uint64_t cur = obj_id;
   for (int depth = 0; depth < 16; depth++) {
+    const objfs_vops_t *ops = NULL;
+    uint64_t local = 0;
+    if (objfs_vreg_resolve(cur, &ops, &local)) {
+      // virtual objects: do not follow references
+      *out_id = cur;
+      return RESULT_SUCCESS(0);
+    }
     objfs_object_disk_t d;
-    result_t r = objfs_load_object(cur, &d);
+    result_t r = objfs_read_descriptor(cur, &d);
     if (!result_is_ok(r))
       return r;
     if (d.kind != OBJFS_OBJ_REFERENCE) {
@@ -57,7 +77,7 @@ result_t objfs_object_stat(uint64_t obj_id, objfs_stat_t *out) {
   if (!result_is_ok(rr))
     return rr;
   objfs_object_disk_t d;
-  result_t r = objfs_load_object(id, &d);
+  result_t r = objfs_read_descriptor(id, &d);
   if (!result_is_ok(r))
     return r;
   out->size = d.size;

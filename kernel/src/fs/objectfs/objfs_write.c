@@ -1,11 +1,10 @@
 #include "objfs.h"
+#include "objfs_virtual.h"
 #include <lib/kalloc.h>
 #include <lib/memory.h>
 #include <lib/str.h>
 
-// Forward decls from allocator
-static result_t objfs_alloc_run(uint32_t need, uint64_t *out_first);
-static result_t objfs_free_run(uint64_t first, uint32_t count);
+// Allocator functions declared in objfs.h
 
 static result_t objfs_load_desc(uint64_t obj_id, objfs_object_disk_t *out, uint64_t *block_out, uint32_t *index_in_block_out) {
   objfs_fs_t *fs = objfs_global();
@@ -60,6 +59,16 @@ static result_t objfs_store_desc(uint64_t obj_id, const objfs_object_disk_t *in)
 result_t objfs_write_bytes(uint64_t obj_id, uint64_t off, const void *buf, size_t n, size_t *out) {
   if (!buf)
     return RESULT_FAILURE(RESULT_INVALID);
+  // Virtual object?
+  {
+    const objfs_vops_t *ops = NULL;
+    uint64_t local = 0;
+    if (objfs_vreg_resolve(obj_id, &ops, &local)) {
+      if (ops && ops->write) return ops->write(local, off, buf, n, out);
+      if (out) *out = 0;
+      return RESULT_SUCCESS(0);
+    }
+  }
   objfs_fs_t *fs = objfs_global();
   if (!fs)
     return RESULT_FAILURE(RESULT_ERROR);
@@ -139,10 +148,10 @@ result_t objfs_write_bytes(uint64_t obj_id, uint64_t off, const void *buf, size_
   return RESULT_SUCCESS(0);
 }
 
-static result_t ensure_children_head(objfs_object_disk_t *dir, uint64_t dir_id) {
+static result_t ensure_subobjects_head(objfs_object_disk_t *dir, uint64_t dir_id) {
   objfs_fs_t *fs = objfs_global();
   if (!fs) return RESULT_FAILURE(RESULT_ERROR);
-  if (dir->children_idx != 0) return RESULT_SUCCESS(0);
+  if (dir->subobjects_idx != 0) return RESULT_SUCCESS(0);
   // allocate one block
   uint64_t blk = 0;
   result_t ra = objfs_alloc_run(1, &blk);
@@ -151,17 +160,17 @@ static result_t ensure_children_head(objfs_object_disk_t *dir, uint64_t dir_id) 
   uint8_t *buf = (uint8_t *)kalloc(fs->sb.block_size);
   if (!buf) return RESULT_FAILURE(RESULT_NOMEM);
   memset(buf, 0, fs->sb.block_size);
-  objfs_children_block_hdr_t *hdr = (objfs_children_block_hdr_t *)buf;
+  objfs_subobjects_block_hdr_t *hdr = (objfs_subobjects_block_hdr_t *)buf;
   hdr->count = 0;
   hdr->next_block = 0;
   result_t rw = objfs_block_write(fs->bc, blk, buf);
   kfree(buf);
   if (!result_is_ok(rw)) return rw;
-  dir->children_idx = blk;
+  dir->subobjects_idx = blk;
   return objfs_store_desc(dir_id, dir);
 }
 
-static result_t add_child_entry(uint64_t head, const char *name, uint8_t kind, uint64_t child_id) {
+static result_t add_subobject_entry(uint64_t head, const char *name, uint8_t kind, uint64_t subobject_id) {
   objfs_fs_t *fs = objfs_global();
   uint32_t bs = fs->sb.block_size;
   uint8_t *buf = (uint8_t *)kalloc(bs);
@@ -170,18 +179,18 @@ static result_t add_child_entry(uint64_t head, const char *name, uint8_t kind, u
   while (true) {
     result_t rr = objfs_block_read(fs->bc, blk, buf);
     if (!result_is_ok(rr)) { kfree(buf); return rr; }
-    objfs_children_block_hdr_t *hdr = (objfs_children_block_hdr_t *)buf;
-    objfs_child_entry_t *ents = (objfs_child_entry_t *)(buf + sizeof(*hdr));
-    uint32_t maxents = (bs - sizeof(*hdr)) / sizeof(objfs_child_entry_t);
+    objfs_subobjects_block_hdr_t *hdr = (objfs_subobjects_block_hdr_t *)buf;
+    objfs_subobject_entry_t *ents = (objfs_subobject_entry_t *)(buf + sizeof(*hdr));
+    uint32_t maxents = (bs - sizeof(*hdr)) / sizeof(objfs_subobject_entry_t);
     if (hdr->count < maxents) {
-      objfs_child_entry_t *e = &ents[hdr->count];
+      objfs_subobject_entry_t *e = &ents[hdr->count];
       size_t n = strlen(name);
       if (n > 64) n = 64;
       e->name_len = (uint8_t)n;
       e->type = kind;
       e->_pad16 = 0;
       for (size_t i = 0; i < 64; i++) e->name[i] = (i < n) ? name[i] : '\0';
-      e->child_id = child_id;
+      e->subobject_id = subobject_id;
       hdr->count++;
       result_t rw = objfs_block_write(fs->bc, blk, buf);
       kfree(buf);
@@ -197,7 +206,7 @@ static result_t add_child_entry(uint64_t head, const char *name, uint8_t kind, u
       if (!result_is_ok(rw0)) { kfree(buf); return rw0; }
       // init new block
       memset(buf, 0, bs);
-      objfs_children_block_hdr_t *nh = (objfs_children_block_hdr_t *)buf;
+      objfs_subobjects_block_hdr_t *nh = (objfs_subobjects_block_hdr_t *)buf;
       nh->count = 0; nh->next_block = 0;
       result_t rw1 = objfs_block_write(fs->bc, nb, buf);
       if (!result_is_ok(rw1)) { kfree(buf); return rw1; }
@@ -256,10 +265,10 @@ result_t objfs_create(uint64_t parent_dir_id, const char *name, uint16_t mode, u
   nd.size = 0;
   result_t rw = objfs_store_desc(new_id, &nd);
   if (!result_is_ok(rw)) return rw;
-  // Ensure dir has children head, then add entry
-  result_t re = ensure_children_head(&dir, parent_dir_id);
+  // Ensure dir has subobjects head, then add entry
+  result_t re = ensure_subobjects_head(&dir, parent_dir_id);
   if (!result_is_ok(re)) return re;
-  result_t ra = add_child_entry(dir.children_idx, name, kind, new_id);
+  result_t ra = add_subobject_entry(dir.subobjects_idx, name, kind, new_id);
   if (!result_is_ok(ra)) return ra;
   if (out_obj_id) *out_obj_id = new_id;
   return RESULT_SUCCESS(0);
@@ -270,16 +279,16 @@ result_t objfs_link(uint64_t parent_dir_id, const char *name, uint64_t target_id
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
   if (dir.kind != OBJFS_OBJ_DIR) return RESULT_FAILURE(RESULT_INVALID);
-  result_t re = ensure_children_head(&dir, parent_dir_id);
+  result_t re = ensure_subobjects_head(&dir, parent_dir_id);
   if (!result_is_ok(re)) return re;
   objfs_object_disk_t t;
   if (!result_is_ok(objfs_load_desc(target_id, &t, NULL, NULL)))
     return RESULT_FAILURE(RESULT_NOT_FOUND);
-  return add_child_entry(dir.children_idx, name, t.kind, target_id);
+  return add_subobject_entry(dir.subobjects_idx, name, t.kind, target_id);
 }
 
-static result_t update_child_by_name(uint64_t head, const char *name,
-                                     g_bool remove, const char *rename_to) {
+static result_t update_subobject_by_name(uint64_t head, const char *name,
+                                         g_bool remove, const char *rename_to) {
   objfs_fs_t *fs = objfs_global();
   uint32_t bs = fs->sb.block_size;
   uint8_t *buf = (uint8_t *)kalloc(bs);
@@ -289,8 +298,8 @@ static result_t update_child_by_name(uint64_t head, const char *name,
   while (blk) {
     result_t rr = objfs_block_read(fs->bc, blk, buf);
     if (!result_is_ok(rr)) { kfree(buf); return rr; }
-    objfs_children_block_hdr_t *hdr = (objfs_children_block_hdr_t *)buf;
-    objfs_child_entry_t *ents = (objfs_child_entry_t *)(buf + sizeof(*hdr));
+    objfs_subobjects_block_hdr_t *hdr = (objfs_subobjects_block_hdr_t *)buf;
+    objfs_subobject_entry_t *ents = (objfs_subobject_entry_t *)(buf + sizeof(*hdr));
     for (uint32_t i = 0; i < hdr->count; i++) {
       size_t en = ents[i].name_len;
       if (en == nlen && memcmp(ents[i].name, name, nlen) == 0) {
@@ -323,8 +332,8 @@ result_t objfs_unlink(uint64_t parent_dir_id, const char *name) {
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
   if (dir.kind != OBJFS_OBJ_DIR) return RESULT_FAILURE(RESULT_INVALID);
-  if (dir.children_idx == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
-  return update_child_by_name(dir.children_idx, name, true, NULL);
+  if (dir.subobjects_idx == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
+  return update_subobject_by_name(dir.subobjects_idx, name, true, NULL);
 }
 
 result_t objfs_rename(uint64_t parent_dir_id, const char *old_name, const char *new_name) {
@@ -332,8 +341,8 @@ result_t objfs_rename(uint64_t parent_dir_id, const char *old_name, const char *
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
   if (dir.kind != OBJFS_OBJ_DIR) return RESULT_FAILURE(RESULT_INVALID);
-  if (dir.children_idx == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
-  return update_child_by_name(dir.children_idx, old_name, false, new_name);
+  if (dir.subobjects_idx == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
+  return update_subobject_by_name(dir.subobjects_idx, old_name, false, new_name);
 }
 
 static result_t set_attr_core(uint64_t obj_id, const char *key, uint8_t type, const void *payload, uint16_t vlen) {

@@ -1,6 +1,9 @@
 #pragma once
 
-typedef unsigned keypress_type_t;
+// Ensure userland struct layout matches kernel (see kernel/src/lib/keyboard.h)
+#include <stdint.h>
+
+typedef uint8_t keypress_type_t;
 typedef keypress_type_t keypress_type;
 
 #define KEYBOARD_KEY_PRESSED ((keypress_type)1)

@@ -6,6 +6,7 @@
 #include <lib/types.h>
 #include <lib/result.h>
 #include "notification_types.h"
+#include "descriptor.h"
 
 struct trapframe {
   uint64_t kernel_satp;   /* kernel page table (satp value)      */
@@ -88,11 +89,14 @@ typedef struct proc {
   uint64_t        notif_userbuf_base; // user VA for buffer+stub
   uint64_t        notif_userbuf_size;
 
-  /* File descriptors */
+  /* Unified descriptors */
+  descriptor_t *desc_table[PROC_MAX_DESC];
+
+  /* File descriptors (legacy path/device) */
   #define PROC_MAX_FD 32
   struct fs_file *fd_table[PROC_MAX_FD];
 
-  /* Object handles (ObjectFS) */
+  /* Object handles (compatibility) */
   #define PROC_MAX_OBJH 128
   uint64_t objh_ids[PROC_MAX_OBJH];   /* UINT64_MAX means free slot */
   uint32_t objh_flags[PROC_MAX_OBJH]; /* open flags */

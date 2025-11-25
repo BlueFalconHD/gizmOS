@@ -32,13 +32,14 @@ const char *get_memmap_type_name(uint32_t type) {
 
 static inline log_t *memmap_log() {
   static log_t *l = NULL;
-  if (!l)
+  if (!l) {
     l = g_log_create("boot", "memmap");
+  }
   return l;
 }
 
 void print_memory_map() {
-  LOG_INFO(memmap_log(), "Memory map:");
+  LOG_INFO(memmap_log(), "memory map:");
   for (uint64_t i = 0; i < memory_map_entry_count; i++) {
     struct limine_memmap_entry *entry = memory_map_entries[i];
     LOG_DEBUG(memmap_log(), "  0x%{type: hex} - 0x%{type: hex} (%{type: int} bytes, %{type: str})",

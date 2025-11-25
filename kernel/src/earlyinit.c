@@ -70,6 +70,7 @@ EARLY_TEXT early_init_status early_init() {
     return EARLY_INIT_FAIL_KERNEL_MAP;
   }
 
+  // Map the entire RAM
   uint64_t phys_lo = RAM_START; /* 0x8000_0000                       */
   uint64_t phys_hi = 0;         /* will become last byte of RAM      */
   for (uint64_t i = 0; i < memory_map_entry_count; i++) {

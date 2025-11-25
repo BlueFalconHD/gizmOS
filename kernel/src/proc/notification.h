@@ -42,7 +42,7 @@ void notif_ctx_restore_to_trapframe(struct proc *p);
 
 // Constants for the injected return stub layout inside user buffer
 #define NOTIF_STUB_OFFSET   0x0
-#define NOTIF_STUB_SIZE     4  /* single ecall instruction */
+#define NOTIF_STUB_SIZE     8  /* li a7, SYSCALL_NOTIF_DONE; ecall */
 #define NOTIF_PAYLOAD_OFFSET (NOTIF_STUB_OFFSET + NOTIF_STUB_SIZE)
 
 

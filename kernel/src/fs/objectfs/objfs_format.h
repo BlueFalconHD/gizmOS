@@ -49,7 +49,7 @@ typedef struct __attribute__((packed)) {
   // When kind==REFERENCE, redirect to this target id
   uint64_t target_id;
   // Pointers into other structures (block indexes relative to disk start)
-  uint64_t children_idx;         // head block of children index (dirs only)
+  uint64_t subobjects_idx;       // head block of subobjects index (dirs only)
   uint64_t attrs_head;           // head block of attributes chain
   // Single-extent content mapping for MVP read support
   uint64_t data_start_block;     // starting block of file contents
@@ -58,21 +58,21 @@ typedef struct __attribute__((packed)) {
   uint64_t _reserved64[8];
 } objfs_object_disk_t;
 
-// Children index block header
+// Subobjects index block header
 typedef struct __attribute__((packed)) {
   uint32_t count;                // number of entries in this block
   uint32_t _pad;
-  uint64_t next_block;           // 0 if end; else block index of next children block
-} objfs_children_block_hdr_t;
+  uint64_t next_block;           // 0 if end; else block index of next subobjects block
+} objfs_subobjects_block_hdr_t;
 
-// A single child entry in a children block
+// A single subobject entry in a subobjects block
 typedef struct __attribute__((packed)) {
   uint8_t  name_len;             // <= 63
   uint8_t  type;                 // objfs_obj_kind_t (for convenience)
   uint16_t _pad16;
   char     name[64];             // UTF-8; not null-terminated if name_len==64
-  uint64_t child_id;             // referenced object id
-} objfs_child_entry_t;
+  uint64_t subobject_id;         // referenced object id
+} objfs_subobject_entry_t;
 
 // Attributes block header
 typedef struct __attribute__((packed)) {

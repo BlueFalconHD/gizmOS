@@ -3,7 +3,6 @@
 // #include "lib/canary.h"
 // #include "lib/dyn_array.h"
 // #include "lib/macros.h"
-#include "img/ppm_fs.h"
 #include "lib/debug.h"
 #include "lib/log.h"
 #include "lib/panic.h"
@@ -21,7 +20,6 @@
 #include <device/virtio/drivers/block.h>
 #include <device/virtio/virtio.h>
 #include <dtb/dtb.h>
-#include <fs/fat.h>
 #include <fs/objectfs/objfs.h>
 #include <kprocs/pixelcore_demo.h>
 #include <lib/PixelCore/backbuffer.h>
@@ -48,6 +46,13 @@
 #include <stdbool.h>
 
 #define VERSION "0.0.1"
+
+// debug level for boot logs:
+//   0 -> info and above (quieter)
+//   1 -> include debug boot logs (verbose)
+#ifndef KERN_BOOT_DEBUG_LEVEL
+#define KERN_BOOT_DEBUG_LEVEL 0
+#endif
 
 // #define TESTS
 
@@ -90,22 +95,25 @@ static inline uint32_t rand(void) {
   return (uint32_t)(g_rand_state >> 32);
 }
 
+typedef struct {
+  log_t *log;
+} list_ctx_t;
+static void objfs_root_emit(const char *name, uint8_t kind, uint64_t id, void *arg) {
+  (void)kind; (void)id;
+  list_ctx_t *ctx = (list_ctx_t *)arg;
+  char line[128];
+  int pos = 0;
+  const char *t = "[obj]";
+  for (int i = 0; t[i] && pos + 1 < (int)sizeof(line); i++) line[pos++] = t[i];
+  line[pos++] = ' ';
+  for (int i = 0; name[i] && pos + 1 < (int)sizeof(line); i++) line[pos++] = name[i];
+  line[pos] = '\0';
+  LOG_DEBUG(ctx->log, "%{type: str}", line);
+}
 static void objfs_list_root_once(log_t *log) {
   uint64_t root = objfs_global()->sb.root_object_id;
-  void emit(const char *name, uint8_t kind, uint64_t id, void *arg) {
-    (void)arg; (void)id;
-    const char *t = (kind == 2) ? "[DIR] " : (kind == 1) ? "[FILE]" : "[?]  ";
-    char line[128];
-    int pos = 0;
-    for (int i = 0; i < 0 && pos + 1 < (int)sizeof(line); i++) line[pos++] = ' ';
-    // prefix
-    for (int i = 0; t[i] && pos + 1 < (int)sizeof(line); i++) line[pos++] = t[i];
-    line[pos++] = ' ';
-    for (int i = 0; name[i] && pos + 1 < (int)sizeof(line); i++) line[pos++] = name[i];
-    line[pos] = '\0';
-    LOG_INFO(log, "%{type: str}", line);
-  }
-  objfs_list_children(root, emit, NULL);
+  list_ctx_t ctx = {.log = log};
+  objfs_list_subobjects(root, objfs_root_emit, &ctx);
 }
 
 void realmain() {
@@ -130,25 +138,32 @@ void realmain() {
   set_shared_console(console);
 
   log_t *kern_log = g_log_create("boot", NULL);
-  LOG_INFO(kern_log, "gizmOS %{type: str}", VERSION);
+  #if KERN_BOOT_DEBUG_LEVEL >= 1
+  g_log_set_level(kern_log, LOG_LEVEL_DEBUG);
+  #else
+  g_log_set_level(kern_log, LOG_LEVEL_INFO);
+  #endif
 
-  LOG_INFO(kern_log, "initializing memory mapped IO");
+  LOG_INFO(kern_log, "gizmOS %{type: str}", VERSION);
+  LOG_INFO(kern_log, "gizmos kernel %{type: str} starting up", VERSION);
+
+  LOG_DEBUG(kern_log, "setting up mmio mapping");
 
   mmio_map *mmap = alloc_mmio_map();
 
-  LOG_DEBUG(kern_log, "mapping uart");
+  LOG_DEBUG(kern_log, "mapping mmio for uart");
   mmio_map_add(mmap, 0x10000000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // UART
 
-  LOG_DEBUG(kern_log, "mapping rtc");
+  LOG_DEBUG(kern_log, "mapping mmio for rtc");
   mmio_map_add(mmap, 0x101000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // RTC
 
-  LOG_DEBUG(kern_log, "mapping plic");
+  LOG_DEBUG(kern_log, "mapping mmio for plic");
   mmio_map_add(mmap, 0x0C000000, 0x00600000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // PLIC
 
-  LOG_DEBUG(kern_log, "mapping virtio devices");
+  LOG_DEBUG(kern_log, "mapping mmio for virtio devices");
   mmio_map_add(mmap, 0x10001000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
                1); // Virtio keyboard
   mmio_map_add(mmap, 0x10002000, 0x1000, PTE_R | PTE_W | PTE_X | PTE_V,
@@ -161,7 +176,7 @@ void realmain() {
   LOG_DEBUG(kern_log, "applying mmio map to page table");
   mmio_map_pages(mmap, shared_page_table);
 
-  LOG_INFO(kern_log, "memory mapped IO initialized");
+  LOG_INFO(kern_log, "mmio mapping ready");
   activate_page_table(shared_page_table);
 
   LOG_DEBUG(kern_log, "setting up trampoline mapping");
@@ -173,10 +188,10 @@ void realmain() {
     panic("Failed to set up trampoline mapping");
   }
 
-  LOG_INFO(kern_log, "trampoline mapping set up");
+  LOG_DEBUG(kern_log, "trampoline mapping ready");
   activate_page_table(shared_page_table);
 
-  LOG_INFO(kern_log, "initializing devices");
+  LOG_INFO(kern_log, "bringing devices online");
 
   LOG_DEBUG(kern_log, "initializing uart");
 
@@ -188,43 +203,43 @@ void realmain() {
   uart_t *uart = (uart_t *)result_unwrap(ruart);
   if (!uart_init(uart)) {
     dbg("uart_init(...) == false");
-    panic("Failed to initialize UART");
+    panic("Failed to initialize uart");
   }
   set_shared_uart(uart);
-  LOG_INFO(kern_log, "UART initialized");
+  LOG_DEBUG(kern_log, "uart ready");
 
   // before anything bad can happen, print framebuffer memory info
-  LOG_DEBUG(kern_log, "Framebuffer address: 0x%{type: hex}", lfb->address);
-  LOG_DEBUG(kern_log, "Framebuffer pitch: %{type: int}", lfb->pitch);
-  LOG_DEBUG(kern_log, "Framebuffer width: %{type: int}", lfb->width);
-  LOG_DEBUG(kern_log, "Framebuffer height: %{type: int}", lfb->height);
-  LOG_DEBUG(kern_log, "Framebuffer bpp: %{type: int}", lfb->bpp);
-  LOG_DEBUG(kern_log, "Framebuffer red mask size: %{type: int}",
+  LOG_DEBUG(kern_log, "framebuffer address: 0x%{type: hex}", lfb->address);
+  LOG_DEBUG(kern_log, "framebuffer pitch: %{type: int}", lfb->pitch);
+  LOG_DEBUG(kern_log, "framebuffer width: %{type: int}", lfb->width);
+  LOG_DEBUG(kern_log, "framebuffer height: %{type: int}", lfb->height);
+  LOG_DEBUG(kern_log, "framebuffer bpp: %{type: int}", lfb->bpp);
+  LOG_DEBUG(kern_log, "framebuffer red mask size: %{type: int}",
             lfb->red_mask_size);
 
-  LOG_DEBUG(kern_log, "initializing RTC");
+  LOG_DEBUG(kern_log, "initializing rtc");
   result_t rrtc = make_rtc(0x101000);
   if (!result_is_ok(rrtc)) {
     dbg("make_rtc(...) != OK");
-    panic("Failed to create RTC");
+    panic("Failed to create rtc");
   }
   rtc_t *rtc = (rtc_t *)result_unwrap(rrtc);
   if (!rtc_init(rtc)) {
     dbg("rtc_init(...) == false");
-    panic("Failed to initialize RTC");
+    panic("Failed to initialize rtc");
   }
   set_shared_rtc(rtc);
-  LOG_INFO(kern_log, "RTC initialized");
+  LOG_DEBUG(kern_log, "rtc ready");
 
-  LOG_DEBUG(kern_log, "initializing PLIC");
+  LOG_DEBUG(kern_log, "initializing plic");
   result_t rplic = make_plic(0x0C000000);
   plic_t *plic = (plic_t *)result_unwrap(rplic);
   if (!plic_init(plic)) {
     dbg("plic_init(...) == false");
-    panic("Failed to initialize PLIC");
+    panic("Failed to initialize plic");
   }
   set_shared_plic(plic);
-  LOG_INFO(kern_log, "PLIC initialized");
+  LOG_DEBUG(kern_log, "plic ready");
 
   LOG_DEBUG(kern_log, "initializing cursor");
   result_t rcursor = make_cursor(fb);
@@ -239,10 +254,10 @@ void realmain() {
     panic("Failed to initialise cursor");
   }
   set_shared_cursor(cursor);
-  LOG_INFO(kern_log, "Cursor initialized");
-  LOG_INFO(kern_log, "devices initialized");
+  LOG_DEBUG(kern_log, "cursor ready");
+  LOG_INFO(kern_log, "devices ready");
 
-  LOG_INFO(kern_log, "setting up PLIC");
+  LOG_DEBUG(kern_log, "configuring plic interrupts");
 
   // uart interrupt
   plic_set_priority(plic, 10, 1);
@@ -259,31 +274,31 @@ void realmain() {
 
   sbi_set_timer(UINT64_MAX);
 
-  LOG_INFO(kern_log, "PLIC setup complete");
+  LOG_INFO(kern_log, "plic interrupt routing ready");
 
-  LOG_INFO(kern_log, "initializing interrupts");
+  LOG_DEBUG(kern_log, "enabling cpu interrupts");
 
   enable_interrupts();
 
-  LOG_INFO(kern_log, "interrupts initialized");
+  LOG_INFO(kern_log, "cpu interrupts enabled");
 
   uart_enable_interrupts(uart);
 
-  LOG_DEBUG(kern_log, "uart is ready now");
+  LOG_DEBUG(kern_log, "uart rx/tx interrupts armed");
 
-  LOG_INFO(kern_log, "initializing processes");
+  LOG_INFO(kern_log, "process system coming up");
 
   initialize_processes();
 
-  LOG_INFO(kern_log, "initializing VirtIO bus and drivers");
+  LOG_DEBUG(kern_log, "initializing virtio bus and drivers");
 
   virtio_register_all_drivers();
-  LOG_INFO(kern_log, "VirtIO: static bus scan...");
+  LOG_DEBUG(kern_log, "virtio: static bus scan...");
   virtio_bus_init_static();
 
-  LOG_INFO(kern_log, "VirtIO bus and drivers initialized");
+  LOG_INFO(kern_log, "virtio bus ready");
 
-  LOG_INFO(kern_log, "initializing disk device");
+  LOG_DEBUG(kern_log, "initializing disk device");
 
   virtio_block_dev_t *blk = virtio_blk_get();
   result_t rdisk = make_disk(blk);
@@ -298,23 +313,22 @@ void realmain() {
   }
   set_shared_disk(disk);
 
-  LOG_INFO(kern_log, "disk device initialized");
+  LOG_INFO(kern_log, "disk device ready");
 
   // Mount ObjectFS as root and list directory once
   result_t rmnt = objfs_mount_root(disk);
   if (!result_is_ok(rmnt)) {
-    LOG_WARN(kern_log, "ObjectFS mount failed; falling back to FAT root listing");
-    fat_list_root(disk);
+    LOG_WARN(kern_log, "objectfs mount failed (no legacy FAT fallback)");
   } else {
-    LOG_INFO(kern_log, "ObjectFS mounted as root");
+    LOG_INFO(kern_log, "objectfs mounted as root fs");
     objfs_list_root_once(kern_log);
   }
 
-  // Attempt to start a Vessel user program from the FAT root
-  result_t rvesselh = proc_from_vessel_path("HELLO.VES", "hello");
-  if (!result_is_ok(rvesselh)) {
-    LOG_WARN(kern_log, "Failed to start hello.vessel (HELLO.VES)");
-  }
+  // // Attempt to start a Vessel user program from the FAT root
+  // result_t rvesselh = proc_from_vessel_path("HELLO.VES", "hello");
+  // if (!result_is_ok(rvesselh)) {
+  //   LOG_WARN(kern_log, "Failed to start hello.vessel (HELLO.VES)");
+  // }
 
   // // Attempt to start a Vessel user program from the FAT root
   // result_t rvesself = proc_from_vessel_path("FIZZBUZ.VES", "fizzbuzz");
@@ -322,12 +336,17 @@ void realmain() {
   //   LOG_WARN(kern_log, "Failed to start fizzbuzz.vessel (FIZZBUZ.VES)");
   // }
 
-  result_t rvesselk = proc_from_vessel_path("KEYNOTFY.VES", "keynotify");
-  if (!result_is_ok(rvesselk)) {
-    LOG_WARN(kern_log, "Failed to start keynotfy.vessel (KEYNOTFY.VES)");
+  // result_t rvesselk = proc_from_vessel_path("KEYNOTFY.VES", "keynotify");
+  // if (!result_is_ok(rvesselk)) {
+  //   LOG_WARN(kern_log, "failed to start keynotfy.vessel (KEYNOTFY.VES)");
+  // }
+
+  result_t rshk = proc_from_vessel_path("sh.vessel", "sh");
+  if (!result_is_ok(rshk)) {
+    LOG_WARN(kern_log, "couldn't start sh.vessel (sh.ves)");
   }
 
-  LOG_INFO(kern_log, "starting scheduler");
+  LOG_INFO(kern_log, "starting scheduler, hands off now");
 
   sbi_set_timer(get_csrr_time() + TICK_INTERVAL_CYCLES);
 

@@ -27,6 +27,7 @@ typedef struct notif_handler {
 
 typedef struct notif_ctx {
   uint64_t saved_epc;
+  uint64_t saved_ra;
   uint64_t a[8];     // snapshot of a0..a7
   uint8_t  valid;    // non-zero if a handler is currently staged
 } notif_ctx_t;

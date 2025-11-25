@@ -15,7 +15,12 @@ OBJ_KIND_REFERENCE = 3
 
 def pack_super(sb):
     magic = b'OBJFS1\x00\x00'
-    return struct.pack('<8sIIQQQQQQQQ8Q',
+    # Layout matches objfs_superblock_t:
+    # magic[8], version(u32), block_size(u32),
+    # root_object_id(Q), object_table_start(Q), object_table_blocks(Q),
+    # free_map_start(Q), free_map_blocks(Q), content_start(Q),
+    # _reserved64[8] (8Q)
+    return struct.pack('<8sIIQQQQQQ8Q',
         magic,
         sb['version'],
         sb['block_size'],
@@ -29,7 +34,12 @@ def pack_super(sb):
     )
 
 def pack_object(o):
-    return struct.pack('<QHBBIIIQQQQQQQI I8Q',
+    # objfs_object_disk_t layout:
+    # Q id, H mode, B kind, B flags, I uid, I gid, I nlink,
+    # Q size, Q atime, Q mtime, Q ctime, Q target_id,
+    # Q subobjects_idx, Q attrs_head, Q data_start_block,
+    # I data_num_blocks, I _pad32, 8Q _reserved64
+    return struct.pack('<QHBBIIIQQQQQQQQII8Q',
         o['id'],
         o.get('mode',0o644),
         o['kind'],
@@ -42,7 +52,7 @@ def pack_object(o):
         o.get('mtime',0),
         o.get('ctime',0),
         o.get('target_id',0),
-        o.get('children_idx',0),
+        o.get('subobjects_idx',0),
         o.get('attrs_head',0),
         o.get('data_start_block',0),
         o.get('data_num_blocks',0),
@@ -50,28 +60,28 @@ def pack_object(o):
         0,0,0,0,0,0,0,0 # reserved
     )
 
-def pack_children_block(entries, next_block):
+def pack_subobjects_block(entries, next_block):
     hdr = struct.pack('<IIQ', len(entries), 0, next_block)
     body = b''
-    for name, kind, child_id in entries:
+    for name, kind, subobject_id in entries:
         n = name.encode('utf-8')
         n = n[:64]
         name_len = len(n)
         n_padded = n + b'\x00'*(64-len(n))
-        body += struct.pack('<BBH64sQ', name_len, kind, 0, n_padded, child_id)
+        body += struct.pack('<BBH64sQ', name_len, kind, 0, n_padded, subobject_id)
     blk = hdr + body
     if len(blk) > BS:
-        raise RuntimeError('children block overflow')
+        raise RuntimeError('subobjects block overflow')
     return blk + b'\x00'*(BS-len(blk))
 
 class Builder:
     def __init__(self, diskdir):
         self.diskdir = Path(diskdir)
-        self.nodes = []  # list of dicts {id, path, kind, children, size, file_path}
+        self.nodes = []  # list of dicts {id, path, kind, subobjects, size, file_path}
         self.path_to_id = {}
-        self.children_entries = {}  # id -> list of (name, kind, child_id)
+        self.subobject_entries = {}  # id -> list of (name, kind, subobject_id)
         self.objects = []  # filled later with layout
-        self.children_blocks = []  # (block_index, entries, next_block)
+        self.subobjects_blocks = []  # (block_index, entries, next_block)
         self.content_blocks = []   # (block_index, data)
         self.next_free_block = 0
         self.object_table_start = 0
@@ -89,7 +99,7 @@ class Builder:
         for dirpath, dirnames, filenames in os.walk(self.diskdir):
             dirpath = Path(dirpath)
             parent_id = self.path_to_id[dirpath]
-            # children entries
+            # subobject entries
             entries = []
             for d in sorted(dirnames):
                 p = dirpath / d
@@ -102,7 +112,7 @@ class Builder:
                 size = p.stat().st_size
                 self._add_node(p, oid, OBJ_KIND_FILE, size=size)
                 entries.append((f, OBJ_KIND_FILE, oid))
-            self.children_entries[parent_id] = entries
+            self.subobject_entries[parent_id] = entries
 
     def _add_node(self, path, oid, kind, size=0):
         self.nodes.append({
@@ -133,16 +143,16 @@ class Builder:
         # mark initial used: superblock + object table + freemap
         for b in range(0, self.content_region_start):
             self.used_blocks.add(b)
-        # children blocks
+        # subobjects blocks
         for node in self.nodes:
             if node['kind'] != OBJ_KIND_DIR:
                 continue
-            ents = self.children_entries.get(node['id'], [])
+            ents = self.subobject_entries.get(node['id'], [])
             # one block should be enough for MVP; if not, chain single block anyway
             blk_idx = self.next_free_block
             self.next_free_block += 1
-            self.children_blocks.append((blk_idx, ents, 0))
-            node['children_idx'] = blk_idx if ents else 0
+            self.subobjects_blocks.append((blk_idx, ents, 0))
+            node['subobjects_idx'] = blk_idx if ents else 0
             self.used_blocks.add(blk_idx)
         # content blocks
         for node in self.nodes:
@@ -168,7 +178,7 @@ class Builder:
                 'id': node['id'],
                 'kind': node['kind'],
                 'size': node.get('size',0),
-                'children_idx': node.get('children_idx', 0),
+                'subobjects_idx': node.get('subobjects_idx', 0),
                 'attrs_head': 0,
                 'data_start_block': node.get('data_start_block', 0),
                 'data_num_blocks': node.get('data_num_blocks', 0),
@@ -203,7 +213,7 @@ class Builder:
             off = 0
             cur_block = idx
             # write all objects (including reserved empty slots)
-            all_objs = self.objects + [ {'id': len(self.objects)+i, 'kind': OBJ_KIND_UNKNOWN, 'size': 0, 'children_idx': 0, 'attrs_head': 0, 'data_start_block': 0, 'data_num_blocks': 0, 'nlink': 0, 'mode': 0} for i in range(RESERVED_OBJ_SLOTS) ]
+            all_objs = self.objects + [ {'id': len(self.objects)+i, 'kind': OBJ_KIND_UNKNOWN, 'size': 0, 'subobjects_idx': 0, 'attrs_head': 0, 'data_start_block': 0, 'data_num_blocks': 0, 'nlink': 0, 'mode': 0} for i in range(RESERVED_OBJ_SLOTS) ]
             for i, o in enumerate(all_objs):
                 if (i % per) == 0:
                     # start new block
@@ -213,10 +223,10 @@ class Builder:
                 f.seek((cur_block - 1) * BS + off)
                 f.write(pack_object(o))
                 off += (8+2+1+1+4+4+4+8+8+8+8+8+8+8+8+4+4+8*8)
-            # children blocks
-            for blk_idx, ents, next_blk in self.children_blocks:
+            # subobjects blocks
+            for blk_idx, ents, next_blk in self.subobjects_blocks:
                 f.seek(blk_idx * BS)
-                f.write(pack_children_block(ents, next_blk))
+                f.write(pack_subobjects_block(ents, next_blk))
             # file contents
             for node in self.nodes:
                 if node['kind'] != OBJ_KIND_FILE:

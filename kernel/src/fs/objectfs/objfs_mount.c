@@ -67,6 +67,9 @@ result_t objfs_mount_root(disk_t *disk) {
   fs->blocks_total = bytes_total / (uint64_t)sb_tmp.block_size;
 
   g_objfs = fs;
+  // Register built-in virtual providers (e.g., Devices) after mount.
+  extern void objfs_virtual_init_after_mount(void);
+  objfs_virtual_init_after_mount();
   return RESULT_SUCCESS(0);
 }
 

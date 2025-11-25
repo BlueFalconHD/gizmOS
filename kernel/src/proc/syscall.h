@@ -6,6 +6,8 @@
 
 typedef enum syscall_num {
   SYSCALL_NUM_EXIT = 0x02,
+  SYSCALL_NUM_SPAWN = 0x03,
+  SYSCALL_NUM_WAIT = 0x04,
 
   SYSCALL_NUM_PRINT_INT = 0x10,
   SYSCALL_NUM_PRINT_STR = 0x11,
@@ -14,28 +16,14 @@ typedef enum syscall_num {
   SYSCALL_NUM_NOTIF_UNREGISTER = 0x91,
   SYSCALL_NUM_NOTIF_DONE = 0x100,
 
-  /* Filesystem */
-  SYSCALL_NUM_OPEN = 0x200,
-  SYSCALL_NUM_READ = 0x201,
-  SYSCALL_NUM_CLOSE = 0x202,
-  SYSCALL_NUM_STAT = 0x203,
-  SYSCALL_NUM_GETDENTS = 0x204,
-
-  /* Named forks */
-  SYSCALL_NUM_FORK_OPEN = 0x210,
-  SYSCALL_NUM_FORK_LIST = 0x211,
-  SYSCALL_NUM_FORK_STAT = 0x212,
-
-  /* Write syscall for console out and future files */
-  SYSCALL_NUM_WRITE = 0x205,
-
   /* ObjectFS (read-only) */
   SYSCALL_NUM_OBJ_LOOKUP_PATH = 0x220,
   SYSCALL_NUM_OBJ_STAT = 0x221,
-  SYSCALL_NUM_OBJ_LIST_CHILDREN = 0x222,
+  SYSCALL_NUM_OBJ_LIST_SUBOBJECTS = 0x222,
   SYSCALL_NUM_OBJ_READ = 0x223,
   SYSCALL_NUM_OBJ_ATTR_GET = 0x224,
   SYSCALL_NUM_OBJ_ATTR_LIST = 0x225,
+  SYSCALL_NUM_OBJ_DESC = 0x226,
 
   /* ObjectFS (mutation - phase 2) */
   SYSCALL_NUM_OBJ_CREATE = 0x230,
@@ -52,6 +40,20 @@ typedef enum syscall_num {
   SYSCALL_NUM_OBJH_HAS_SUBS = 0x243,       // obj_has_subobjects(handle)
   SYSCALL_NUM_OBJH_SUBS_COUNT = 0x244,     // obj_get_subobject_count(handle)
   SYSCALL_NUM_OBJH_SUB_AT = 0x245,         // obj_get_subobject_at(handle, index) -> id
+  SYSCALL_NUM_OBJH_OPEN_AT = 0x246,        // objh_open_at(path, flags) -> handle
+  SYSCALL_NUM_OBJH_STAT = 0x247,           // objh_stat(handle, out)
+  SYSCALL_NUM_OBJH_LIST_SUBOBJECTS = 0x248,// objh_list_subobjects(handle, buf, cap)
+  SYSCALL_NUM_OBJH_READ = 0x249,           // objh_read(handle, dst, off, n)
+  SYSCALL_NUM_OBJH_WRITE = 0x24A,          // objh_write(handle, src, off, n)
+  SYSCALL_NUM_OBJH_SEEK = 0x24A + 0x100,   // provisional: objh_seek(handle, off, whence)
+  SYSCALL_NUM_OBJH_ATTR_GET = 0x24B,       // objh_attr_get(handle, key, out, strbuf, cap)
+  SYSCALL_NUM_OBJH_ATTR_LIST = 0x24C,      // objh_attr_list(handle, buf, cap)
+  SYSCALL_NUM_OBJH_DESC = 0x24D,           // objh_desc(handle, out)
+  SYSCALL_NUM_OBJH_CREATE = 0x24E,         // objh_create(parent_handle, name, mode, kind) -> handle
+  SYSCALL_NUM_OBJH_SET_ATTR = 0x24F,       // objh_set_attr(handle, key, type, value)
+  SYSCALL_NUM_OBJH_LINK = 0x250,           // objh_link(parent_handle, name, target_handle)
+  SYSCALL_NUM_OBJH_UNLINK = 0x251,         // objh_unlink(parent_handle, name)
+  SYSCALL_NUM_OBJH_RENAME = 0x252,         // objh_rename(parent_handle, old, new)
 } syscall_num_t;
 
 typedef enum syscall_err {
@@ -88,6 +90,8 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num);
 // syscall table
 static const syscall_entry_t syscall_table[] = {
     {"exit()", SYSCALL_NUM_EXIT, syscall_handle_lifecycle},
+    {"spawn()", SYSCALL_NUM_SPAWN, syscall_handle_lifecycle},
+    {"wait()", SYSCALL_NUM_WAIT, syscall_handle_lifecycle},
 
     {"print_int()", SYSCALL_NUM_PRINT_INT, syscall_handle_work},
     {"print_str()", SYSCALL_NUM_PRINT_STR, syscall_handle_work},
@@ -99,22 +103,13 @@ static const syscall_entry_t syscall_table[] = {
     {"notification.done()", SYSCALL_NUM_NOTIF_DONE,
      syscall_handle_notification},
 
-    {"fs.open()", SYSCALL_NUM_OPEN, syscall_handle_fs},
-    {"fs.read()", SYSCALL_NUM_READ, syscall_handle_fs},
-    {"fs.write()", SYSCALL_NUM_WRITE, syscall_handle_fs},
-    {"fs.close()", SYSCALL_NUM_CLOSE, syscall_handle_fs},
-    {"fs.stat()", SYSCALL_NUM_STAT, syscall_handle_fs},
-    {"fs.getdents()", SYSCALL_NUM_GETDENTS, syscall_handle_fs},
-    {"fork.open()", SYSCALL_NUM_FORK_OPEN, syscall_handle_fs},
-    {"fork.list()", SYSCALL_NUM_FORK_LIST, syscall_handle_fs},
-    {"fork.stat()", SYSCALL_NUM_FORK_STAT, syscall_handle_fs},
-
     {"obj.lookup_path()", SYSCALL_NUM_OBJ_LOOKUP_PATH, syscall_handle_fs},
     {"obj.stat()", SYSCALL_NUM_OBJ_STAT, syscall_handle_fs},
-    {"obj.list_children()", SYSCALL_NUM_OBJ_LIST_CHILDREN, syscall_handle_fs},
+    {"obj.list_subobjects()", SYSCALL_NUM_OBJ_LIST_SUBOBJECTS, syscall_handle_fs},
     {"obj.read()", SYSCALL_NUM_OBJ_READ, syscall_handle_fs},
     {"obj.attr_get()", SYSCALL_NUM_OBJ_ATTR_GET, syscall_handle_fs},
     {"obj.attr_list()", SYSCALL_NUM_OBJ_ATTR_LIST, syscall_handle_fs},
+    {"obj.desc()", SYSCALL_NUM_OBJ_DESC, syscall_handle_fs},
     {"obj.create()", SYSCALL_NUM_OBJ_CREATE, syscall_handle_fs},
     {"obj.write()", SYSCALL_NUM_OBJ_WRITE, syscall_handle_fs},
     {"obj.attr_set()", SYSCALL_NUM_OBJ_SET_ATTR, syscall_handle_fs},
@@ -128,4 +123,17 @@ static const syscall_entry_t syscall_table[] = {
     {"objh.has_subs()", SYSCALL_NUM_OBJH_HAS_SUBS, syscall_handle_fs},
     {"objh.subs_count()", SYSCALL_NUM_OBJH_SUBS_COUNT, syscall_handle_fs},
     {"objh.sub_at()", SYSCALL_NUM_OBJH_SUB_AT, syscall_handle_fs},
+    {"objh.open_at()", SYSCALL_NUM_OBJH_OPEN_AT, syscall_handle_fs},
+    {"objh.stat()", SYSCALL_NUM_OBJH_STAT, syscall_handle_fs},
+    {"objh.list_subobjects()", SYSCALL_NUM_OBJH_LIST_SUBOBJECTS, syscall_handle_fs},
+    {"objh.read()", SYSCALL_NUM_OBJH_READ, syscall_handle_fs},
+    {"objh.write()", SYSCALL_NUM_OBJH_WRITE, syscall_handle_fs},
+    {"objh.attr_get()", SYSCALL_NUM_OBJH_ATTR_GET, syscall_handle_fs},
+    {"objh.attr_list()", SYSCALL_NUM_OBJH_ATTR_LIST, syscall_handle_fs},
+    {"objh.desc()", SYSCALL_NUM_OBJH_DESC, syscall_handle_fs},
+    {"objh.create()", SYSCALL_NUM_OBJH_CREATE, syscall_handle_fs},
+    {"objh.attr_set()", SYSCALL_NUM_OBJH_SET_ATTR, syscall_handle_fs},
+    {"objh.link()", SYSCALL_NUM_OBJH_LINK, syscall_handle_fs},
+    {"objh.unlink()", SYSCALL_NUM_OBJH_UNLINK, syscall_handle_fs},
+    {"objh.rename()", SYSCALL_NUM_OBJH_RENAME, syscall_handle_fs},
 };

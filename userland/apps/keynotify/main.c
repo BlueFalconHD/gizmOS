@@ -71,18 +71,15 @@ void simple_text_editor_handle_keycode(keypress_t *kp) {
   sys_print_str(out);
 }
 
-static void __attribute__((noreturn))
+static void
 key_handler(uint64_t type, uint64_t payload_uva, uint64_t len, uint64_t arg) {
   (void)type;
   (void)arg;
+  
   if (len >= 4) {
     keypress_t *kp = (keypress_t *)payload_uva;
-
     simple_text_editor_handle_keycode(kp);
   }
-
-  sys_notif_done();
-  __builtin_unreachable();
 }
 
 int main(void) {

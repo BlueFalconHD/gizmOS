@@ -5,7 +5,10 @@
 #include <lib/memory.h>
 #include <lib/print.h>
 #include <lib/log.h>
-#if NOTIF_DEBUG_LEVEL >= 1 || NOTIF_DEBUG_LEVEL >= 2
+#ifndef NOTIF_DEBUG_LEVEL
+#define NOTIF_DEBUG_LEVEL 0
+#endif
+#if NOTIF_DEBUG_LEVEL >= 1
 static inline log_t *notif_log() {
   static log_t *l = NULL;
   if (!l)
@@ -18,14 +21,11 @@ static inline log_t *notif_log() {
 #include <mem_layout.h>
 #include <page_table.h>
 #include <proc/process.h>
+#include <syscall.h>
 
 // Simple ring buffer kept inside proc_t; helpers here operate with p->lock held
 
 static inline uint32_t inc_mod(uint32_t v, uint32_t m) { return (v + 1) % m; }
-
-#ifndef NOTIF_DEBUG_LEVEL
-#define NOTIF_DEBUG_LEVEL 0
-#endif
 
 void notification_init_proc(struct proc *p) {
   // Zero is already ensured by allocator/initialization, but be explicit.
@@ -133,6 +133,7 @@ void notif_ctx_clear(struct proc *p) { p->notif_ctx.valid = 0; }
 
 void notif_ctx_save_from_trapframe(struct proc *p) {
   p->notif_ctx.saved_epc = p->trapframe->epc;
+  p->notif_ctx.saved_ra  = p->trapframe->ra;
   p->notif_ctx.a[0] = p->trapframe->a0;
   p->notif_ctx.a[1] = p->trapframe->a1;
   p->notif_ctx.a[2] = p->trapframe->a2;
@@ -142,12 +143,28 @@ void notif_ctx_save_from_trapframe(struct proc *p) {
   p->notif_ctx.a[6] = p->trapframe->a6;
   p->notif_ctx.a[7] = p->trapframe->a7;
   p->notif_ctx.valid = 1;
+#if NOTIF_DEBUG_LEVEL >= 1
+  LOG_DEBUG(notif_log(),
+            "ctx.save: pid=%{type: int} epc=0x%{type: hex} valid=%{type: int} "
+            "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
+            p->pid, p->notif_ctx.saved_epc, (int)p->notif_ctx.valid,
+            (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail);
+#endif
 }
 
 void notif_ctx_restore_to_trapframe(struct proc *p) {
   if (!p->notif_ctx.valid)
     return;
+#if NOTIF_DEBUG_LEVEL >= 1
+  LOG_DEBUG(notif_log(),
+            "ctx.restore(begin): pid=%{type: int} saved_epc=0x%{type: hex} "
+            "valid=%{type: int} (pending=%{type: int} head=%{type: int} "
+            "tail=%{type: int})",
+            p->pid, p->notif_ctx.saved_epc, (int)p->notif_ctx.valid,
+            (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail);
+#endif
   p->trapframe->epc = p->notif_ctx.saved_epc;
+  p->trapframe->ra  = p->notif_ctx.saved_ra;
   p->trapframe->a0 = p->notif_ctx.a[0];
   p->trapframe->a1 = p->notif_ctx.a[1];
   p->trapframe->a2 = p->notif_ctx.a[2];
@@ -157,6 +174,13 @@ void notif_ctx_restore_to_trapframe(struct proc *p) {
   p->trapframe->a6 = p->notif_ctx.a[6];
   p->trapframe->a7 = p->notif_ctx.a[7];
   p->notif_ctx.valid = 0;
+#if NOTIF_DEBUG_LEVEL >= 1
+  LOG_DEBUG(notif_log(),
+            "ctx.restore(end): pid=%{type: int} epc=0x%{type: hex} valid=%{type: int} "
+            "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
+            p->pid, p->trapframe->epc, (int)p->notif_ctx.valid,
+            (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail);
+#endif
 }
 
 g_bool notification_ensure_userbuf(struct proc *p) {
@@ -181,10 +205,23 @@ g_bool notification_ensure_userbuf(struct proc *p) {
   p->notif_userbuf_base = base;
   p->notif_userbuf_size = size;
 
-  // Install a minimal RISC-V user stub at base: `ecall` (to signal completion).
-  // Encoding: 0x00000073 (ecall)
-  uint32_t stub = 0x00000073u;
-  if (!result_is_ok(copyout(p->pagetable, base + NOTIF_STUB_OFFSET, &stub,
+  // Install a minimal RISC-V user stub at base:
+  //   li a7, SYSCALL_NOTIF_DONE; ecall
+  //
+  // When the notification handler returns, it will jump to this stub via
+  // its return address, automatically issuing the completion syscall.
+  //
+  // Example encoding for SYSCALL_NOTIF_DONE == 0x100:
+  //   0x10000893 : addi a7, x0, 256
+  //   0x00000073 : ecall
+  //
+  // We construct the correct ADDI encoding for a7 here.
+  uint32_t stub[2];
+  uint32_t imm = (uint32_t)SYSCALL_NOTIF_DONE & 0xfffU;
+  // addi a7, x0, imm  => opcode/funct3/rd/rs1 fixed, imm12 variable
+  stub[0] = (imm << 20) | (17u << 7) | 0x13u;
+  stub[1] = 0x00000073u; // ecall
+  if (!result_is_ok(copyout(p->pagetable, base + NOTIF_STUB_OFFSET, stub,
                             sizeof(stub)))) {
     return false;
   }

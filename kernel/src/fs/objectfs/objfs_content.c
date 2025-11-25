@@ -1,10 +1,21 @@
 #include "objfs.h"
+#include "objfs_virtual.h"
 #include <lib/kalloc.h>
 #include <lib/memory.h>
 
 result_t objfs_read(uint64_t obj_id, uint64_t off, void *buf, size_t n, size_t *out) {
   if (!buf)
     return RESULT_FAILURE(RESULT_INVALID);
+  // Virtual object?
+  {
+    const objfs_vops_t *ops = NULL;
+    uint64_t local = 0;
+    if (objfs_vreg_resolve(obj_id, &ops, &local)) {
+      if (ops && ops->read) return ops->read(local, off, buf, n, out);
+      if (out) *out = 0;
+      return RESULT_SUCCESS(0);
+    }
+  }
   objfs_fs_t *fs = objfs_global();
   if (!fs)
     return RESULT_FAILURE(RESULT_ERROR);
@@ -30,8 +41,6 @@ result_t objfs_read(uint64_t obj_id, uint64_t off, void *buf, size_t n, size_t *
     // follow
     return objfs_read(ent.target_id, off, buf, n, out);
   }
-  if (ent.kind != OBJFS_OBJ_FILE)
-    return RESULT_FAILURE(RESULT_INVALID);
 
   uint64_t file_size = ent.size;
   if (off >= file_size) {

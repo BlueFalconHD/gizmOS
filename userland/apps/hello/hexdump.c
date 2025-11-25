@@ -1,24 +1,24 @@
 // Minimal hexdump implementation for userland without stdio
 #include "hexdump.h"
+#include "../../sys/syscall.h"
 
-// Inline the minimal syscall we need to avoid pulling in stdint.h
-static inline long sys_write(long fd, const void *buf, long n) {
-  register long a0 asm("a0") = fd;
-  register long a1 asm("a1") = (long)buf;
-  register long a2 asm("a2") = n;
-  register long a7 asm("a7") = 0x205; /* SYSCALL_WRITE */
-  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
-  return a0;
+static long g_out_fd = 0;
+
+void hexdump_set_out(long handle) {
+  if (handle >= 0) g_out_fd = handle;
 }
 
 static inline void print_char(char c) {
-  sys_write(1, &c, 1);
+  char s[2] = {c, '\0'};
+  (void)g_out_fd;
+  sys_print_str(s);
 }
 
 static void print_str(const char *s) {
   long n = 0;
   while (s[n]) n++;
-  if (n > 0) sys_write(1, s, n);
+  (void)g_out_fd;
+  if (n > 0) sys_print_str(s);
 }
 
 static inline char hex_digit(unsigned x) {
@@ -37,7 +37,11 @@ static void print_hex_u8(unsigned char b) {
   char out[2];
   out[0] = hex_digit((unsigned)((b >> 4) & 0xf));
   out[1] = hex_digit((unsigned)(b & 0xf));
-  sys_write(1, out, 2);
+  char s[3];
+  s[0] = out[0];
+  s[1] = out[1];
+  s[2] = '\0';
+  sys_print_str(s);
 }
 
 void hexdump(const void *data, unsigned long long size, hexdump_opts_t opts) {

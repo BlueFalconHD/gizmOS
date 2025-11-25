@@ -27,8 +27,14 @@
 
 static inline log_t *user_trap_log() {
   static log_t *l = NULL;
-  if (!l)
+  if (!l) {
     l = g_log_create("trap", "user");
+    #if NOTIF_DELIVERY_DEBUG_LEVEL >= 1
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
   return l;
 }
 
@@ -68,17 +74,36 @@ void user_trap_ret(void) {
 
 #if NOTIF_DELIVERY_DEBUG_LEVEL >= 1
           LOG_DEBUG(user_trap_log(),
-                    "[notif] inject: pid=%{type: int} type=%{type: int} "
-                    "n=%{type: int} handler=%{type: hex}",
-                    p->pid, (int)m.type, (int)n, h->handler_va);
+                   "[notif] inject: pid=%{type: int} type=%{type: int} "
+                   "n=%{type: int} handler=%{type: hex} uva=0x%{type: hex} "
+                   "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
+                   p->pid, (int)m.type, (int)n, h->handler_va, uva,
+                   (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail);
 #endif
+          /*
+           * Save the current user context so we can resume it once the
+           * notification handler completes. In addition to the epc and
+           * argument registers, we also snapshot the return address (ra).
+           */
           notif_ctx_save_from_trapframe(p);
+          /*
+           * Arrange for the handler to be called as:
+           *   handler(type, payload_uva, len, arg);
+           * and for a plain `ret` from the handler to automatically
+           * perform notification completion via the stub at NOTIF_STUB.
+           *
+           * We achieve this by:
+           *   - setting ra to the user stub address (an ecall instruction)
+           *   - jumping to the handler by setting epc to handler_va
+           *
+           * The stub will invoke SYSCALL_NOTIF_DONE, which restores the
+           * saved context and resumes the interrupted user code.
+           */
           p->trapframe->a0 = m.type;
           p->trapframe->a1 = uva;
           p->trapframe->a2 = n;
           p->trapframe->a3 = h->arg_va;
-          // set a7 so user handler can ecall NOTIF_DONE and return
-          p->trapframe->a7 = SYSCALL_NOTIF_DONE;
+          p->trapframe->ra = p->notif_userbuf_base + NOTIF_STUB_OFFSET;
           p->trapframe->epc = h->handler_va;
         }
       }
@@ -124,29 +149,46 @@ void usertrap(void) {
 
   proc_t *p = current_proc();
 
-  if (PS_get_exception_cause() == 0x2) {
-    uint64_t faulting_address = PS_get_exception_pc();
-    uint64_t fault_pa = 0;
+  uint64_t scause = PS_get_exception_cause();
+  uint64_t sepc = PS_get_exception_pc();
+  uint64_t stval = PS_get_exception_value();
 
-    if (get_physical_address(p->pagetable, faulting_address, &fault_pa)) {
-      uint64_t fault_va = fault_pa + hhdm_offset;
-      LOG_ERROR(user_trap_log(), "Faulting address: %{type: hex}", fault_va);
-      LOG_ERROR(user_trap_log(), "Data at faulting address: 0x%{type: hex}",
-                *(uint64_t *)fault_va);
-    } else {
-      LOG_ERROR(user_trap_log(),
-                "Failed to get physical address for faulting address");
-    }
+  // Decode cause into interrupt/exception + code
+  uint64_t is_interrupt = (scause >> 63) & 1;
+  uint64_t cause_code = scause & 0x7FFFFFFFFFFFFFFFULL;
+
+  // Minimal per-process logging for user-mode faults (non-ecall exceptions).
+  // This helps debug issues like missing user mappings or bad accesses without
+  // halting the whole kernel via the global trap handler.
+  if (!is_interrupt && cause_code != 8) {
+    LOG_ERROR(user_trap_log(),
+              "usertrap: pid=%{type: int} name=%{type: str} exception code=%{type: int} pc=0x%{type: hex} stval=0x%{type: hex}",
+              p->pid, p->name, (int)cause_code, sepc, stval);
+
+    // Immediately terminate the offending process, similar to Linux "killed by signal"
+    // semantics for fatal user-space faults.
+    LOG_ERROR(user_trap_log(),
+              "usertrap: killing pid=%{type: int} name=%{type: str} due to fatal user exception code=%{type: int}",
+              p->pid, p->name, (int)cause_code);
+
+    // Exit with a status that encodes "killed by exception"; for now just use
+    // the cause code as the exit status.
+    exit(cause_code);
   }
 
-  p->trapframe->epc = PS_get_exception_pc();
+  p->trapframe->epc = sepc;
 
-  if (PS_get_exception_cause() == 8) {
+  if (cause_code == 8 && !is_interrupt) {
     // Advance past the ecall so we don't re-trap on the same instruction
     p->trapframe->epc += 4;
     PS_enable_interrupts();
 
     int callnum = p->trapframe->a7;
+
+    LOG_DEBUG(user_trap_log(),
+             "ecall: pid=%{type: int} num=0x%{type: hex}",
+             p->pid, (uint64_t)callnum);
+
     syscall_err_t e = syscall_dispatch(p, callnum);
     p->trapframe->a7 = (uint64_t)e;
     goto out;

@@ -14,13 +14,24 @@ SEG_X = 1 << 2
 def align_up(x, a):
     return (x + a - 1) & ~(a - 1)
 
-def pack_single(bin_path, out_path, vaddr=0x0, flags=SEG_R|SEG_X, entry=0x0):
+def pack_single(bin_path, out_path, vaddr=0x0, flags=SEG_R | SEG_W | SEG_X, entry=0x0):
     with open(bin_path, 'rb') as f:
         payload = f.read()
 
     page = 4096
     payload_size = len(payload)
-    mem_size = align_up(payload_size, page)
+    # Reserve extra anonymous zeroed memory after the payload to cover .bss and
+    # other zero-initialized globals that live beyond the raw file contents.
+    #
+    # Without this, user code that accesses globals in the BSS region (whose
+    # virtual addresses may be higher than the last byte in the binary) can
+    # fault when the loader has only mapped [0, payload_size).
+    #
+    # This is a conservative fixed slack; the kernel's Vessel loader will map
+    # [vaddr, vaddr + mem_size) and the extra region will naturally be zeroed
+    # by buddy_alloc_page().
+    bss_slack = 1024 * 1024  # 1 MiB of zeroed space for BSS
+    mem_size = align_up(payload_size + bss_slack, page)
 
     # Build command list in-memory
     cmds = bytearray()
@@ -78,7 +89,10 @@ def main(argv):
     bin_path = argv[1]
     out_path = argv[2]
     entry = int(argv[3], 16) if len(argv) > 3 else 0
-    pack_single(bin_path, out_path, vaddr=0x0, flags=SEG_R|SEG_X, entry=entry)
+    # Single flat segment for now: make it readable, writable, and executable.
+    # Writable is required so that globals/BSS in the same segment can be
+    # modified without triggering store page faults in user space.
+    pack_single(bin_path, out_path, vaddr=0x0, flags=SEG_R | SEG_W | SEG_X, entry=entry)
     return 0
 
 if __name__ == '__main__':

@@ -23,6 +23,21 @@ static inline void sys_exit(int status) {
   __builtin_unreachable();
 }
 
+static inline long sys_spawn(const char *path, const char *name) {
+  register long a0 asm("a0") = (long)path;
+  register long a1 asm("a1") = (long)name;
+  register long a7 asm("a7") = 0x03; /* SYSCALL_SPAWN */
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+
+static inline long sys_wait(long *status_out) {
+  register long a0 asm("a0") = (long)status_out;
+  register long a7 asm("a7") = 0x04; /* SYSCALL_WAIT */
+  asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
+  return a0;
+}
+
 static inline uint32_t sys_notif_register(uint16_t type, uint64_t handler,
                                           uint64_t arg, uint32_t flags) {
   register long a0 asm("a0") = (long)type;
@@ -46,99 +61,313 @@ static inline int sys_notif_unregister(uint16_t type, uint32_t id) {
 }
 
 static inline void sys_notif_done() {
+  /* Match other syscall wrappers: set a7 and issue ecall. */
+  register long a0 asm("a0") = 0;
   register long a7 asm("a7") = 0x100; /* SYSCALL_NOTIF_DONE */
-  asm volatile("ecall" : : "r"(a7) : "memory");
+  asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
 }
 
-/* Filesystem syscalls */
-static inline long sys_open(const char *path, long flags) {
+/* ObjectFS syscalls (object-centric) */
+typedef struct {
+  uint64_t size;
+  uint16_t mode;
+  uint8_t  kind;
+  uint32_t nlink;
+} sys_obj_stat_t;
+
+typedef struct __attribute__((packed)) {
+  uint8_t  name_len;
+  uint8_t  type;
+  uint16_t _pad;
+  uint64_t id;
+  char     name[64];
+} sys_objdirent_t;
+
+typedef struct __attribute__((packed)) {
+  uint8_t  key_len;
+  uint8_t  type; /* 0=str, 1=int, 2=bool */
+  uint16_t _pad;
+  char     key[64];
+} sys_objattr_t;
+
+typedef struct __attribute__((packed)) {
+  uint64_t id;
+  uint16_t mode;
+  uint8_t  kind;
+  uint8_t  flags;
+  uint32_t uid;
+  uint32_t gid;
+  uint32_t nlink;
+  uint64_t size;
+  uint64_t atime, mtime, ctime;
+  uint64_t target_id;
+} sys_obj_desc_t;
+
+/* Basic object resolution and metadata */
+static inline long sys_obj_id_at(const char *path) {
   register long a0 asm("a0") = (long)path;
-  register long a1 asm("a1") = flags;
-  register long a7 asm("a7") = 0x200; /* SYSCALL_OPEN */
-  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
-  return a0;
-}
-
-static inline long sys_read(long fd, void *buf, long n) {
-  register long a0 asm("a0") = fd;
-  register long a1 asm("a1") = (long)buf;
-  register long a2 asm("a2") = n;
-  register long a7 asm("a7") = 0x201; /* SYSCALL_READ */
-  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
-  return a0;
-}
-
-static inline long sys_write(long fd, const void *buf, long n) {
-  register long a0 asm("a0") = fd;
-  register long a1 asm("a1") = (long)buf;
-  register long a2 asm("a2") = n;
-  register long a7 asm("a7") = 0x205; /* SYSCALL_WRITE */
-  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
-  return a0;
-}
-
-static inline long sys_close(long fd) {
-  register long a0 asm("a0") = fd;
-  register long a7 asm("a7") = 0x202; /* SYSCALL_CLOSE */
+  register long a7 asm("a7") = 0x220;
   asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
   return a0;
 }
-
-typedef struct {
-  unsigned long size;
-  unsigned short mode;
-  unsigned short type;
-  unsigned int nlink;
-} sys_stat_t;
-
-static inline long sys_stat(const char *path, sys_stat_t *out) {
-  register long a0 asm("a0") = (long)path;
+static inline long sys_obj_stat(long obj_id, sys_obj_stat_t *out) {
+  register long a0 asm("a0") = obj_id;
   register long a1 asm("a1") = (long)out;
-  register long a7 asm("a7") = 0x203; /* SYSCALL_STAT */
+  register long a7 asm("a7") = 0x221;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_obj_list_subobjects(long obj_id, sys_objdirent_t *buf, long cap) {
+  register long a0 asm("a0") = obj_id;
+  register long a1 asm("a1") = (long)buf;
+  register long a2 asm("a2") = cap;
+  register long a7 asm("a7") = 0x222;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_obj_read(long obj_id, void *dst, unsigned long offset, long n) {
+  register long a0 asm("a0") = obj_id;
+  register long a1 asm("a1") = (long)dst;
+  register long a2 asm("a2") = (long)offset;
+  register long a3 asm("a3") = n;
+  register long a7 asm("a7") = 0x223;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
+  return a0;
+}
+/* Returns 0 for non-string attributes; for strings returns length; or -1 on error */
+static inline long sys_obj_attr_get(long obj_id, const char *key, void *out_value_struct, char *strbuf, long cap) {
+  register long a0 asm("a0") = obj_id;
+  register long a1 asm("a1") = (long)key;
+  register long a2 asm("a2") = (long)out_value_struct;
+  register long a3 asm("a3") = (long)strbuf;
+  register long a4 asm("a4") = cap;
+  register long a7 asm("a7") = 0x224;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a4), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_obj_attr_list(long obj_id, sys_objattr_t *buf, long cap) {
+  register long a0 asm("a0") = obj_id;
+  register long a1 asm("a1") = (long)buf;
+  register long a2 asm("a2") = cap;
+  register long a7 asm("a7") = 0x225;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_obj_desc(long obj_id, sys_obj_desc_t *out) {
+  register long a0 asm("a0") = obj_id;
+  register long a1 asm("a1") = (long)out;
+  register long a7 asm("a7") = 0x226;
   asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
   return a0;
 }
 
-typedef struct __attribute__((packed)) {
-  unsigned char namelen;
-  unsigned char type;
-  unsigned short _pad;
-  char name[64];
-} sys_dirent_t;
-
-static inline long sys_getdents(const char *path, sys_dirent_t *buf, long cap) {
+/* Object handle API */
+static inline long sys_objh_id_at(const char *path) {
   register long a0 asm("a0") = (long)path;
+  register long a7 asm("a7") = 0x240;
+  asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_open(long obj_id, unsigned long flags) {
+  register long a0 asm("a0") = obj_id;
+  register long a1 asm("a1") = (long)flags;
+  register long a7 asm("a7") = 0x241;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_close(long handle) {
+  register long a0 asm("a0") = handle;
+  register long a7 asm("a7") = 0x242;
+  asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_open_at(const char *path, unsigned long flags) {
+  register long a0 asm("a0") = (long)path;
+  register long a1 asm("a1") = (long)flags;
+  register long a7 asm("a7") = 0x246;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_stat(long handle, sys_obj_stat_t *out) {
+  register long a0 asm("a0") = handle;
+  register long a1 asm("a1") = (long)out;
+  register long a7 asm("a7") = 0x247;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_list_subobjects(long handle, sys_objdirent_t *buf, long cap) {
+  register long a0 asm("a0") = handle;
   register long a1 asm("a1") = (long)buf;
   register long a2 asm("a2") = cap;
-  register long a7 asm("a7") = 0x204; /* SYSCALL_GETDENTS */
+  register long a7 asm("a7") = 0x248;
   asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
   return a0;
 }
-
-/* Named fork syscalls */
-static inline long sys_fork_open(const char *base_path, const char *fork_name, long flags) {
-  register long a0 asm("a0") = (long)base_path;
-  register long a1 asm("a1") = (long)fork_name;
-  register long a2 asm("a2") = flags;
-  register long a7 asm("a7") = 0x210; /* SYSCALL_FORK_OPEN */
-  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+static inline long sys_objh_read(long handle, void *dst, unsigned long offset, long n) {
+  register long a0 asm("a0") = handle;
+  register long a1 asm("a1") = (long)dst;
+  register long a2 asm("a2") = (long)offset;
+  register long a3 asm("a3") = n;
+  register long a7 asm("a7") = 0x249;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_write(long handle, const void *src, unsigned long offset, long n) {
+  register long a0 asm("a0") = handle;
+  register long a1 asm("a1") = (long)src;
+  register long a2 asm("a2") = (long)offset;
+  register long a3 asm("a3") = n;
+  register long a7 asm("a7") = 0x24A;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
   return a0;
 }
 
-static inline long sys_fork_list(const char *base_path, sys_dirent_t *buf, long cap) {
-  register long a0 asm("a0") = (long)base_path;
+static inline long sys_objh_seek(long handle, long off, long whence) {
+  register long a0 asm("a0") = handle;
+  register long a1 asm("a1") = off;
+  register long a2 asm("a2") = whence;
+  register long a7 asm("a7") = 0x34A; /* matches SYSCALL_NUM_OBJH_SEEK */
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_attr_get(long handle, const char *key, void *out_value_struct, char *strbuf, long cap) {
+  register long a0 asm("a0") = handle;
+  register long a1 asm("a1") = (long)key;
+  register long a2 asm("a2") = (long)out_value_struct;
+  register long a3 asm("a3") = (long)strbuf;
+  register long a4 asm("a4") = cap;
+  register long a7 asm("a7") = 0x24B;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a4), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_attr_list(long handle, void *buf, long cap) {
+  register long a0 asm("a0") = handle;
   register long a1 asm("a1") = (long)buf;
   register long a2 asm("a2") = cap;
-  register long a7 asm("a7") = 0x211; /* SYSCALL_FORK_LIST */
+  register long a7 asm("a7") = 0x24C;
   asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
   return a0;
 }
+static inline long sys_objh_desc(long handle, sys_obj_desc_t *out) {
+  register long a0 asm("a0") = handle;
+  register long a1 asm("a1") = (long)out;
+  register long a7 asm("a7") = 0x24D;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
 
-static inline long sys_fork_stat(const char *base_path, const char *fork_name, sys_stat_t *st) {
-  register long a0 asm("a0") = (long)base_path;
-  register long a1 asm("a1") = (long)fork_name;
-  register long a2 asm("a2") = (long)st;
-  register long a7 asm("a7") = 0x212; /* SYSCALL_FORK_STAT */
+/* No separate get_id syscall; use sys_objh_desc and read .id */
+static inline long sys_objh_create(long parent_handle, const char *name, unsigned long mode, unsigned long kind) {
+  register long a0 asm("a0") = parent_handle;
+  register long a1 asm("a1") = (long)name;
+  register long a2 asm("a2") = (long)mode;
+  register long a3 asm("a3") = (long)kind;
+  register long a7 asm("a7") = 0x24E;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_set_attr(long handle, const char *key, unsigned long type, const void *value, long cap_or_size) {
+  register long a0 asm("a0") = handle;
+  register long a1 asm("a1") = (long)key;
+  register long a2 asm("a2") = (long)type;
+  register long a3 asm("a3") = (long)value;
+  register long a4 asm("a4") = cap_or_size;
+  register long a7 asm("a7") = 0x24F;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a4), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_link(long parent_handle, const char *name, long target_handle) {
+  register long a0 asm("a0") = parent_handle;
+  register long a1 asm("a1") = (long)name;
+  register long a2 asm("a2") = target_handle;
+  register long a7 asm("a7") = 0x250;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_unlink(long parent_handle, const char *name) {
+  register long a0 asm("a0") = parent_handle;
+  register long a1 asm("a1") = (long)name;
+  register long a7 asm("a7") = 0x251;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_rename(long parent_handle, const char *old_name, const char *new_name) {
+  register long a0 asm("a0") = parent_handle;
+  register long a1 asm("a1") = (long)old_name;
+  register long a2 asm("a2") = (long)new_name;
+  register long a7 asm("a7") = 0x252;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_has_subs(long handle) {
+  register long a0 asm("a0") = handle;
+  register long a7 asm("a7") = 0x243;
+  asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_subs_count(long handle) {
+  register long a0 asm("a0") = handle;
+  register long a7 asm("a7") = 0x244;
+  asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_objh_sub_at(long handle, unsigned long index) {
+  register long a0 asm("a0") = handle;
+  register long a1 asm("a1") = (long)index;
+  register long a7 asm("a7") = 0x245;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+
+/* Mutation (legacy, discouraged: prefer handle-based ops) */
+static inline long sys_obj_create(long parent_id, const char *name, unsigned long mode, unsigned long kind) {
+  register long a0 asm("a0") = parent_id;
+  register long a1 asm("a1") = (long)name;
+  register long a2 asm("a2") = (long)mode;
+  register long a3 asm("a3") = (long)kind;
+  register long a7 asm("a7") = 0x230;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_obj_write(long obj_id, const void *src, unsigned long offset, long n) {
+  register long a0 asm("a0") = obj_id;
+  register long a1 asm("a1") = (long)src;
+  register long a2 asm("a2") = (long)offset;
+  register long a3 asm("a3") = n;
+  register long a7 asm("a7") = 0x231;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_obj_set_attr(long obj_id, const char *key, unsigned long type, const void *value, long cap_or_size) {
+  register long a0 asm("a0") = obj_id;
+  register long a1 asm("a1") = (long)key;
+  register long a2 asm("a2") = (long)type;
+  register long a3 asm("a3") = (long)value;
+  register long a4 asm("a4") = cap_or_size;
+  register long a7 asm("a7") = 0x232;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a4), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_obj_link(long parent_id, const char *name, unsigned long target_id) {
+  register long a0 asm("a0") = parent_id;
+  register long a1 asm("a1") = (long)name;
+  register long a2 asm("a2") = (long)target_id;
+  register long a7 asm("a7") = 0x233;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_obj_unlink(long parent_id, const char *name) {
+  register long a0 asm("a0") = parent_id;
+  register long a1 asm("a1") = (long)name;
+  register long a7 asm("a7") = 0x234;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+static inline long sys_obj_rename(long parent_id, const char *old_name, const char *new_name) {
+  register long a0 asm("a0") = parent_id;
+  register long a1 asm("a1") = (long)old_name;
+  register long a2 asm("a2") = (long)new_name;
+  register long a7 asm("a7") = 0x235;
   asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
   return a0;
 }

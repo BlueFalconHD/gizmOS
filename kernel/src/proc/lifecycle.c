@@ -1,14 +1,11 @@
 #include "lifecycle.h"
-#include <fs/fat.h>
 #include <fs/objectfs/objfs.h>
 #include <include/vessel.h>
 #include <limine_requests.h>
 #include "lib/kalloc.h"
 #include "buddy_allocator.h"
 #include "memory.h"
-#include "fs.h"
 #include "notification.h"
-#include "fs.h"
 #include "process.h"
 #include "process_table.h"
 #include "scheduler.h"
@@ -96,7 +93,15 @@ found:
 
   // Initialize FD table
   for (int i = 0; i < PROC_MAX_FD; i++) p->fd_table[i] = NULL;
-  fs_install_standard_fds(p);
+  // Install stdio into unified descriptors instead of legacy FDs
+  descriptor_t *d = NULL;
+  int h;
+  h = desc_alloc(p, &d, NULL);
+  if (h >= 0 && d) { d->type = DESC_DEV_CONSOLE; d->rights = DESC_RIGHT_W; }
+  h = desc_alloc(p, &d, NULL);
+  if (h >= 0 && d) { d->type = DESC_DEV_UART; d->rights = DESC_RIGHT_W; }
+  // Initialize unified descriptor table
+  for (int i = 0; i < PROC_MAX_DESC; i++) p->desc_table[i] = NULL;
   // Initialize ObjectFS handle table
   for (int i = 0; i < PROC_MAX_OBJH; i++) {
     p->objh_ids[i] = (uint64_t)-1; /* UINT64_MAX sentinel for free */
@@ -115,8 +120,7 @@ void free_process(proc_t *p) {
   if (!p)
     return;
 
-  // Close any open file descriptors
-  fs_close_all(p);
+  // Close any legacy file descriptors (none after unification)
 
   if (p->pagetable) {
     buddy_free_page(p->pagetable);
@@ -189,62 +193,62 @@ uint64_t wait(uint64_t address) {
 
     for (uint8_t i = 0; i < NPROC; i++) {
       pp = &processes[i];
-      if (pp->parent == p) {
+      if (pp->parent != p)
+        continue;
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 3
-        LOG_DEBUG(proc_lifecycle_log(),
-                  "proc %{type: int} (%{type: str}) found child proc %{type: int} (%{type: str}) in state %{type: int}",
-                  p->pid, p->name, pp->pid, pp->name, pp->state);
+      LOG_DEBUG(proc_lifecycle_log(),
+                "proc %{type: int} (%{type: str}) found child proc %{type: int} (%{type: str}) in state %{type: int}",
+                p->pid, p->name, pp->pid, pp->name, pp->state);
 #endif
 
-        acquire(&pp->lock);
-        has_children = 1;
+      acquire(&pp->lock);
+      has_children = 1;
 
-        if (pp->state == ZOMBIE) {
+      if (pp->state == ZOMBIE) {
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 2
-          LOG_DEBUG(proc_lifecycle_log(),
-                    "proc %{type: int} (%{type: str}) reaping child proc %{type: int} (%{type: str})",
-                    p->pid, p->name, pp->pid, pp->name);
+        LOG_DEBUG(proc_lifecycle_log(),
+                  "proc %{type: int} (%{type: str}) reaping child proc %{type: int} (%{type: str})",
+                  p->pid, p->name, pp->pid, pp->name);
 #endif
 
-          pid = pp->pid;
-          if (address != 0 &&
-              !result_is_ok(copyout(p->pagetable, address, (void *)&p->xstate,
-                                    sizeof(p->xstate)))) {
-            release(&pp->lock);
-            release(&wait_lock);
-            return -1;
-          }
-
-          free_process(pp);
+        pid = pp->pid;
+        if (address != 0 &&
+            !result_is_ok(copyout(p->pagetable, address, (void *)&pp->xstate,
+                                  sizeof(pp->xstate)))) {
           release(&pp->lock);
           release(&wait_lock);
-          return pid;
+          return -1;
         }
 
+        free_process(pp);
         release(&pp->lock);
+        release(&wait_lock);
+        return pid;
       }
 
-      if (!has_children || killed(p)) {
-#if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
-        if (!has_children) {
-          LOG_DEBUG(proc_lifecycle_log(),
-                    "proc %{type: int} (%{type: str}) has no children",
-                    p->pid, p->name);
-        }
+      release(&pp->lock);
+    }
 
-        if (killed(p)) {
-          LOG_DEBUG(proc_lifecycle_log(),
-                    "proc %{type: int} (%{type: str}) was killed", p->pid,
-                    p->name);
-        }
+    if (!has_children || killed(p)) {
+#if PROC_LIFECYCLE_DEBUG_LEVEL >= 1
+      if (!has_children) {
+        LOG_DEBUG(proc_lifecycle_log(),
+                  "proc %{type: int} (%{type: str}) has no children",
+                  p->pid, p->name);
+      }
+
+      if (killed(p)) {
+        LOG_DEBUG(proc_lifecycle_log(),
+                  "proc %{type: int} (%{type: str}) was killed", p->pid,
+                  p->name);
+      }
 #endif
 
-        release(&wait_lock);
-        return -1;
-      }
-
-      sleep(p, &wait_lock);
+      release(&wait_lock);
+      return -1;
     }
+
+    sleep(p, &wait_lock);
   }
 }
 
@@ -373,7 +377,7 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
   if (!filebuf) return RESULT_FAILURE(RESULT_NOMEM);
 
   size_t nbytes = 0;
-  // Try ObjectFS at root ("/<name>")
+  // Load from ObjectFS at root ("/<name>")
   char objpath[128];
   objpath[0] = '/';
   uint64_t i = 0;
@@ -387,16 +391,12 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
     if (result_is_ok(rr)) {
       nbytes = outn;
     } else {
-      nbytes = 0;
+      kfree(filebuf);
+      return RESULT_FAILURE(RESULT_ERROR);
     }
   } else {
-    // fallback to FAT for transition period
-    uint32_t oldn = 0;
-    if (!fat_read_root_file(shared_disk, path83, filebuf, MAX_VESSEL_BYTES, &oldn)) {
-      kfree(filebuf);
-      return RESULT_FAILURE(RESULT_NOT_FOUND);
-    }
-    nbytes = oldn;
+    kfree(filebuf);
+    return RESULT_FAILURE(RESULT_NOT_FOUND);
   }
   if (nbytes < sizeof(vessel_hdr_t)) {
     kfree(filebuf);
@@ -484,6 +484,9 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
 
       // Copy file payload into mapped memory at vaddr
       if (fsize > 0) {
+        // print destination address of payload
+        LOG_DEBUG(proc_lifecycle_log(), "destination address of payload: %{type: hex}\n", vstart);
+
         if (!result_is_ok(copyout(p->pagetable, vstart, filebuf + foff, fsize))) {
           free_process(p); kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR);
         }

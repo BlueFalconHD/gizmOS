@@ -76,6 +76,10 @@ typedef struct proc {
 
   char name[16];
 
+  /* Spine IPC */
+  uint64_t        spine_token;
+  char            spine_service[16];
+
   g_bool is_kernel;
   /* Notifications */
   notif_msg_t     notif_queue[NOTIF_QUEUE_SIZE];

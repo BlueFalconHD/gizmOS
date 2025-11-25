@@ -16,6 +16,12 @@ typedef enum syscall_num {
   SYSCALL_NUM_NOTIF_UNREGISTER = 0x91,
   SYSCALL_NUM_NOTIF_DONE = 0x100,
 
+  /* Spine IPC */
+  SYSCALL_NUM_SPINE_MSG_SEND = 0x180,
+  SYSCALL_NUM_SPINE_SERVICE_ADVERTISE = 0x181,
+  SYSCALL_NUM_SPINE_SERVICE_LOOKUP = 0x182,
+  SYSCALL_NUM_SPINE_GET_SEAL = 0x183,
+
   /* ObjectFS (read-only) */
   SYSCALL_NUM_OBJ_LOOKUP_PATH = 0x220,
   SYSCALL_NUM_OBJ_STAT = 0x221,
@@ -81,6 +87,9 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num);
 // notification registration and more
 syscall_err_t syscall_handle_notification(proc_t *p, syscall_num_t num);
 
+// spine IPC syscalls
+syscall_err_t syscall_handle_spine(proc_t *p, syscall_num_t num);
+
 // syscall relating to work in progress functionality or debugging.
 syscall_err_t syscall_handle_work(proc_t *p, syscall_num_t num);
 
@@ -102,6 +111,11 @@ static const syscall_entry_t syscall_table[] = {
      syscall_handle_notification},
     {"notification.done()", SYSCALL_NUM_NOTIF_DONE,
      syscall_handle_notification},
+
+    {"spine.msg_send()", SYSCALL_NUM_SPINE_MSG_SEND, syscall_handle_spine},
+    {"spine.service_advertise()", SYSCALL_NUM_SPINE_SERVICE_ADVERTISE, syscall_handle_spine},
+    {"spine.service_lookup()", SYSCALL_NUM_SPINE_SERVICE_LOOKUP, syscall_handle_spine},
+    {"spine.get_seal()", SYSCALL_NUM_SPINE_GET_SEAL, syscall_handle_spine},
 
     {"obj.lookup_path()", SYSCALL_NUM_OBJ_LOOKUP_PATH, syscall_handle_fs},
     {"obj.stat()", SYSCALL_NUM_OBJ_STAT, syscall_handle_fs},

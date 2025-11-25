@@ -6,6 +6,7 @@
 #include "buddy_allocator.h"
 #include "memory.h"
 #include "notification.h"
+#include "spine.h"
 #include "process.h"
 #include "process_table.h"
 #include "scheduler.h"
@@ -90,6 +91,8 @@ found:
 
   // Initialize notification subsystem for this process
   notification_init_proc(p);
+  // Initialize Spine for this process (token, service name)
+  spine_init_proc(p);
 
   // Initialize FD table
   for (int i = 0; i < PROC_MAX_FD; i++) p->fd_table[i] = NULL;
@@ -119,6 +122,9 @@ found:
 void free_process(proc_t *p) {
   if (!p)
     return;
+
+  // Clear Spine state (e.g., advertised service)
+  spine_on_exit(p);
 
   // Close any legacy file descriptors (none after unification)
 

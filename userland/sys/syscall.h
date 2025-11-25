@@ -67,6 +67,50 @@ static inline void sys_notif_done() {
   asm volatile("ecall" : "+r"(a0) : "r"(a7) : "memory");
 }
 
+/* Spine IPC */
+typedef struct {
+  uint64_t token;
+  uint32_t pid;
+  char     name[16];
+  char     service[16];
+} sys_spine_seal_t;
+
+static inline long sys_spine_msg_send(long dest_pid, const void *buf, long n, unsigned long flags) {
+  register long a0 asm("a0") = dest_pid;
+  register long a1 asm("a1") = (long)buf;
+  register long a2 asm("a2") = n;
+  register long a3 asm("a3") = (long)flags;
+  register long a7 asm("a7") = 0x180;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
+  return a0;
+}
+
+static inline long sys_spine_service_advertise(const char *name, unsigned long flags) {
+  register long a0 asm("a0") = (long)name;
+  register long a1 asm("a1") = (long)flags;
+  register long a7 asm("a7") = 0x181;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+
+// Returns pid on success, or -1 on failure/not found.
+static inline long sys_spine_service_lookup(const char *name, unsigned long flags) {
+  register long a0 asm("a0") = (long)name;
+  register long a1 asm("a1") = (long)flags;
+  register long a7 asm("a7") = 0x182;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+
+static inline long sys_spine_get_seal(uint64_t token, void *out, long out_size) {
+  register long a0 asm("a0") = (long)token;
+  register long a1 asm("a1") = (long)out;
+  register long a2 asm("a2") = (long)out_size;
+  register long a7 asm("a7") = 0x183;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+  return a0;
+}
+
 /* ObjectFS syscalls (object-centric) */
 typedef struct {
   uint64_t size;

@@ -9,6 +9,7 @@
 #include <fs/objectfs/objfs_format.h>
 #include <fs/objectfs/objfs.h>
 #include "proc/notification.h"
+#include "proc/spine.h"
 #include <lib/str.h>
 #include <lib/memory.h>
 
@@ -116,6 +117,60 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
     break;
   }
 };
+
+syscall_err_t syscall_handle_spine(proc_t *p, syscall_num_t num) {
+  switch (num) {
+  case SYSCALL_NUM_SPINE_MSG_SEND: {
+    // a0=dest_pid, a1=user msg ptr, a2=msg size, a3=flags
+    int dest_pid = (int)p->trapframe->a0;
+    uint64_t uptr = p->trapframe->a1;
+    uint64_t n = p->trapframe->a2;
+    uint32_t flags = (uint32_t)p->trapframe->a3;
+    g_bool ok = spine_msg_send(p, dest_pid, (const void *)uptr, n, flags);
+    p->trapframe->a0 = ok ? 0 : (uint64_t)-1;
+    return SYSCALL_ERR_NONE;
+  }
+  case SYSCALL_NUM_SPINE_SERVICE_ADVERTISE: {
+    // a0=user name*, a1=flags
+    result_t rname = copyinstr(p->pagetable, p->trapframe->a0, SPINE_SERVICE_NAME_MAX);
+    if (!result_is_ok(rname)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    char *kname = (char *)result_unwrap(rname);
+    uint32_t flags = (uint32_t)p->trapframe->a1;
+    g_bool ok = spine_service_advertise(p, kname, flags);
+    kfree(kname);
+    p->trapframe->a0 = ok ? 0 : (uint64_t)-1;
+    return SYSCALL_ERR_NONE;
+  }
+  case SYSCALL_NUM_SPINE_SERVICE_LOOKUP: {
+    // a0=user name*, a1=flags -> returns pid or -1
+    result_t rname = copyinstr(p->pagetable, p->trapframe->a0, SPINE_SERVICE_NAME_MAX);
+    if (!result_is_ok(rname)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    char *kname = (char *)result_unwrap(rname);
+    uint32_t flags = (uint32_t)p->trapframe->a1;
+    int64_t pid = spine_service_lookup(kname, flags);
+    kfree(kname);
+    p->trapframe->a0 = pid;
+    return SYSCALL_ERR_NONE;
+  }
+  case SYSCALL_NUM_SPINE_GET_SEAL: {
+    // a0=token, a1=user out ptr, a2=out size
+    uint64_t token = p->trapframe->a0;
+    uint64_t outva = p->trapframe->a1;
+    uint64_t outsz = p->trapframe->a2;
+    spine_seal_t seal;
+    if (!spine_get_seal(token, &seal)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    uint64_t n = (outsz < sizeof(seal)) ? outsz : sizeof(seal);
+    if (!result_is_ok(copyout(p->pagetable, outva, &seal, n))) {
+      p->trapframe->a0 = (uint64_t)-1;
+      return SYSCALL_ERR_NONE;
+    }
+    p->trapframe->a0 = 0;
+    return SYSCALL_ERR_NONE;
+  }
+  default:
+    return SYSCALL_ERR_NONEXISTENT_CALLNUM;
+  }
+}
 
 // typedef enum syscall_num {
 //   SYSCALL_NUM_EXIT = 0x02,

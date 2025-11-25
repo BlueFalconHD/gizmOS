@@ -24,15 +24,9 @@ int main(void) {
   long out = -1;
   puts_out(out, "Listing /\n");
   long root_h = obj_open("/", 0);
-  sys_print_str("hello: obj_open(/) -> ");
-  sys_print_int(root_h);
-  sys_print_str("\n");
   if (root_h >= 0) {
     sys_objdirent_t ents[32];
     long n = obj_getdents(root_h, ents, sizeof(ents));
-    sys_print_str("hello: obj_getdents(/) bytes -> ");
-    sys_print_int(n);
-    sys_print_str("\n");
     if (n > 0) {
       long cnt = n / (long)sizeof(sys_objdirent_t);
       for (long i = 0; i < cnt; i++) {
@@ -47,17 +41,11 @@ int main(void) {
   }
 
   long file_h = obj_open("/HELLO.VES", 0);
-  sys_print_str("hello: obj_open(HELLO.VES) -> ");
-  sys_print_int(file_h);
-  sys_print_str("\n");
 
   if (file_h >= 0) {
     hexdump_set_out(out >= 0 ? out : 0);
     char buf[64];
     long r = obj_pread(file_h, buf, 0, sizeof(buf));
-    sys_print_str("hello: obj_pread(HELLO.VES) -> ");
-    sys_print_int(r);
-    sys_print_str("\n");
     if (r > 0) {
       hexdump(buf, (unsigned long long)r, hexdump_opts);
     }

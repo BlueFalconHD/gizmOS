@@ -318,7 +318,7 @@ void realmain() {
   // Mount ObjectFS as root and list directory once
   result_t rmnt = objfs_mount_root(disk);
   if (!result_is_ok(rmnt)) {
-    LOG_WARN(kern_log, "objectfs mount failed (no legacy FAT fallback)");
+    LOG_WARN(kern_log, "objectfs mount failed");
   } else {
     LOG_INFO(kern_log, "objectfs mounted as root fs");
     objfs_list_root_once(kern_log);
@@ -341,18 +341,24 @@ void realmain() {
   //   LOG_WARN(kern_log, "failed to start keynotfy.vessel (KEYNOTFY.VES)");
   // }
 
+  // Start spinesink alongside the shell
+  result_t rspine = proc_from_vessel_path("SPINESNK.VES", "spinesink");
+  if (!result_is_ok(rspine)) {
+    LOG_WARN(kern_log, "couldn't start spinesink (SPINESNK.VES)");
+  }
+
   result_t rshk = proc_from_vessel_path("sh.vessel", "sh");
   if (!result_is_ok(rshk)) {
     LOG_WARN(kern_log, "couldn't start sh.vessel (sh.ves)");
   }
 
-  LOG_INFO(kern_log, "starting scheduler, hands off now");
+  LOG_INFO(kern_log, "starting scheduler");
 
   sbi_set_timer(get_csrr_time() + TICK_INTERVAL_CYCLES);
 
   scheduler();
 
-  panic("hi");
+  panic("heyo! end of realmain(), this should never happen");
 }
 
 EARLY_TEXT void main() {

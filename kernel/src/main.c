@@ -51,7 +51,7 @@
 //   0 -> info and above (quieter)
 //   1 -> include debug boot logs (verbose)
 #ifndef KERN_BOOT_DEBUG_LEVEL
-#define KERN_BOOT_DEBUG_LEVEL 1
+#define KERN_BOOT_DEBUG_LEVEL 0
 #endif
 
 // #define TESTS

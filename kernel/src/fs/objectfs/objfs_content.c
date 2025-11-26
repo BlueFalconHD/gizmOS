@@ -37,7 +37,7 @@ result_t objfs_read(uint64_t obj_id, uint64_t off, void *buf, size_t n, size_t *
   objfs_object_disk_t ent = ((objfs_object_disk_t *)tbuf)[within];
   kfree(tbuf);
 
-  if (ent.kind == OBJFS_OBJ_REFERENCE) {
+  if (ent.target_id != 0) {
     // follow
     return objfs_read(ent.target_id, off, buf, n, out);
   }

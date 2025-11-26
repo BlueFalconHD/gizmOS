@@ -19,6 +19,16 @@ size_t strlen(const char *s) {
   size_t i = 0; while (s[i]) i++; return i;
 }
 
+// checks if two strings are equal
+int str_eq(const char *a, const char *b) {
+  size_t i = 0;
+  while (a[i] && b[i]) {
+    if (a[i] != b[i]) return 0;
+    i++;
+  }
+  return a[i] == '\0' && b[i] == '\0';
+}
+
 typedef struct mem_chunk {
   size_t size;
   int free;
@@ -153,5 +163,3 @@ void *realloc(void *ptr, size_t size) {
   free(ptr);
   return new_ptr;
 }
-
-

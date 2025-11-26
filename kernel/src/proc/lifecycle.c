@@ -616,3 +616,224 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
   kfree(filebuf);
   return RESULT_SUCCESS(p);
 }
+
+static uint64_t align_down(uint64_t x, uint64_t a) { return x & ~(a - 1); }
+
+static g_bool push_one_string(proc_t *p, const char *s, uint64_t *sp_io, uint64_t *out_va) {
+  const uint64_t MAX_STR = 256;
+  char kbuf[MAX_STR];
+  uint64_t len = 0;
+  while (s && s[len] && len + 1 < MAX_STR) len++;
+  for (uint64_t i = 0; i < len; i++) kbuf[i] = s[i];
+  kbuf[len] = '\0';
+  uint64_t need = len + 1;
+  uint64_t sp = *sp_io - need;
+  if (!result_is_ok(copyout(p->pagetable, sp, kbuf, need))) return false;
+  *sp_io = sp;
+  *out_va = sp;
+  return true;
+}
+
+static g_bool push_argv_on_user_stack(proc_t *p,
+                                      const char *name,
+                                      uint64_t argc,
+                                      const char * const *argv,
+                                      uint64_t *out_argc,
+                                      uint64_t *out_argv_va,
+                                      uint64_t *out_new_sp) {
+  if (!p || !p->pagetable || !p->trapframe) return false;
+  // We will place strings first, then build argv array above them, keeping alignment.
+  // Reserve some headroom.
+  uint64_t sp = p->trapframe->sp;
+  const uint64_t PTR_SIZE = sizeof(uint64_t);
+  // Build argv0 from name or empty
+  const char *argv0 = name ? name : "";
+  // Count total args including argv0
+  uint64_t n = argc + 1;
+  // Place strings from top down
+  uint64_t str_addrs_cap = n;
+  uint64_t *str_addrs = (uint64_t *)kalloc(sizeof(uint64_t) * str_addrs_cap);
+  if (!str_addrs) return false;
+  uint64_t idx = 0;
+  uint64_t va = 0;
+  if (!push_one_string(p, argv0, &sp, &va)) { kfree(str_addrs); return false; }
+  str_addrs[idx++] = va;
+  for (uint64_t i = 0; i < argc; i++) {
+    const char *as = argv[i] ? argv[i] : "";
+    if (!push_one_string(p, as, &sp, &va)) { kfree(str_addrs); return false; }
+    str_addrs[idx++] = va;
+  }
+  // Align stack for argv array
+  sp = align_down(sp, PTR_SIZE);
+  // Add NULL terminator for argv array
+  sp -= PTR_SIZE;
+  uint64_t zero = 0;
+  if (!result_is_ok(copyout(p->pagetable, sp, &zero, PTR_SIZE))) { kfree(str_addrs); return false; }
+  // Push pointers in reverse so argv[0] ends up lowest address after NULL
+  for (int64_t i = (int64_t)n - 1; i >= 0; i--) {
+    sp -= PTR_SIZE;
+    uint64_t ptr = str_addrs[i];
+    if (!result_is_ok(copyout(p->pagetable, sp, &ptr, PTR_SIZE))) { kfree(str_addrs); return false; }
+  }
+  kfree(str_addrs);
+  *out_argc = n;
+  *out_argv_va = sp;
+  *out_new_sp = sp;
+  return true;
+}
+
+RESULT_TYPE(proc_t *) proc_from_vessel_path_args(const char *path83,
+                                                 const char *name,
+                                                 uint64_t argc,
+                                                 const char * const *argv) {
+  if (!shared_disk_initialized || !shared_disk) {
+    return RESULT_FAILURE(RESULT_ERROR);
+  }
+  const uint32_t MAX_VESSEL_BYTES = (4 * 1024 * 1024) - 4096;
+  uint8_t *filebuf = (uint8_t *)kalloc(MAX_VESSEL_BYTES);
+  if (!filebuf) return RESULT_FAILURE(RESULT_NOMEM);
+  size_t nbytes = 0;
+  char objpath[128];
+  objpath[0] = '/';
+  uint64_t i = 0;
+  while (path83[i] && i + 2 < sizeof(objpath)) { objpath[i+1] = path83[i]; i++; }
+  objpath[i+1] = '\0';
+  uint64_t file_id = 0;
+  result_t rlp = objfs_lookup_path(objpath, &file_id);
+  if (result_is_ok(rlp)) {
+    uint64_t payload_obj_id = file_id;
+    g_bool has_vessel_attr = false;
+    objfs_attr_value_t av;
+    result_t rav = objfs_attr_get(file_id, "vessel", &av);
+    if (result_is_ok(rav) && av.type == OBJFS_ATTR_V_BOOL && av.v.b) {
+      has_vessel_attr = true;
+    }
+    objfs_stat_t st;
+    (void)objfs_object_stat(file_id, &st);
+    if (has_vessel_attr || st.kind == OBJFS_OBJ_DIR) {
+      uint64_t cnt = 0;
+      (void)objfs_subobjects_count(file_id, &cnt);
+      for (uint64_t idx = 0; idx < cnt; idx++) {
+        char namebuf[65];
+        uint8_t kind = 0;
+        uint64_t cid = 0;
+        if (!result_is_ok(objfs_subobject_at(file_id, idx, namebuf, sizeof(namebuf), &kind, &cid)))
+          continue;
+        if (namebuf[0] == 'e' && namebuf[1] == 'x' && namebuf[2] == 'e' && namebuf[3] == '\0') {
+          payload_obj_id = cid;
+          break;
+        }
+      }
+    }
+    size_t outn = 0;
+    result_t rr = objfs_read(payload_obj_id, 0, filebuf, MAX_VESSEL_BYTES, &outn);
+    if (result_is_ok(rr)) {
+      nbytes = outn;
+    } else {
+      kfree(filebuf);
+      return RESULT_FAILURE(RESULT_ERROR);
+    }
+  } else {
+    kfree(filebuf);
+    return RESULT_FAILURE(RESULT_NOT_FOUND);
+  }
+  if (nbytes < sizeof(vessel_hdr_t)) {
+    kfree(filebuf);
+    return RESULT_FAILURE(RESULT_ERROR);
+  }
+  vessel_hdr_t *hdr = (vessel_hdr_t *)filebuf;
+  if (hdr->magic != VESSEL_MAGIC_U64) {
+    kfree(filebuf);
+    return RESULT_FAILURE(RESULT_ERROR);
+  }
+  uint32_t cmds_size = hdr->commands_size;
+  if (sizeof(vessel_hdr_t) + cmds_size > nbytes) {
+    kfree(filebuf);
+    return RESULT_FAILURE(RESULT_ERROR);
+  }
+  uint8_t *cmdp = filebuf + sizeof(vessel_hdr_t);
+  uint8_t *cmd_end = cmdp + cmds_size;
+  uint64_t entry = 0;
+  g_bool have_entry = false;
+  uint64_t max_vend = 0;
+  while (cmdp + sizeof(vessel_cmd_t) <= cmd_end) {
+    vessel_cmd_t *c = (vessel_cmd_t *)cmdp;
+    if (c->size < sizeof(vessel_cmd_t)) { kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR); }
+    if (cmdp + c->size > cmd_end) { kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR); }
+    if (c->type == VESSEL_CMD_SEGMENT) {
+      if (c->size < sizeof(vessel_cmd_segment_t)) { kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR); }
+      vessel_cmd_segment_t *s = (vessel_cmd_segment_t *)c;
+      uint64_t vend = s->vaddr + s->mem_size;
+      if (vend > max_vend) max_vend = vend;
+      if (s->file_offset + s->file_size > nbytes) { kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR); }
+    } else if (c->type == VESSEL_CMD_ENTRY_POINT) {
+      if (c->size < sizeof(vessel_cmd_entry_point_t)) { kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR); }
+      vessel_cmd_entry_point_t *e = (vessel_cmd_entry_point_t *)c;
+      entry = e->entry;
+      have_entry = true;
+    }
+    cmdp += c->size;
+  }
+  if (!have_entry) { kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR); }
+  result_t rp = make_proc();
+  if (!result_is_ok(rp)) { kfree(filebuf); return RESULT_FAILURE(RESULT_NOMEM); }
+  proc_t *p = (proc_t *)result_unwrap(rp);
+  cmdp = filebuf + sizeof(vessel_hdr_t);
+  while (cmdp + sizeof(vessel_cmd_t) <= cmd_end) {
+    vessel_cmd_t *c = (vessel_cmd_t *)cmdp;
+    if (c->type == VESSEL_CMD_SEGMENT) {
+      vessel_cmd_segment_t *s = (vessel_cmd_segment_t *)c;
+      uint64_t vstart = s->vaddr;
+      uint64_t msize = s->mem_size;
+      uint64_t foff  = s->file_offset;
+      uint64_t fsize = s->file_size;
+      uint64_t flags = PTE_U | PTE_V | (s->flags & VESSEL_SEG_R ? PTE_R : 0) |
+                       (s->flags & VESSEL_SEG_W ? PTE_W : 0) |
+                       (s->flags & VESSEL_SEG_X ? PTE_X : 0);
+      uint64_t pend = vstart + msize;
+      uint64_t cur = vstart & ~(PAGE_SIZE - 1);
+      while (cur < pend) {
+        void *page = buddy_alloc_page();
+        if (!page) { free_process(p); kfree(filebuf); return RESULT_FAILURE(RESULT_NOMEM); }
+        memset(page, 0, PAGE_SIZE);
+        uint64_t pa = (uint64_t)page - hhdm_offset;
+        if (!map_page(p->pagetable, cur, pa, flags)) {
+          buddy_free_page(page);
+          free_process(p); kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR);
+        }
+        cur += PAGE_SIZE;
+      }
+      if (fsize > 0) {
+        if (!result_is_ok(copyout(p->pagetable, vstart, filebuf + foff, fsize))) {
+          free_process(p); kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR);
+        }
+      }
+    }
+    cmdp += c->size;
+  }
+  p->heap_base = align_up(max_vend, PAGE_SIZE);
+  p->sz = p->heap_base;
+  if (!setup_user_stack(p)) {
+    free_process(p);
+    release(&p->lock);
+    kfree(filebuf);
+    return RESULT_FAILURE(RESULT_NOMEM);
+  }
+  p->trapframe->epc = entry;
+  // Install argv now, before making RUNNABLE
+  uint64_t final_argc = 0, argv_va = 0, new_sp = 0;
+  if (!push_argv_on_user_stack(p, name ? name : path83, argc, argv, &final_argc, &argv_va, &new_sp)) {
+    free_process(p);
+    release(&p->lock);
+    kfree(filebuf);
+    return RESULT_FAILURE(RESULT_ERROR);
+  }
+  p->trapframe->a0 = final_argc;
+  p->trapframe->a1 = argv_va;
+  p->trapframe->sp = new_sp;
+  if (name) strncopy(p->name, name, sizeof(p->name));
+  p->state = RUNNABLE;
+  release(&p->lock);
+  kfree(filebuf);
+  return RESULT_SUCCESS(p);
+}

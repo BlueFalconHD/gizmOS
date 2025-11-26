@@ -76,11 +76,9 @@ result_t objfs_write_bytes(uint64_t obj_id, uint64_t off, const void *buf, size_
   result_t rl = objfs_load_desc(obj_id, &ent, NULL, NULL);
   if (!result_is_ok(rl))
     return rl;
-  if (ent.kind == OBJFS_OBJ_REFERENCE) {
+  if (ent.target_id != 0) {
     return objfs_write_bytes(ent.target_id, off, buf, n, out);
   }
-  if (ent.kind != OBJFS_OBJ_FILE)
-    return RESULT_FAILURE(RESULT_INVALID);
   uint32_t bs = fs->sb.block_size;
   uint64_t cur_cap = (uint64_t)ent.data_num_blocks * (uint64_t)bs;
   uint64_t end_off = off + n;
@@ -233,7 +231,8 @@ static result_t find_free_object_slot(uint64_t *out_id) {
     for (uint32_t i = 0; i < per; i++) {
       uint64_t id = b * per + i;
       if (id == 0) continue; // keep root intact
-      if (ents[i].kind == OBJFS_OBJ_UNKNOWN) {
+      // Consider a slot free if link count is zero (builder uses nlink=0 for empty slots)
+      if (ents[i].nlink == 0) {
         kfree(buf);
         *out_id = id;
         return RESULT_SUCCESS(0);
@@ -250,7 +249,6 @@ result_t objfs_create(uint64_t parent_dir_id, const char *name, uint16_t mode, u
   objfs_object_disk_t dir;
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
-  if (dir.kind != OBJFS_OBJ_DIR) return RESULT_FAILURE(RESULT_INVALID);
   // Allocate object slot
   uint64_t new_id = 0;
   result_t rs = find_free_object_slot(&new_id);
@@ -259,7 +257,8 @@ result_t objfs_create(uint64_t parent_dir_id, const char *name, uint16_t mode, u
   objfs_object_disk_t nd;
   memset(&nd, 0, sizeof(nd));
   nd.id = new_id;
-  nd.kind = kind;
+  // Ignore requested kind for capabilities-based model; start unknown and derive on use
+  nd.kind = OBJFS_OBJ_UNKNOWN;
   nd.mode = mode;
   nd.nlink = 1;
   nd.size = 0;
@@ -268,7 +267,8 @@ result_t objfs_create(uint64_t parent_dir_id, const char *name, uint16_t mode, u
   // Ensure dir has subobjects head, then add entry
   result_t re = ensure_subobjects_head(&dir, parent_dir_id);
   if (!result_is_ok(re)) return re;
-  result_t ra = add_subobject_entry(dir.subobjects_idx, name, kind, new_id);
+  // Emit unknown type in index; consumers will derive kind from descriptor fields
+  result_t ra = add_subobject_entry(dir.subobjects_idx, name, OBJFS_OBJ_UNKNOWN, new_id);
   if (!result_is_ok(ra)) return ra;
   if (out_obj_id) *out_obj_id = new_id;
   return RESULT_SUCCESS(0);
@@ -278,13 +278,17 @@ result_t objfs_link(uint64_t parent_dir_id, const char *name, uint64_t target_id
   objfs_object_disk_t dir;
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
-  if (dir.kind != OBJFS_OBJ_DIR) return RESULT_FAILURE(RESULT_INVALID);
   result_t re = ensure_subobjects_head(&dir, parent_dir_id);
   if (!result_is_ok(re)) return re;
   objfs_object_disk_t t;
   if (!result_is_ok(objfs_load_desc(target_id, &t, NULL, NULL)))
     return RESULT_FAILURE(RESULT_NOT_FOUND);
-  return add_subobject_entry(dir.subobjects_idx, name, t.kind, target_id);
+  // Derive a display kind for the index from capabilities
+  uint8_t derived = OBJFS_OBJ_UNKNOWN;
+  if (t.target_id != 0) derived = OBJFS_OBJ_REFERENCE;
+  else if (t.subobjects_idx != 0) derived = OBJFS_OBJ_DIR;
+  else if (t.data_num_blocks != 0 || t.size != 0) derived = OBJFS_OBJ_FILE;
+  return add_subobject_entry(dir.subobjects_idx, name, derived, target_id);
 }
 
 static result_t update_subobject_by_name(uint64_t head, const char *name,
@@ -331,7 +335,6 @@ result_t objfs_unlink(uint64_t parent_dir_id, const char *name) {
   objfs_object_disk_t dir;
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
-  if (dir.kind != OBJFS_OBJ_DIR) return RESULT_FAILURE(RESULT_INVALID);
   if (dir.subobjects_idx == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
   return update_subobject_by_name(dir.subobjects_idx, name, true, NULL);
 }
@@ -340,7 +343,6 @@ result_t objfs_rename(uint64_t parent_dir_id, const char *old_name, const char *
   objfs_object_disk_t dir;
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
-  if (dir.kind != OBJFS_OBJ_DIR) return RESULT_FAILURE(RESULT_INVALID);
   if (dir.subobjects_idx == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
   return update_subobject_by_name(dir.subobjects_idx, old_name, false, new_name);
 }

@@ -1,6 +1,7 @@
 #include "fmt.h"
 #include "lib/debug.h"
 #include <lib/str.h>
+#include <lib/memory.h>
 
 #include <lib/kalloc.h>
 #include <stdarg.h>
@@ -608,40 +609,51 @@ char *apply_format_generic(struct format *format, char *ret_buf,
   }
 
   size_t data_len = strlen(temp);
+  size_t out_cap = (ret_buf_len > 0) ? (ret_buf_len - 1) : 0;
+
+  /* Truncate data_len to fit output buffer */
+  size_t copy_len = (data_len > out_cap) ? out_cap : data_len;
+
+  /* Compute effective width within bounds to avoid underflow */
   size_t width = format->format_width;
-  if (width < data_len)
-    width = data_len;
+  if (width < copy_len) width = copy_len;
+  if (width > out_cap)  width = out_cap;
+  size_t pad_len = width - copy_len; /* safe: width >= copy_len */
 
-  if (width >= ret_buf_len) {
-    dbg("width >= ret_buf_len");
-    width = ret_buf_len - 1;
-  }
-
-  size_t pad_len = width - data_len;
   char pad_char = (format->format_left_pad == FORMAT_LEFT_PAD_ZERO) ? '0' : ' ';
 
+  /* Build output without repeated strlen calls */
+  size_t pos = 0;
   ret_buf[0] = '\0';
 
   if (format->format_justify == FORMAT_JUSTIFY_LEFT) {
-    strcat(ret_buf, temp);
-    for (size_t i = 0; i < pad_len; i++) {
-      size_t len = strlen(ret_buf);
-      if (len + 1 < ret_buf_len) {
-        ret_buf[len] = pad_char;
-        ret_buf[len + 1] = '\0';
-      }
+    /* copy data */
+    if (copy_len > 0) {
+      memcpy(ret_buf + pos, temp, copy_len);
+      pos += copy_len;
+    }
+    /* pad */
+    if (pad_len > 0) {
+      memset(ret_buf + pos, pad_char, pad_len);
+      pos += pad_len;
     }
   } else {
-    for (size_t i = 0; i < pad_len; i++) {
-      size_t len = strlen(ret_buf);
-      if (len + 1 < ret_buf_len) {
-        ret_buf[len] = pad_char;
-        ret_buf[len + 1] = '\0';
-      }
+    /* pad */
+    if (pad_len > 0) {
+      memset(ret_buf + pos, pad_char, pad_len);
+      pos += pad_len;
     }
-    strcat(ret_buf, temp);
+    /* copy data */
+    if (copy_len > 0) {
+      memcpy(ret_buf + pos, temp, copy_len);
+      pos += copy_len;
+    }
   }
 
+  /* NUL-terminate */
+  if (ret_buf_len > 0) {
+    ret_buf[pos < out_cap ? pos : out_cap] = '\0';
+  }
   return ret_buf;
 }
 

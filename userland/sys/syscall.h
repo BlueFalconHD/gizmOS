@@ -46,6 +46,18 @@ static inline long sys_wait(long *status_out) {
   return a0;
 }
 
+// Spawn with argv: path, name(optional), argv array, argc
+static inline long sys_spawn2(const char *path, const char *name,
+                              const char *const *argv, long argc) {
+  register long a0 asm("a0") = (long)path;
+  register long a1 asm("a1") = (long)name;
+  register long a2 asm("a2") = (long)argv;
+  register long a3 asm("a3") = (long)argc;
+  register long a7 asm("a7") = SYSNO_SPAWN2;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
+  return a0;
+}
+
 static inline uint32_t sys_notif_register(uint16_t type, uint64_t handler,
                                           uint64_t arg, uint32_t flags) {
   register long a0 asm("a0") = (long)type;

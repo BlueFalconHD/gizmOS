@@ -6,6 +6,8 @@
 #define SYSNO_EXIT 0x02
 #define SYSNO_SPAWN 0x03
 #define SYSNO_WAIT 0x04
+// Spawn with argv/argc
+#define SYSNO_SPAWN2 0x05
 
 // Work / debug
 #define SYSNO_PRINT_INT 0x10

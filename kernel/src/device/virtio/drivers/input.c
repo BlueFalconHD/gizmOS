@@ -29,7 +29,7 @@ static inline log_t *input_log() {
     g_log_set_level(l, LOG_LEVEL_INFO);
     #endif
   }
-  return l;  
+  return l;
 }
 
 typedef struct {
@@ -271,6 +271,9 @@ static void unified_on_event(const struct virtio_input_event *ev, void *user) {
       acquire(&p->lock);
       g_bool deliver = (p->state != UNUSED) && (p->is_kernel == 0) &&
                        (p->notif_handlers[NOTIF_TYPE_KEYPRESS].handler_va != 0);
+      int head = (int)p->notif_q_head;
+      int tail = (int)p->notif_q_tail;
+      int dropped = (int)p->notif_stats_dropped;
       release(&p->lock);
       if (deliver) {
         g_bool ok =
@@ -279,7 +282,8 @@ static void unified_on_event(const struct virtio_input_event *ev, void *user) {
         (void)ok;
 #endif
 #if INPUT_DEBUG_LEVEL >= 1
-        LOG_INFO(input_log(), "post keypress to pid=%{type: int} ok=%{type: int}", p->pid, ok ? 1 : 0);
+        LOG_INFO(input_log(), "post keypress to pid=%{type: int} ok=%{type: int} (head=%{type: int} tail=%{type: int} dropped=%{type: int})",
+                 p->pid, ok ? 1 : 0, head, tail, dropped);
 #endif
       }
     }

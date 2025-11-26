@@ -133,7 +133,16 @@ static result_t objfs_emit_cb(const objfs_subobject_entry_t *e, void *a) {
   if (n > 64) n = 64;
   for (size_t i = 0; i < n; i++) name[i] = e->name[i];
   name[n] = '\0';
-  ctx->emit(name, e->type, e->subobject_id, ctx->arg);
+  // Derive kind from child descriptor capabilities for accurate reporting
+  uint8_t derived = e->type;
+  objfs_object_disk_t d;
+  if (result_is_ok(objfs_read_descriptor(e->subobject_id, &d))) {
+    if (d.target_id != 0) derived = OBJFS_OBJ_REFERENCE;
+    else if (d.subobjects_idx != 0) derived = OBJFS_OBJ_DIR;
+    else if (d.data_num_blocks != 0 || d.size != 0) derived = OBJFS_OBJ_FILE;
+    else derived = OBJFS_OBJ_UNKNOWN;
+  }
+  ctx->emit(name, derived, e->subobject_id, ctx->arg);
   return RESULT_SUCCESS(0);
 }
 
@@ -277,7 +286,18 @@ result_t objfs_subobject_at(uint64_t dir_id, uint64_t index,
       .want = index, .cur = 0, .name = name_buf, .name_cap = name_cap,
       .out_kind = out_kind, .out_id = out_id, .found = false};
   (void)for_each_subobject_block(head, nth_cb, &nctx);
-  return nctx.found ? RESULT_SUCCESS(0) : RESULT_FAILURE(RESULT_NOT_FOUND);
+  if (!nctx.found) return RESULT_FAILURE(RESULT_NOT_FOUND);
+  // Derive kind from descriptor if requested
+  if (out_kind) {
+    objfs_object_disk_t d;
+    if (result_is_ok(objfs_read_descriptor(*out_id, &d))) {
+      if (d.target_id != 0) *out_kind = OBJFS_OBJ_REFERENCE;
+      else if (d.subobjects_idx != 0) *out_kind = OBJFS_OBJ_DIR;
+      else if (d.data_num_blocks != 0 || d.size != 0) *out_kind = OBJFS_OBJ_FILE;
+      else *out_kind = OBJFS_OBJ_UNKNOWN;
+    }
+  }
+  return RESULT_SUCCESS(0);
 }
 result_t objfs_lookup_path(const char *path, uint64_t *out_obj_id) {
   if (!path || !out_obj_id)
@@ -309,11 +329,8 @@ result_t objfs_lookup_path(const char *path, uint64_t *out_obj_id) {
       result_t r = objfs_find_subobject(cur, name, nlen, &sub, &kind);
       if (!result_is_ok(r))
         return r;
-      // resolve reference hop if needed
-      uint64_t resolved = 0;
-      result_t rr = objfs_object_stat(sub, (objfs_stat_t *)&(objfs_stat_t){0});
-      (void)rr;
-      // cheaper: just follow ref by reload
+      // resolve reference hop if needed via descriptor field (capability-based)
+      uint64_t resolved = sub;
       objfs_object_disk_t d;
       // load raw descriptor
       uint32_t bs = fs->sb.block_size;
@@ -331,10 +348,7 @@ result_t objfs_lookup_path(const char *path, uint64_t *out_obj_id) {
       }
       d = ((objfs_object_disk_t *)buf)[within];
       kfree(buf);
-      if (d.kind == OBJFS_OBJ_REFERENCE)
-        resolved = d.target_id;
-      else
-        resolved = sub;
+      if (d.target_id != 0) resolved = d.target_id;
       cur = resolved;
     }
     p = skip_slashes(p);

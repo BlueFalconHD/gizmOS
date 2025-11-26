@@ -31,6 +31,8 @@ g_bool notification_post_copy(struct proc *p,
 
 // Pop next notification (internal, guarded by p->lock appropriately).
 g_bool notification_pop(struct proc *p, notif_msg_t *out);
+// Pop with preference for a type; if none, pop FIFO
+g_bool notification_pop_prefer(struct proc *p, uint16_t preferred_type, notif_msg_t *out);
 
 // Ensure per-process user executable stub and buffer are mapped and initialized.
 g_bool notification_ensure_userbuf(struct proc *p);

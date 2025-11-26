@@ -200,6 +200,17 @@ g_bool spine_msg_send(struct proc *src, int dest_pid,
             src->pid, dest_pid, (int)size);
 
   g_bool ok = notification_post_copy(dest, NOTIF_TYPE_SPINE_MESSAGE, tmp, total, 0);
+  if (!ok) {
+    acquire(&dest->lock);
+    int head = (int)dest->notif_q_head;
+    int tail = (int)dest->notif_q_tail;
+    int pending = (int)dest->notif_pending;
+    int dropped = (int)dest->notif_stats_dropped;
+    release(&dest->lock);
+    LOG_WARN(spine_log(),
+             "spine_msg_send: enqueue failed -> dest_pid=%{type: int} (head=%{type: int} tail=%{type: int} pending=%{type: int} dropped=%{type: int})",
+             dest_pid, head, tail, pending, dropped);
+  }
   kfree(tmp);
   return ok;
 }

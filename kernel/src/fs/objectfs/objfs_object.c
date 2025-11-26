@@ -57,7 +57,7 @@ static result_t objfs_resolve_reference(uint64_t obj_id, uint64_t *out_id) {
     result_t r = objfs_read_descriptor(cur, &d);
     if (!result_is_ok(r))
       return r;
-    if (d.kind != OBJFS_OBJ_REFERENCE) {
+    if (d.target_id == 0) {
       *out_id = cur;
       return RESULT_SUCCESS(0);
     }
@@ -82,7 +82,11 @@ result_t objfs_object_stat(uint64_t obj_id, objfs_stat_t *out) {
     return r;
   out->size = d.size;
   out->mode = d.mode;
-  out->kind = d.kind;
+  // Derive kind from capabilities (for compatibility with callers expecting kind)
+  if (d.target_id != 0) out->kind = OBJFS_OBJ_REFERENCE;
+  else if (d.subobjects_idx != 0) out->kind = OBJFS_OBJ_DIR;
+  else if (d.data_num_blocks != 0 || d.size != 0) out->kind = OBJFS_OBJ_FILE;
+  else out->kind = OBJFS_OBJ_UNKNOWN;
   out->nlink = d.nlink;
   return RESULT_SUCCESS(0);
 }

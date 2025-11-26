@@ -149,12 +149,141 @@ static inline int starts_with_word(const char *p, const char *word, const char *
 
 static lattice_ctx_t *g_lctx = NULL;
 
-static void find_and_run(const char *name) {
+// --- History support ---
+#define HISTORY_CAP 32
+static char history_lines[HISTORY_CAP][sizeof(input_line)];
+static unsigned int history_count = 0; // number of valid entries (<= HISTORY_CAP)
+static unsigned int history_head = 0;  // next insert position (ring)
+static int history_index = -1;         // -1: not browsing; else ring index currently shown
+static char pending_line_before_hist[sizeof(input_line)];
+static unsigned int pending_len_before_hist = 0;
+
+static inline unsigned int history_oldest_index(void) {
+  if (history_count == 0) return 0;
+  return (history_head + HISTORY_CAP - history_count) % HISTORY_CAP;
+}
+static inline unsigned int history_newest_index(void) {
+  if (history_count == 0) return 0;
+  return (history_head + HISTORY_CAP - 1) % HISTORY_CAP;
+}
+
+static void replace_current_line_with_text(const char *text) {
+  // Move to beginning of input (after prompt)
+  if (cursor_pos > 0) {
+    move_cursor_left(cursor_pos);
+  }
+  // Compute new length (bounded by input buffer capacity - 1)
+  unsigned int new_len = 0;
+  while (text[new_len] && new_len + 1 < sizeof(input_line)) new_len++;
+  // Draw new content
+  print_n(text, new_len);
+  // If previous line was longer, erase the tail
+  if (input_len > new_len) {
+    unsigned int diff = input_len - new_len;
+    print_spaces(diff);
+    move_cursor_left(diff);
+  }
+  // Copy into input buffer
+  for (unsigned int i = 0; i < new_len; i++) {
+    input_line[i] = text[i];
+  }
+  input_len = new_len;
+  cursor_pos = new_len;
+}
+
+static int str_eq_local(const char *a, const char *b) {
+  unsigned int i = 0;
+  while (a[i] && b[i]) {
+    if (a[i] != b[i]) return 0;
+    i++;
+  }
+  return a[i] == '\0' && b[i] == '\0';
+}
+
+static int is_all_space_local(const char *s, unsigned int n) {
+  for (unsigned int i = 0; i < n; i++) {
+    if (!is_space(s[i])) return 0;
+  }
+  return n > 0 ? 0 : 1;
+}
+
+static void history_maybe_push_current(void) {
+  // Ensure input_line is NUL-terminated
+  if (input_len >= sizeof(input_line)) return;
+  input_line[input_len] = '\0';
+  // Skip pushing empty or whitespace-only lines
+  const char *p = input_line;
+  while (*p && is_space(*p)) p++;
+  if (*p == '\0') return;
+  // Avoid consecutive duplicates
+  if (history_count > 0) {
+    unsigned int newest = history_newest_index();
+    // Compare with newest entry
+    if (str_eq_local(history_lines[newest], input_line)) {
+      return;
+    }
+  }
+  // Insert at head
+  unsigned int idx = history_head;
+  // Copy bounded
+  unsigned int i = 0;
+  while (input_line[i] && i + 1 < sizeof(history_lines[0])) {
+    history_lines[idx][i] = input_line[i];
+    i++;
+  }
+  history_lines[idx][i] = '\0';
+  // Advance head
+  history_head = (history_head + 1) % HISTORY_CAP;
+  if (history_count < HISTORY_CAP) {
+    history_count++;
+  }
+}
+
+static void begin_history_browse_if_needed(void) {
+  if (history_index == -1) {
+    // Save the current editing line so it can be restored when browsing ends
+    if (input_len + 1 < sizeof(pending_line_before_hist)) {
+      for (unsigned int i = 0; i < input_len; i++) pending_line_before_hist[i] = input_line[i];
+      pending_line_before_hist[input_len] = '\0';
+      pending_len_before_hist = input_len;
+    } else {
+      pending_line_before_hist[0] = '\0';
+      pending_len_before_hist = 0;
+    }
+  }
+}
+
+static void find_and_run(const char *cmdline) {
   if (!g_lctx) return;
+  // Tokenize: program name + up to 8 args, separated by spaces
+  const int MAX_ARGS = 8;
+  const char *argv[MAX_ARGS];
+  int argc = 0;
+  // Extract program token
+  const char *p = skip_spaces(cmdline);
+  const char *start = p;
+  while (*p && !is_space(*p)) p++;
+  if (p == start) return;
+  char namebuf[64];
+  unsigned int nlen = 0;
+  const char *q = start;
+  while (q < p && nlen + 1 < sizeof(namebuf)) namebuf[nlen++] = *q++;
+  namebuf[nlen] = '\0';
+  // Gather args
+  const char *rest = skip_spaces(p);
+  while (*rest && argc < MAX_ARGS) {
+    const char *as = rest;
+    while (*rest && !is_space(*rest)) rest++;
+    argv[argc++] = as;
+    if (*rest == '\0') break;
+    *((char *)rest) = '\0'; // temporarily null-terminate in-place on input_line buffer
+    rest = skip_spaces(rest + 1);
+  }
+
   lattice_value_t *req = lat_map_new();
-  lat_map_set_str(req, "name", name);
+  lat_map_set_str(req, "name", namebuf);
   lattice_value_t *resp = NULL;
-  if (lattice_send_message_with_reply_sync(g_lctx, SERVICE_PATHD, "pathd_locate", req, &resp, 1000) == 0 && resp) {
+  if (lattice_send_message_with_reply_sync(g_lctx, SERVICE_PATHD, "pathd_locate", req, &resp, 100000) == 0 && resp) {
     int ok = 0;
     (void)lat_map_get_bool(resp, "ok", &ok);
 
@@ -162,10 +291,8 @@ static void find_and_run(const char *name) {
       const char *path = NULL;
       lat_map_get_str(resp, "path", &path);
 
-
-
       if (path) {
-        long pid = sys_spawn(path, name);
+        long pid = sys_spawn2(path, namebuf, (const char *const *)argv, argc);
         if (pid >= 0) {
           long status = 0;
           (void)sys_wait(&status);
@@ -183,7 +310,7 @@ static void find_and_run(const char *name) {
   }
   lat_free(req);
   sys_print_str("unknown command: ");
-  sys_print_str(name);
+  sys_print_str(namebuf);
   sys_print_str("\n");
 }
 
@@ -313,6 +440,39 @@ bool process_keypress(keypress_t *kp) {
     return true;
   }
 
+  // History navigation: Up/Down arrows
+  if (kp->keycode == KEY_UP) {
+    if (history_count == 0) return true;
+    begin_history_browse_if_needed();
+    unsigned int newest = history_newest_index();
+    unsigned int oldest = history_oldest_index();
+    if (history_index == -1) {
+      history_index = (int)newest;
+    } else if ((unsigned int)history_index != oldest) {
+      history_index = (history_index + HISTORY_CAP - 1) % HISTORY_CAP;
+    }
+    replace_current_line_with_text(history_lines[history_index]);
+    return true;
+  }
+
+  if (kp->keycode == KEY_DOWN) {
+    if (history_count == 0) return true;
+    if (history_index == -1) {
+      // Not browsing, nothing to do
+      return true;
+    }
+    unsigned int newest = history_newest_index();
+    if ((unsigned int)history_index == newest) {
+      // Leave history browsing, restore pending edit line
+      history_index = -1;
+      replace_current_line_with_text(pending_line_before_hist);
+    } else {
+      history_index = (history_index + 1) % HISTORY_CAP;
+      replace_current_line_with_text(history_lines[history_index]);
+    }
+    return true;
+  }
+
   if (kp->keycode == KEY_DELETE) {
     if (cursor_pos < input_len) {
       // Delete char at cursor_pos (shift left tail)
@@ -325,6 +485,7 @@ bool process_keypress(keypress_t *kp) {
       print_n(&input_line[cursor_pos], tail_len);
       sys_print_str(" ");
       move_cursor_left(tail_len + 1);
+      history_index = -1; // reset browsing on edit
     }
     return true;
   }
@@ -365,16 +526,20 @@ bool process_keypress(keypress_t *kp) {
         // Return cursor to logical position
         move_cursor_left(tail_len + 1);
       }
+      history_index = -1; // reset browsing on edit
     }
     return true;
   }
 
   // Enter (accept line). Handle both main Enter and keypad Enter.
   if (kp->keycode == KEY_ENTER || kp->keycode == KEY_KPENTER) {
+    // Push to history before command handling mutates the buffer
+    history_maybe_push_current();
     sys_print_str("\n");
     handle_command_line();
     input_len = 0;
     cursor_pos = 0;
+    history_index = -1;
     print_prompt();
     return true;
   }
@@ -405,6 +570,7 @@ bool process_keypress(keypress_t *kp) {
       // Move back over the tail
       move_cursor_left(tail_len);
     }
+    history_index = -1; // reset browsing on edit
     return true;
   }
 

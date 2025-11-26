@@ -14,7 +14,9 @@
 #include <lib/str.h>
 #include <lib/memory.h>
 
-#define SYSCALL_DEBUG 10
+#ifndef SYSCALL_DEBUG
+#define SYSCALL_DEBUG 0
+#endif
 
 // Subobject listing helper callbacks (for handle API)
 typedef struct { int found; } has_subobject_ctx_t;
@@ -42,11 +44,8 @@ static inline log_t *syscall_log() {
   static log_t *l = NULL;
   if (!l) {
     l = g_log_create("proc", "syscall");
-#ifdef G_DEBUG
-#ifdef SYSCALL_DEBUG
+#if SYSCALL_DEBUG >= 1
     g_log_set_level(l, LOG_LEVEL_DEBUG);
-#endif
-    g_log_set_level(l, LOG_LEVEL_INFO);
 #else
     g_log_set_level(l, LOG_LEVEL_INFO);
 #endif
@@ -59,9 +58,15 @@ syscall_err_t syscall_dispatch(proc_t *p, syscall_num_t num) {
        i++) {
     syscall_entry_t se = syscall_table[i];
     if (num == se.call_number) {
+        // only log about spine stuff
+        if (num == SYSCALL_NUM_SPINE_SERVICE_ADVERTISE ||
+            num == SYSCALL_NUM_SPINE_SERVICE_LOOKUP ||
+            num == SYSCALL_NUM_SPINE_MSG_SEND ||
+            num == SYSCALL_NUM_SPINE_GET_SEAL) {
       LOG_DEBUG(syscall_log(),
                "syscall dispatched from %{type: int}: %{type: str} (0x%{type: hex})",
                p->pid, se.desc, num);
+            }
       return se.handler(p, num);
     }
   }
@@ -111,6 +116,63 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
     uint64_t status_addr = p->trapframe->a0;
     uint64_t rpid = wait(status_addr);
     p->trapframe->a0 = rpid;
+    return SYSCALL_ERR_NONE;
+  }
+  case SYSCALL_NUM_SPAWN2: {
+    // a0 = user path, a1 = user name (opt), a2 = user argv (char**), a3 = argc
+    result_t rpath = copyinstr(p->pagetable, p->trapframe->a0, 256);
+    if (!result_is_ok(rpath)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    char *kpath = (char *)result_unwrap(rpath);
+    char *kname = NULL;
+    if (p->trapframe->a1) {
+      result_t rname = copyinstr(p->pagetable, p->trapframe->a1, 128);
+      if (!result_is_ok(rname)) { kfree(kpath); p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+      kname = (char *)result_unwrap(rname);
+    }
+    uint64_t argv_uva = p->trapframe->a2;
+    uint64_t argc = p->trapframe->a3;
+    const uint64_t MAX_ARGC = 16;
+    if (argc > MAX_ARGC) argc = MAX_ARGC;
+    char **kargv = NULL;
+    if (argc > 0 && argv_uva != 0) {
+      kargv = (char **)kalloc(sizeof(char *) * argc);
+      if (!kargv) { if (kname) kfree(kname); kfree(kpath); p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+      for (uint64_t i = 0; i < argc; i++) {
+        uint64_t uptr = 0;
+        if (!result_is_ok(copyin(p->pagetable, &uptr, argv_uva + i * sizeof(uint64_t), sizeof(uint64_t)))) {
+          for (uint64_t j = 0; j < i; j++) if (kargv[j]) kfree(kargv[j]);
+          kfree(kargv);
+          if (kname) kfree(kname);
+          kfree(kpath);
+          p->trapframe->a0 = (uint64_t)-1;
+          return SYSCALL_ERR_NONE;
+        }
+        if (uptr == 0) { kargv[i] = NULL; continue; }
+        result_t rs = copyinstr(p->pagetable, uptr, 256);
+        if (!result_is_ok(rs)) {
+          for (uint64_t j = 0; j < i; j++) if (kargv[j]) kfree(kargv[j]);
+          kfree(kargv);
+          if (kname) kfree(kname);
+          kfree(kpath);
+          p->trapframe->a0 = (uint64_t)-1;
+          return SYSCALL_ERR_NONE;
+        }
+        kargv[i] = (char *)result_unwrap(rs);
+      }
+    }
+    result_t rp = proc_from_vessel_path_args(kpath, kname ? kname : kpath, argc, (const char * const *)kargv);
+    if (kargv) {
+      for (uint64_t i = 0; i < argc; i++) if (kargv[i]) kfree(kargv[i]);
+      kfree(kargv);
+    }
+    if (kname) kfree(kname);
+    kfree(kpath);
+    if (!result_is_ok(rp)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    proc_t *child = (proc_t *)result_unwrap(rp);
+    acquire(&wait_lock);
+    child->parent = p;
+    release(&wait_lock);
+    p->trapframe->a0 = (uint64_t)child->pid;
     return SYSCALL_ERR_NONE;
   }
   default:
@@ -202,11 +264,11 @@ syscall_err_t syscall_handle_notification(proc_t *p, syscall_num_t num) {
     return SYSCALL_ERR_NONE;
   } else if (num == SYSCALL_NUM_NOTIF_DONE) {
 
-    LOG_DEBUG(syscall_log(),
-             "notif.done(): pid=%{type: int} valid(before)=%{type: int} "
-             "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
-             p->pid, (int)p->notif_ctx.valid, (int)p->notif_pending,
-             (int)p->notif_q_head, (int)p->notif_q_tail);
+    // LOG_DEBUG(syscall_log(),
+    //          "notif.done(): pid=%{type: int} valid(before)=%{type: int} "
+    //          "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
+    //          p->pid, (int)p->notif_ctx.valid, (int)p->notif_pending,
+    //          (int)p->notif_q_head, (int)p->notif_q_tail);
 
     /*
      * Completion of a notification handler:
@@ -219,11 +281,11 @@ syscall_err_t syscall_handle_notification(proc_t *p, syscall_num_t num) {
       notif_ctx_restore_to_trapframe(p);
     }
 
-    LOG_DEBUG(syscall_log(),
-             "notif.done(): pid=%{type: int} valid(after)=%{type: int} "
-             "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
-             p->pid, (int)p->notif_ctx.valid, (int)p->notif_pending,
-             (int)p->notif_q_head, (int)p->notif_q_tail);
+    // LOG_DEBUG(syscall_log(),
+    //          "notif.done(): pid=%{type: int} valid(after)=%{type: int} "
+    //          "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
+    //          p->pid, (int)p->notif_ctx.valid, (int)p->notif_pending,
+    //          (int)p->notif_q_head, (int)p->notif_q_tail);
 
     return SYSCALL_ERR_NONE;
   } else {

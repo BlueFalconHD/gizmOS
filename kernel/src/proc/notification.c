@@ -96,7 +96,10 @@ g_bool notification_post_copy(struct proc *p, uint16_t type, const void *data,
     // queue full: drop newest by default
     p->notif_stats_dropped++;
 #if NOTIF_DEBUG_LEVEL >= 1
-    LOG_WARN(notif_log(), "drop: pid=%{type: int} type=%{type: int} len=%{type: int}", p->pid, (int)type, (int)len);
+    if (type == 2) { // TODO: remove temp filter for spine
+    LOG_WARN(notif_log(), "drop: pid=%{type: int} type=%{type: int} len=%{type: int} (pending=%{type: int} head=%{type: int} tail=%{type: int} dropped=%{type: int})",
+             p->pid, (int)type, (int)len, (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail, (int)p->notif_stats_dropped);
+    }
 #endif
   } else {
     notif_msg_t *m = &p->notif_queue[p->notif_q_tail];
@@ -110,7 +113,10 @@ g_bool notification_post_copy(struct proc *p, uint16_t type, const void *data,
     p->notif_pending = 1;
     enq = true;
 #if NOTIF_DEBUG_LEVEL >= 2
-    LOG_DEBUG(notif_log(), "enq: pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int}", p->pid, (int)m->id, (int)m->type, (int)m->len);
+    if (type == 2) { // TODO: remove temp filter for spine
+    LOG_DEBUG(notif_log(), "enq: pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int} (head=%{type: int} tail=%{type: int})",
+              p->pid, (int)m->id, (int)m->type, (int)m->len, (int)p->notif_q_head, (int)p->notif_q_tail);
+    }
 #endif
   }
 
@@ -130,16 +136,70 @@ g_bool notification_pop(struct proc *p, notif_msg_t *out) {
     p->notif_q_head = inc_mod(p->notif_q_head, NOTIF_QUEUE_SIZE);
     ok = true;
 #if NOTIF_DEBUG_LEVEL >= 2
+    if (out->type == 2) { // TODO: remove temp filter for spine
     LOG_DEBUG(notif_log(), "pop: pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int}", p->pid, (int)out->id, (int)out->type, (int)out->len);
+    }
 #endif
   } else {
+    if (out->type == 2) { // TODO: remove temp filter for spine
     LOG_DEBUG(notif_log(), "pop: pid=%{type: int} - queue empty", p->pid);
     p->notif_pending = 0;
+    }
   }
   release(&p->lock);
   return ok;
 }
 
+// Prefer popping a specific notification type if present in the queue.
+// Falls back to FIFO head when not found.
+g_bool notification_pop_prefer(struct proc *p, uint16_t preferred_type, notif_msg_t *out) {
+  if (!p || !out)
+    return false;
+  g_bool ok = false;
+  acquire(&p->lock);
+  if (p->notif_q_head != p->notif_q_tail) {
+    // Scan the ring for preferred type
+    uint32_t picked = (uint32_t)-1;
+    uint32_t idx = p->notif_q_head;
+    while (idx != p->notif_q_tail) {
+      if (p->notif_queue[idx].type == preferred_type) {
+        picked = idx;
+        break;
+      }
+      idx = inc_mod(idx, NOTIF_QUEUE_SIZE);
+    }
+    if (picked == (uint32_t)-1) {
+      // Fallback: FIFO
+      *out = p->notif_queue[p->notif_q_head];
+      p->notif_q_head = inc_mod(p->notif_q_head, NOTIF_QUEUE_SIZE);
+#if NOTIF_DEBUG_LEVEL >= 2
+      if (out->type == 2) { // TODO: remove temp filter for spine
+      LOG_DEBUG(notif_log(), "pop(fifo): pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int}",
+                p->pid, (int)out->id, (int)out->type, (int)out->len);
+        }
+#endif
+    } else {
+      // Swap picked with head and pop
+      notif_msg_t tmp = p->notif_queue[p->notif_q_head];
+      *out = p->notif_queue[picked];
+      p->notif_queue[picked] = tmp;
+      p->notif_q_head = inc_mod(p->notif_q_head, NOTIF_QUEUE_SIZE);
+#if NOTIF_DEBUG_LEVEL >= 1
+if (out->type == 2) { // TODO: remove temp filter for spine
+      LOG_DEBUG(notif_log(), "pop(prefer:%{type: int}): pid=%{type: int} id=%{type: int} len=%{type: int} (head=%{type: int} tail=%{type: int})",
+                (int)preferred_type, p->pid, (int)out->id, (int)out->len,
+                (int)p->notif_q_head, (int)p->notif_q_tail);
+}
+#endif
+    }
+    ok = true;
+  } else {
+    // empty
+    p->notif_pending = 0;
+  }
+  release(&p->lock);
+  return ok;
+}
 void notif_ctx_clear(struct proc *p) { p->notif_ctx.valid = 0; }
 
 void notif_ctx_save_from_trapframe(struct proc *p) {
@@ -194,7 +254,6 @@ void notif_ctx_restore_to_trapframe(struct proc *p) {
 #endif
 }
 
-// --- Nested delivery helpers ---
 g_bool notif_ctx_can_nest(struct proc *p) {
   // lazy-initialize: depth==0 when unused
   if (p->notif_stack.depth > NOTIF_MAX_NEST_DEPTH)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import struct
 import sys
+import os
 
 MAGIC = 0x20206c6573736576  # "vessel  "
 
@@ -14,7 +15,7 @@ SEG_X = 1 << 2
 def align_up(x, a):
     return (x + a - 1) & ~(a - 1)
 
-def pack_single(bin_path, out_path, vaddr=0x0, flags=SEG_R | SEG_W | SEG_X, entry=0x0):
+def build_vessel_bytes(bin_path, vaddr=0x0, flags=SEG_R | SEG_W | SEG_X, entry=0x0) -> bytes:
     with open(bin_path, 'rb') as f:
         payload = f.read()
 
@@ -77,22 +78,56 @@ def pack_single(bin_path, out_path, vaddr=0x0, flags=SEG_R | SEG_W | SEG_X, entr
         0)
     cmds[:seg_size] = seg
 
-    with open(out_path, 'wb') as out:
-        out.write(struct.pack(header_fmt, MAGIC, (1 << 16) | 0, commands_size))
-        out.write(cmds)
-        out.write(payload)
+    out = bytearray()
+    out += struct.pack(header_fmt, MAGIC, (1 << 16) | 0, commands_size)
+    out += cmds
+    out += payload
+    return bytes(out)
 
 def main(argv):
     if len(argv) < 3:
-        print('Usage: vessel_pack.py <in.bin> <out.vessel> [entry_hex]')
+        print('Usage: vessel_pack.py <in.bin> <out.{vessel|obj}> [entry_hex]')
         return 1
     bin_path = argv[1]
     out_path = argv[2]
     entry = int(argv[3], 16) if len(argv) > 3 else 0
-    # Single flat segment for now: make it readable, writable, and executable.
-    # Writable is required so that globals/BSS in the same segment can be
-    # modified without triggering store page faults in user space.
-    pack_single(bin_path, out_path, vaddr=0x0, flags=SEG_R | SEG_W | SEG_X, entry=entry)
+    # Build vessel bytes (single flat segment, RWX to support BSS/globals)
+    vessel_bytes = build_vessel_bytes(bin_path, vaddr=0x0, flags=SEG_R | SEG_W | SEG_X, entry=entry)
+
+    # If output ends with .obj, emit an ObjectFS container directory:
+    #   <out>.obj/
+    #     contents           (human-readable metadata)
+    #     attributes.yaml    (typed attributes)
+    #     subobjects/
+    #       exe              (the actual vessel file)
+    if out_path.endswith('.obj'):
+        obj_dir = out_path
+        sub_dir = os.path.join(obj_dir, 'subobjects')
+        os.makedirs(sub_dir, exist_ok=True)
+        # write subobject exe
+        exe_path = os.path.join(sub_dir, 'exe')
+        with open(exe_path, 'wb') as f:
+            f.write(vessel_bytes)
+        # write attributes.yaml - mark this object as a "vessel" container
+        attrs_path = os.path.join(obj_dir, 'attributes.yaml')
+        with open(attrs_path, 'w', encoding='utf-8') as f:
+            f.write('vessel: true\n')
+        # write contents (metadata)
+        meta_path = os.path.join(obj_dir, 'contents')
+        flags_str = []
+        if SEG_R & (SEG_R | SEG_W | SEG_X): flags_str.append('R')
+        if SEG_W & (SEG_R | SEG_W | SEG_X): flags_str.append('W')
+        if SEG_X & (SEG_R | SEG_W | SEG_X): flags_str.append('X')
+        with open(meta_path, 'w', encoding='utf-8') as f:
+            f.write('format: vessel\n')
+            f.write(f'entry: 0x{entry:016x}\n')
+            f.write(f'payload_bytes: {len(vessel_bytes)}\n')
+            f.write(f'flags: {"".join(flags_str)}\n')
+        return 0
+
+    # Otherwise, maintain legacy behavior and write a flat .vessel file.
+    with open(out_path, 'wb') as out:
+        out.write(vessel_bytes)
     return 0
 
 if __name__ == '__main__':

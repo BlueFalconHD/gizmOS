@@ -40,7 +40,7 @@ int main(void) {
     puts_out(out, "Failed to open '/' as handle\n");
   }
 
-  long file_h = obj_open("/HELLO.VES", 0);
+  long file_h = obj_open("/vessels/hello.vessel", 0);
 
   if (file_h >= 0) {
     hexdump_set_out(out >= 0 ? out : 0);
@@ -51,7 +51,7 @@ int main(void) {
     }
     obj_close(file_h);
   } else {
-    puts_out(out, "HELLO.VES not found in ObjectFS\n");
+    puts_out(out, "hello.vessel not found in ObjectFS\n");
   }
   return 0;
 }

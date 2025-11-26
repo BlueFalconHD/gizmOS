@@ -1,6 +1,8 @@
 // Minimal shell: reads keyboard input via notifications and supports `echo`.
 // Reuses key mapping helpers from keynotify.
 #include "../../sys/syscall.h"
+#include "../../lattice/lattice.h"
+#include "../../include/system_services.h"
 #include "../keynotify/keypress.h"
 #include "../keynotify/virtio_keycode.h"
 #include <stdbool.h>
@@ -145,6 +147,46 @@ static inline int starts_with_word(const char *p, const char *word, const char *
   return 1;
 }
 
+static lattice_ctx_t *g_lctx = NULL;
+
+static void find_and_run(const char *name) {
+  if (!g_lctx) return;
+  lattice_value_t *req = lat_map_new();
+  lat_map_set_str(req, "name", name);
+  lattice_value_t *resp = NULL;
+  if (lattice_send_message_with_reply_sync(g_lctx, SERVICE_PATHD, "pathd_locate", req, &resp, 1000) == 0 && resp) {
+    int ok = 0;
+    (void)lat_map_get_bool(resp, "ok", &ok);
+
+    if (ok) {
+      const char *path = NULL;
+      lat_map_get_str(resp, "path", &path);
+
+
+
+      if (path) {
+        long pid = sys_spawn(path, name);
+        if (pid >= 0) {
+          long status = 0;
+          (void)sys_wait(&status);
+        } else {
+          sys_print_str("failed to spawn ");
+          sys_print_str(path);
+          sys_print_str("\n");
+        }
+        lat_free(resp);
+        lat_free(req);
+        return;
+      }
+    }
+    lat_free(resp);
+  }
+  lat_free(req);
+  sys_print_str("unknown command: ");
+  sys_print_str(name);
+  sys_print_str("\n");
+}
+
 static void handle_command_line(void) {
   input_line[input_len] = '\0';
 
@@ -197,7 +239,7 @@ static void handle_command_line(void) {
   // Built-in: hello -> run HELLO.VES demo program
   rest = p;
   if (starts_with_word(p, "hello", &rest)) {
-    long pid = sys_spawn("HELLO.VES", "hello");
+    long pid = sys_spawn("/vessels/hello.vessel", "hello");
     if (pid < 0) {
       sys_print_str("failed to spawn hello\n");
     } else {
@@ -208,10 +250,7 @@ static void handle_command_line(void) {
     return;
   }
 
-  // Unknown command
-  sys_print_str("unknown command: ");
-  sys_print_str(p);
-  sys_print_str("\n");
+  find_and_run(p);
 }
 
 bool process_keypress(keypress_t *kp) {
@@ -384,9 +423,8 @@ key_handler(uint64_t type, uint64_t payload_uva, uint64_t len, uint64_t arg) {
 }
 
 int main(void) {
+  g_lctx = lattice_init(NULL);
   print_prompt();
   sys_notif_register(1 /* keypress */, (uint64_t)&key_handler, 0, 0);
   spin();
 }
-
-

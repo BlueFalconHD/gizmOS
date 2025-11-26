@@ -26,7 +26,10 @@ CMakeOutput.log
 
 # Compiler generated object files and executables
 *.o
-*.obj
+
+# only ignore .obj if it doesn't reside in disk/
+!disk/*.obj
+
 *.elf
 *.exe
 *.out

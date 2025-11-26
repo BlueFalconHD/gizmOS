@@ -8,14 +8,20 @@
 #ifndef NOTIF_DEBUG_LEVEL
 #define NOTIF_DEBUG_LEVEL 0
 #endif
-#if NOTIF_DEBUG_LEVEL >= 1
+
 static inline log_t *notif_log() {
   static log_t *l = NULL;
-  if (!l)
+  if (!l) {
     l = g_log_create("proc", "notif");
+    #if NOTIF_DEBUG_LEVEL >= 1
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
+  }
   return l;
 }
-#endif
+
 #include <lib/spinlock.h>
 #include <lib/usermem.h>
 #include <mem_layout.h>
@@ -67,14 +73,18 @@ g_bool notification_unregister(struct proc *p, uint16_t type, uint32_t id) {
 
 g_bool notification_post_copy(struct proc *p, uint16_t type, const void *data,
                               uint64_t len, uint16_t flags) {
-  if (!p || type >= NOTIF_MAX_TYPE)
+  if (!p || type >= NOTIF_MAX_TYPE) {
+    LOG_WARN(notif_log(), "invalid notification post: pid=%{type: int} type=%{type: int}", p ? p->pid : -1, (int)type);
     return false;
+  }
 
   void *kbuf = NULL;
   if (len > 0) {
     kbuf = kalloc(len);
-    if (!kbuf)
+    if (!kbuf) {
+      LOG_WARN(notif_log(), "notification post: pid=%{type: int} type=%{type: int} len=%{type: int} - kalloc failed", p->pid, (int)type, (int)len);
       return false;
+    }
     memcpy(kbuf, data, len);
   }
 
@@ -123,6 +133,7 @@ g_bool notification_pop(struct proc *p, notif_msg_t *out) {
     LOG_DEBUG(notif_log(), "pop: pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int}", p->pid, (int)out->id, (int)out->type, (int)out->len);
 #endif
   } else {
+    LOG_DEBUG(notif_log(), "pop: pid=%{type: int} - queue empty", p->pid);
     p->notif_pending = 0;
   }
   release(&p->lock);
@@ -143,7 +154,7 @@ void notif_ctx_save_from_trapframe(struct proc *p) {
   p->notif_ctx.a[6] = p->trapframe->a6;
   p->notif_ctx.a[7] = p->trapframe->a7;
   p->notif_ctx.valid = 1;
-#if NOTIF_DEBUG_LEVEL >= 1
+#if NOTIF_DEBUG_LEVEL >= 3
   LOG_DEBUG(notif_log(),
             "ctx.save: pid=%{type: int} epc=0x%{type: hex} valid=%{type: int} "
             "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
@@ -155,7 +166,7 @@ void notif_ctx_save_from_trapframe(struct proc *p) {
 void notif_ctx_restore_to_trapframe(struct proc *p) {
   if (!p->notif_ctx.valid)
     return;
-#if NOTIF_DEBUG_LEVEL >= 1
+#if NOTIF_DEBUG_LEVEL >= 3
   LOG_DEBUG(notif_log(),
             "ctx.restore(begin): pid=%{type: int} saved_epc=0x%{type: hex} "
             "valid=%{type: int} (pending=%{type: int} head=%{type: int} "
@@ -174,12 +185,71 @@ void notif_ctx_restore_to_trapframe(struct proc *p) {
   p->trapframe->a6 = p->notif_ctx.a[6];
   p->trapframe->a7 = p->notif_ctx.a[7];
   p->notif_ctx.valid = 0;
-#if NOTIF_DEBUG_LEVEL >= 1
+#if NOTIF_DEBUG_LEVEL >= 3
   LOG_DEBUG(notif_log(),
             "ctx.restore(end): pid=%{type: int} epc=0x%{type: hex} valid=%{type: int} "
             "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
             p->pid, p->trapframe->epc, (int)p->notif_ctx.valid,
             (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail);
+#endif
+}
+
+// --- Nested delivery helpers ---
+g_bool notif_ctx_can_nest(struct proc *p) {
+  // lazy-initialize: depth==0 when unused
+  if (p->notif_stack.depth > NOTIF_MAX_NEST_DEPTH)
+    p->notif_stack.depth = 0;
+  return p->notif_stack.depth < NOTIF_MAX_NEST_DEPTH;
+}
+
+void notif_ctx_push_from_trapframe(struct proc *p) {
+  if (!notif_ctx_can_nest(p))
+    return;
+  uint8_t idx = p->notif_stack.depth;
+  notif_ctx_t *f = &p->notif_stack.frames[idx];
+  f->saved_epc = p->trapframe->epc;
+  f->saved_ra  = p->trapframe->ra;
+  f->a[0] = p->trapframe->a0;
+  f->a[1] = p->trapframe->a1;
+  f->a[2] = p->trapframe->a2;
+  f->a[3] = p->trapframe->a3;
+  f->a[4] = p->trapframe->a4;
+  f->a[5] = p->trapframe->a5;
+  f->a[6] = p->trapframe->a6;
+  f->a[7] = p->trapframe->a7;
+  f->valid = 1;
+  p->notif_stack.depth++;
+#if NOTIF_DEBUG_LEVEL >= 3
+  LOG_DEBUG(notif_log(),
+            "ctx.push: pid=%{type: int} depth=%{type: int}", p->pid, (int)p->notif_stack.depth);
+#endif
+}
+
+void notif_ctx_pop_restore_to_trapframe(struct proc *p) {
+  if (p->notif_stack.depth == 0)
+    return;
+  uint8_t idx = p->notif_stack.depth - 1;
+  notif_ctx_t *f = &p->notif_stack.frames[idx];
+  if (!f->valid) {
+    // Defensive: clear inconsistent state
+    p->notif_stack.depth = 0;
+    return;
+  }
+  p->trapframe->epc = f->saved_epc;
+  p->trapframe->ra  = f->saved_ra;
+  p->trapframe->a0 = f->a[0];
+  p->trapframe->a1 = f->a[1];
+  p->trapframe->a2 = f->a[2];
+  p->trapframe->a3 = f->a[3];
+  p->trapframe->a4 = f->a[4];
+  p->trapframe->a5 = f->a[5];
+  p->trapframe->a6 = f->a[6];
+  p->trapframe->a7 = f->a[7];
+  f->valid = 0;
+  p->notif_stack.depth = idx;
+#if NOTIF_DEBUG_LEVEL >= 3
+  LOG_DEBUG(notif_log(),
+            "ctx.pop: pid=%{type: int} depth=%{type: int}", p->pid, (int)p->notif_stack.depth);
 #endif
 }
 

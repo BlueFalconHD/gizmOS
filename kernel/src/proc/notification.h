@@ -39,6 +39,10 @@ g_bool notification_ensure_userbuf(struct proc *p);
 void notif_ctx_clear(struct proc *p);
 void notif_ctx_save_from_trapframe(struct proc *p);
 void notif_ctx_restore_to_trapframe(struct proc *p);
+// New helpers for nested delivery
+g_bool notif_ctx_can_nest(struct proc *p);
+void   notif_ctx_push_from_trapframe(struct proc *p);
+void   notif_ctx_pop_restore_to_trapframe(struct proc *p);
 
 // Constants for the injected return stub layout inside user buffer
 #define NOTIF_STUB_OFFSET   0x0

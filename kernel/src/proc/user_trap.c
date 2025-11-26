@@ -55,7 +55,11 @@ void user_trap_ret(void) {
   }
 
   // Before switching back to user, inject a pending notification if any.
-  if (!p->is_kernel && p->notif_pending && p->notif_ctx.valid == 0) {
+  // Allow limited nesting: when already in a handler (valid!=0), we can push
+  // the current context and inject another handler as long as the stack
+  // depth limit has not been reached.
+  if (!p->is_kernel && p->notif_pending &&
+      (p->notif_ctx.valid == 0 || notif_ctx_can_nest(p))) {
     notif_msg_t m;
     if (notification_pop(p, &m)) {
       if (notification_ensure_userbuf(p)) {
@@ -73,19 +77,22 @@ void user_trap_ret(void) {
           }
 
 #if NOTIF_DELIVERY_DEBUG_LEVEL >= 1
+          // print notification info (origin process, recipient process, type, length)
           LOG_DEBUG(user_trap_log(),
-                   "[notif] inject: pid=%{type: int} type=%{type: int} "
-                   "n=%{type: int} handler=%{type: hex} uva=0x%{type: hex} "
-                   "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
-                   p->pid, (int)m.type, (int)n, h->handler_va, uva,
-                   (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail);
+                    "notif.deliver: -> pid=%{type: int} name=%{type: str} type=%{type: int} len=%{type: int} (handler=0x%{type: hex})",
+                    p->pid, p->name, (int)m.type, (int)m.len, h->handler_va);
 #endif
           /*
-           * Save the current user context so we can resume it once the
+           * Save/stack the current user context so we can resume it once the
            * notification handler completes. In addition to the epc and
            * argument registers, we also snapshot the return address (ra).
+           * If already handling a notification, push onto the nest stack.
            */
-          notif_ctx_save_from_trapframe(p);
+          if (p->notif_ctx.valid == 0) {
+            notif_ctx_save_from_trapframe(p);
+          } else {
+            notif_ctx_push_from_trapframe(p);
+          }
           /*
            * Arrange for the handler to be called as:
            *   handler(type, payload_uva, len, arg);
@@ -110,6 +117,14 @@ void user_trap_ret(void) {
       if (m.kbuf)
         kfree(m.kbuf);
     }
+  } else if (!p->is_kernel && p->notif_pending && p->notif_ctx.valid != 0) {
+#if NOTIF_DELIVERY_DEBUG_LEVEL >= 10
+    LOG_DEBUG(user_trap_log(),
+             "[notif] skip(nested): pid=%{type: int} valid=%{type: int} "
+             "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
+             p->pid, (int)p->notif_ctx.valid,
+             (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail);
+#endif
   }
 
   uint64_t trampoline_uservec = TRAMPOLINE + (uservec - trampoline);
@@ -185,9 +200,11 @@ void usertrap(void) {
 
     int callnum = p->trapframe->a7;
 
+#if SYSCALL_DEBUG_LEVEL >= 10
     LOG_DEBUG(user_trap_log(),
              "ecall: pid=%{type: int} num=0x%{type: hex}",
              p->pid, (uint64_t)callnum);
+#endif
 
     syscall_err_t e = syscall_dispatch(p, callnum);
     p->trapframe->a7 = (uint64_t)e;

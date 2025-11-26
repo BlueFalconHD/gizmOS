@@ -26,6 +26,11 @@ gizmOS is a minimal RISC-V 64 kernel that provides foundational OS capabilities 
   - [x] Time functions with sleep capabilities
   - [x] Basic math functions
 
+- [x] User-space runtime
+
+  - [x] Minimal libc-lite with essential string/memory routines
+  - [x] Dynamic heap via `sbrk()`-backed `malloc`/`free`
+
 - [x] Exception and interrupt handling
 
   - [x] Trap framework

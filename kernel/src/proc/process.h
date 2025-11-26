@@ -73,6 +73,9 @@ typedef struct proc {
   uint64_t sz;
   page_table_t *pagetable;
   struct trapframe *trapframe;
+  uint64_t heap_base;
+  uint64_t stack_base;
+  uint64_t stack_top;
 
   char name[16];
 
@@ -92,6 +95,7 @@ typedef struct proc {
   notif_ctx_t     notif_ctx;
   uint64_t        notif_userbuf_base; // user VA for buffer+stub
   uint64_t        notif_userbuf_size;
+  notif_ctx_stack_t notif_stack; /* nested delivery contexts */
 
   /* Unified descriptors */
   descriptor_t *desc_table[PROC_MAX_DESC];

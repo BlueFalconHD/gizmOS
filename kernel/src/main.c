@@ -51,7 +51,7 @@
 //   0 -> info and above (quieter)
 //   1 -> include debug boot logs (verbose)
 #ifndef KERN_BOOT_DEBUG_LEVEL
-#define KERN_BOOT_DEBUG_LEVEL 0
+#define KERN_BOOT_DEBUG_LEVEL 1
 #endif
 
 // #define TESTS
@@ -98,22 +98,81 @@ static inline uint32_t rand(void) {
 typedef struct {
   log_t *log;
 } list_ctx_t;
+
+typedef struct {
+  log_t *log;
+  int depth;
+} objfs_tree_ctx_t;
+
+#define OBJFS_TREE_MAX_DEPTH 16
+
 static void objfs_root_emit(const char *name, uint8_t kind, uint64_t id, void *arg) {
-  (void)kind; (void)id;
+  (void)kind;
+  (void)id;
   list_ctx_t *ctx = (list_ctx_t *)arg;
   char line[128];
   int pos = 0;
   const char *t = "[obj]";
-  for (int i = 0; t[i] && pos + 1 < (int)sizeof(line); i++) line[pos++] = t[i];
+  for (int i = 0; t[i] && pos + 1 < (int)sizeof(line); i++)
+    line[pos++] = t[i];
   line[pos++] = ' ';
-  for (int i = 0; name[i] && pos + 1 < (int)sizeof(line); i++) line[pos++] = name[i];
+  for (int i = 0; name[i] && pos + 1 < (int)sizeof(line); i++)
+    line[pos++] = name[i];
   line[pos] = '\0';
   LOG_DEBUG(ctx->log, "%{type: str}", line);
 }
+
 static void objfs_list_root_once(log_t *log) {
   uint64_t root = objfs_global()->sb.root_object_id;
   list_ctx_t ctx = {.log = log};
   objfs_list_subobjects(root, objfs_root_emit, &ctx);
+}
+
+static void objfs_tree_emit(const char *name, uint8_t kind, uint64_t id, void *arg) {
+  objfs_tree_ctx_t *ctx = (objfs_tree_ctx_t *)arg;
+  char line[160];
+  int pos = 0;
+
+  int indent = ctx->depth * 2;
+  if (indent > 32)
+    indent = 32;
+  for (int i = 0; i < indent && pos + 1 < (int)sizeof(line); i++)
+    line[pos++] = ' ';
+
+  char marker = '?';
+  if (kind == OBJFS_OBJ_DIR) {
+    marker = 'd';
+  } else if (kind == OBJFS_OBJ_FILE) {
+    marker = 'f';
+  } else if (kind == OBJFS_OBJ_REFERENCE) {
+    marker = 'r';
+  }
+
+  if (pos + 3 < (int)sizeof(line)) {
+    line[pos++] = marker;
+    line[pos++] = ' ';
+  }
+
+  for (int i = 0; name[i] && pos + 1 < (int)sizeof(line); i++)
+    line[pos++] = name[i];
+  line[pos] = '\0';
+
+  LOG_DEBUG(ctx->log, "%{type: str}", line);
+
+  if (kind == OBJFS_OBJ_DIR && ctx->depth < OBJFS_TREE_MAX_DEPTH) {
+    objfs_tree_ctx_t child = {.log = ctx->log, .depth = ctx->depth + 1};
+    objfs_list_subobjects(id, objfs_tree_emit, &child);
+  }
+}
+
+static void objfs_list_tree_once(log_t *log) {
+  objfs_fs_t *fs = objfs_global();
+  if (!fs)
+    return;
+  uint64_t root = fs->sb.root_object_id;
+  LOG_DEBUG(log, "ObjectFS tree (root=%{type: hex})", root);
+  objfs_tree_ctx_t ctx = {.log = log, .depth = 0};
+  objfs_list_subobjects(root, objfs_tree_emit, &ctx);
 }
 
 void realmain() {
@@ -322,6 +381,7 @@ void realmain() {
   } else {
     LOG_INFO(kern_log, "objectfs mounted as root fs");
     objfs_list_root_once(kern_log);
+    objfs_list_tree_once(kern_log);
   }
 
   // // Attempt to start a Vessel user program from the FAT root
@@ -342,12 +402,17 @@ void realmain() {
   // }
 
   // Start spinesink alongside the shell
-  result_t rspine = proc_from_vessel_path("SPINESNK.VES", "spinesink");
+  result_t rspine = proc_from_vessel_path("/vessels/spinesink.vessel", "spinesink");
   if (!result_is_ok(rspine)) {
     LOG_WARN(kern_log, "couldn't start spinesink (SPINESNK.VES)");
   }
 
-  result_t rshk = proc_from_vessel_path("sh.vessel", "sh");
+  result_t rpd = proc_from_vessel_path("/system/vessels/pathd.vessel", "sh");
+  if (!result_is_ok(rpd)) {
+    LOG_WARN(kern_log, "couldn't start pathd.vessel (pathd.vessel)");
+  }
+
+  result_t rshk = proc_from_vessel_path("/system/vessels/shell.vessel", "sh");
   if (!result_is_ok(rshk)) {
     LOG_WARN(kern_log, "couldn't start sh.vessel (sh.ves)");
   }

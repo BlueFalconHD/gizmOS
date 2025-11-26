@@ -13,6 +13,55 @@ OBJ_KIND_FILE = 1
 OBJ_KIND_DIR = 2
 OBJ_KIND_REFERENCE = 3
 
+# Attribute value kinds (match objfs_attr_type_t / objfs_attr_value_kind_t)
+OBJFS_ATTR_STR = 0
+OBJFS_ATTR_INT = 1
+OBJFS_ATTR_BOOL = 2
+
+def parse_attributes_yaml(path: Path):
+    """
+    Minimal YAML parser for simple key: value pairs.
+    Supports:
+      - booleans: true/false (case-insensitive)
+      - integers: e.g., 123 or -10
+      - strings: unquoted or quoted with '...' or "..."
+    Returns list of tuples: (key, type, value)
+    """
+    attrs = []
+    if not path.exists():
+        return attrs
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if ':' not in line:
+                    continue
+                k, v = line.split(':', 1)
+                key = k.strip()
+                val = v.strip()
+                if ' #' in val:
+                    val = val.split(' #', 1)[0].rstrip()
+                if val.startswith('"') and val.endswith('"') and len(val) >= 2:
+                    attrs.append((key, OBJFS_ATTR_STR, val[1:-1]))
+                elif val.startswith("'") and val.endswith("'") and len(val) >= 2:
+                    attrs.append((key, OBJFS_ATTR_STR, val[1:-1]))
+                else:
+                    lo = val.lower()
+                    if lo == 'true':
+                        attrs.append((key, OBJFS_ATTR_BOOL, True))
+                    elif lo == 'false':
+                        attrs.append((key, OBJFS_ATTR_BOOL, False))
+                    else:
+                        try:
+                            attrs.append((key, OBJFS_ATTR_INT, int(val, 10)))
+                        except ValueError:
+                            attrs.append((key, OBJFS_ATTR_STR, val))
+    except Exception:
+        return []
+    return attrs
+
 def pack_super(sb):
     magic = b'OBJFS1\x00\x00'
     # Layout matches objfs_superblock_t:
@@ -74,15 +123,56 @@ def pack_subobjects_block(entries, next_block):
         raise RuntimeError('subobjects block overflow')
     return blk + b'\x00'*(BS-len(blk))
 
+def pack_attrs_block(attrs, next_block):
+    """
+    attrs: list of tuples (key:str, type:int, value:any)
+    Returns exactly one block (4096 bytes) containing the attrs header and entries.
+    """
+    # Header: count(u32), _pad(u32), next_block(u64)
+    entries_blob = bytearray()
+    count = 0
+    for key, t, v in attrs:
+        kbytes = key.encode('utf-8')[:64]
+        key_len = len(kbytes)
+        kpad = kbytes + b'\x00'*(64 - key_len)
+        if t == OBJFS_ATTR_STR:
+            vbytes = v.encode('utf-8') if isinstance(v, str) else bytes(v)
+            vbytes = vbytes[:(BS - 128)]  # hard cap for safety
+            vlen = len(vbytes)
+            entry = struct.pack('<BBH64s', key_len, t, vlen, kpad) + vbytes
+            # align to 8
+            if len(entry) % 8:
+                entry += b'\x00' * (8 - (len(entry) % 8))
+        elif t == OBJFS_ATTR_INT:
+            entry = struct.pack('<BBH64s', key_len, t, 0, kpad) + struct.pack('<q', int(v))
+            if len(entry) % 8:
+                entry += b'\x00' * (8 - (len(entry) % 8))
+        elif t == OBJFS_ATTR_BOOL:
+            entry = struct.pack('<BBH64s', key_len, t, 0, kpad) + struct.pack('<B', 1 if v else 0)
+            if len(entry) % 8:
+                entry += b'\x00' * (8 - (len(entry) % 8))
+        else:
+            raise RuntimeError('unknown attribute type')
+        if len(entries_blob) + len(entry) + 16 > BS:
+            raise RuntimeError('attributes block overflow')
+        entries_blob += entry
+        count += 1
+    hdr = struct.pack('<IIQ', count, 0, next_block)
+    blob = hdr + entries_blob
+    if len(blob) > BS:
+        raise RuntimeError('attributes block overflow post-pack')
+    return blob + b'\x00' * (BS - len(blob))
+
 class Builder:
     def __init__(self, diskdir):
         self.diskdir = Path(diskdir)
-        self.nodes = []  # list of dicts {id, path, kind, subobjects, size, file_path}
+        self.nodes = []  # list of dicts {id, path, kind, size, file_path, dir_metadata_path, attrs_head, attrs[]}
         self.path_to_id = {}
         self.subobject_entries = {}  # id -> list of (name, kind, subobject_id)
         self.objects = []  # filled later with layout
         self.subobjects_blocks = []  # (block_index, entries, next_block)
         self.content_blocks = []   # (block_index, data)
+        self.attr_blocks = []      # (block_index, bytes)
         self.next_free_block = 0
         self.object_table_start = 0
         self.object_table_blocks = 0
@@ -93,26 +183,11 @@ class Builder:
         self.used_blocks = set()
 
     def scan(self):
-        # Assign IDs breadth-first by walking diskdir
+        # Build logical object model with *.obj support
         root_id = 0
         self._add_node(self.diskdir, root_id, OBJ_KIND_DIR)
-        for dirpath, dirnames, filenames in os.walk(self.diskdir):
-            dirpath = Path(dirpath)
-            parent_id = self.path_to_id[dirpath]
-            # subobject entries
-            entries = []
-            for d in sorted(dirnames):
-                p = dirpath / d
-                oid = len(self.nodes)
-                self._add_node(p, oid, OBJ_KIND_DIR)
-                entries.append((d, OBJ_KIND_DIR, oid))
-            for f in sorted(filenames):
-                p = dirpath / f
-                oid = len(self.nodes)
-                size = p.stat().st_size
-                self._add_node(p, oid, OBJ_KIND_FILE, size=size)
-                entries.append((f, OBJ_KIND_FILE, oid))
-            self.subobject_entries[parent_id] = entries
+        self._ensure_subentries(root_id)
+        self._scan_root(self.diskdir, root_id)
 
     def _add_node(self, path, oid, kind, size=0):
         self.nodes.append({
@@ -120,8 +195,78 @@ class Builder:
             'path': Path(path),
             'kind': kind,
             'size': size,
+            'file_path': Path(path) if kind == OBJ_KIND_FILE else None,
+            'dir_metadata_path': None,
+            'attrs_head': 0,
+            'attrs': [],
         })
         self.path_to_id[Path(path)] = oid
+
+    def _ensure_subentries(self, parent_id):
+        if parent_id not in self.subobject_entries:
+            self.subobject_entries[parent_id] = []
+
+    def _add_subentry(self, parent_id, name, kind, child_id):
+        self._ensure_subentries(parent_id)
+        self.subobject_entries[parent_id].append((name, kind, child_id))
+
+    def _scan_root(self, host_dir: Path, parent_id: int):
+        entries = sorted([p for p in host_dir.iterdir()], key=lambda p: p.name)
+        for p in entries:
+            if p.is_dir() and p.name.endswith('.obj'):
+                self._scan_obj_container(p, parent_id, p.name[:-4])
+            elif p.is_dir():
+                self._scan_regular_dir(p, parent_id, p.name)
+            elif p.is_file():
+                oid = len(self.nodes)
+                size = p.stat().st_size
+                self._add_node(p, oid, OBJ_KIND_FILE, size=size)
+                self._add_subentry(parent_id, p.name, OBJ_KIND_FILE, oid)
+
+    def _scan_regular_dir(self, dpath: Path, parent_id: int, entry_name: str):
+        dir_oid = len(self.nodes)
+        self._add_node(dpath, dir_oid, OBJ_KIND_DIR)
+        self._add_subentry(parent_id, entry_name, OBJ_KIND_DIR, dir_oid)
+        entries = sorted([p for p in dpath.iterdir()], key=lambda p: p.name)
+        for p in entries:
+            if p.is_dir() and p.name.endswith('.obj'):
+                self._scan_obj_container(p, dir_oid, p.name[:-4])
+            elif p.is_dir():
+                self._scan_regular_dir(p, dir_oid, p.name)
+            elif p.is_file():
+                oid = len(self.nodes)
+                size = p.stat().st_size
+                self._add_node(p, oid, OBJ_KIND_FILE, size=size)
+                self._add_subentry(dir_oid, p.name, OBJ_KIND_FILE, oid)
+
+    def _scan_obj_container(self, objdir: Path, parent_id: int, logical_name: str):
+        oid = len(self.nodes)
+        self._add_node(objdir, oid, OBJ_KIND_DIR, size=0)
+        self._add_subentry(parent_id, logical_name, OBJ_KIND_DIR, oid)
+        # contents file
+        contents_path = objdir / 'contents'
+        if contents_path.exists() and contents_path.is_file():
+            self.nodes[oid]['dir_metadata_path'] = contents_path
+            self.nodes[oid]['size'] = contents_path.stat().st_size
+        # attributes.yaml
+        attrs_path = objdir / 'attributes.yaml'
+        attrs = parse_attributes_yaml(attrs_path)
+        if attrs:
+            self.nodes[oid]['attrs'] = attrs
+        # subobjects
+        subs_dir = objdir / 'subobjects'
+        if subs_dir.exists() and subs_dir.is_dir():
+            entries = sorted([p for p in subs_dir.iterdir()], key=lambda p: p.name)
+            for p in entries:
+                if p.is_dir() and p.name.endswith('.obj'):
+                    self._scan_obj_container(p, oid, p.name[:-4])
+                elif p.is_dir():
+                    self._scan_regular_dir(p, oid, p.name)
+                elif p.is_file():
+                    cid = len(self.nodes)
+                    size = p.stat().st_size
+                    self._add_node(p, cid, OBJ_KIND_FILE, size=size)
+                    self._add_subentry(oid, p.name, OBJ_KIND_FILE, cid)
 
     def layout(self, total_blocks):
         self.total_blocks = total_blocks
@@ -148,15 +293,22 @@ class Builder:
             if node['kind'] != OBJ_KIND_DIR:
                 continue
             ents = self.subobject_entries.get(node['id'], [])
+            if ents:
+                ents = sorted(ents, key=lambda e: e[0])
             # one block should be enough for MVP; if not, chain single block anyway
             blk_idx = self.next_free_block
             self.next_free_block += 1
             self.subobjects_blocks.append((blk_idx, ents, 0))
             node['subobjects_idx'] = blk_idx if ents else 0
             self.used_blocks.add(blk_idx)
-        # content blocks
+        # content blocks (files and directory metadata-as-contents)
         for node in self.nodes:
-            if node['kind'] != OBJ_KIND_FILE:
+            needs_content = False
+            if node['kind'] == OBJ_KIND_FILE:
+                needs_content = True
+            elif node['kind'] == OBJ_KIND_DIR and node.get('dir_metadata_path'):
+                needs_content = True
+            if not needs_content:
                 continue
             size = node['size']
             if size == 0:
@@ -168,9 +320,20 @@ class Builder:
             node['data_start_block'] = start
             node['data_num_blocks'] = nblocks
             self.next_free_block += nblocks
-            # we will fill data later
+            # mark data blocks as used; we will fill later
             for bi in range(nblocks):
                 self.used_blocks.add(start + bi)
+        # attribute blocks
+        for node in self.nodes:
+            attrs = node.get('attrs', [])
+            if not attrs:
+                continue
+            blk_idx = self.next_free_block
+            self.next_free_block += 1
+            packed = pack_attrs_block(attrs, 0)
+            self.attr_blocks.append((blk_idx, packed))
+            node['attrs_head'] = blk_idx
+            self.used_blocks.add(blk_idx)
 
         self.objects = []
         for node in self.nodes:
@@ -179,7 +342,7 @@ class Builder:
                 'kind': node['kind'],
                 'size': node.get('size',0),
                 'subobjects_idx': node.get('subobjects_idx', 0),
-                'attrs_head': 0,
+                'attrs_head': node.get('attrs_head', 0),
                 'data_start_block': node.get('data_start_block', 0),
                 'data_num_blocks': node.get('data_num_blocks', 0),
                 'nlink': 1,
@@ -227,9 +390,29 @@ class Builder:
             for blk_idx, ents, next_blk in self.subobjects_blocks:
                 f.seek(blk_idx * BS)
                 f.write(pack_subobjects_block(ents, next_blk))
+            # attributes blocks
+            for blk_idx, data in self.attr_blocks:
+                f.seek(blk_idx * BS)
+                f.write(data)
             # file contents
             for node in self.nodes:
                 if node['kind'] != OBJ_KIND_FILE:
+                    # directory metadata contents
+                    if node.get('dir_metadata_path'):
+                        start = node.get('data_start_block', 0)
+                        nblocks = node.get('data_num_blocks', 0)
+                        if nblocks == 0:
+                            continue
+                        with open(node['dir_metadata_path'], 'rb') as src:
+                            remain = node['size']
+                            for bi in range(nblocks):
+                                data = src.read(min(remain, BS))
+                                if data is None:
+                                    data = b''
+                                data = data.ljust(BS, b'\x00')
+                                f.seek((start + bi) * BS)
+                                f.write(data)
+                                remain -= min(remain, BS)
                     continue
                 start = node.get('data_start_block', 0)
                 nblocks = node.get('data_num_blocks', 0)

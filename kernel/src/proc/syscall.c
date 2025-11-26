@@ -5,6 +5,7 @@
 #include "lib/usermem.h"
 #include "lifecycle.h"
 #include "proc/process_table.h"
+#include "proc/memory.h"
 #include <fs/objectfs/objfs.h>
 #include <fs/objectfs/objfs_format.h>
 #include <fs/objectfs/objfs.h>
@@ -209,18 +210,14 @@ syscall_err_t syscall_handle_notification(proc_t *p, syscall_num_t num) {
 
     /*
      * Completion of a notification handler:
-     *
-     * When a notification is dispatched, we:
-     *   - snapshot the interrupted user context (including epc and ra)
-     *   - set up arguments for the handler
-     *   - and arrange for a bare `ret` from the handler to jump to a
-     *     user-mode stub that performs this syscall.
-     *
-     * By the time we are executing here, the handler has already returned
-     * to that stub and issued SYSCALL_NOTIF_DONE. All that remains is to
-     * restore the saved context so that normal user execution can resume.
+     * If nested handlers are active, pop to the previous handler context;
+     * otherwise restore the original user context.
      */
-    notif_ctx_restore_to_trapframe(p);
+    if (p->notif_stack.depth > 0) {
+      notif_ctx_pop_restore_to_trapframe(p);
+    } else {
+      notif_ctx_restore_to_trapframe(p);
+    }
 
     LOG_DEBUG(syscall_log(),
              "notif.done(): pid=%{type: int} valid(after)=%{type: int} "
@@ -255,6 +252,46 @@ syscall_err_t syscall_handle_work(proc_t *p, syscall_num_t num) {
 
   return SYSCALL_ERR_NONE;
 };
+
+syscall_err_t syscall_handle_memory(proc_t *p, syscall_num_t num) {
+  if (num != SYSCALL_NUM_SBRK)
+    return SYSCALL_ERR_NONEXISTENT_CALLNUM;
+
+  int64_t incr = (int64_t)p->trapframe->a0;
+  uint64_t old = p->sz;
+
+  if (incr == 0) {
+    p->trapframe->a0 = old;
+    return SYSCALL_ERR_NONE;
+  }
+
+  if (incr > 0) {
+    uint64_t new_end = old + (uint64_t)incr;
+    if (new_end < old)
+      goto fail;
+    if (p->stack_base && new_end > p->stack_base)
+      goto fail;
+    if (!uvmalloc(p, old, new_end))
+      goto fail;
+    p->trapframe->a0 = old;
+    return SYSCALL_ERR_NONE;
+  } else {
+    uint64_t dec = (uint64_t)(-incr);
+    if (dec > old)
+      goto fail;
+    uint64_t new_end = old - dec;
+    if (new_end < p->heap_base)
+      goto fail;
+    if (!uvmdealloc(p, old, new_end))
+      goto fail;
+    p->trapframe->a0 = old;
+    return SYSCALL_ERR_NONE;
+  }
+
+fail:
+  p->trapframe->a0 = (uint64_t)-1;
+  return SYSCALL_ERR_NONE;
+}
 
 // Helpers for OBJ_LIST_SUBOBJECTS
 typedef struct {

@@ -1,0 +1,16 @@
+We don't want any process to be able to subscribe to input notifications (keyboard/mouse) and 
+be able to log keys. Instead, a more secure input method will be used
+
+First, notification endpoints will be locked down so that only certain processes can 
+subscribe to the notifications (either ineligible won't recieve anything or subscription
+will return an error)
+
+Then, a process will be started, which probably should be the only eligible for input
+notifications and possibly any other sensitive ones. It will advertise a spine service
+`input`.
+
+When other processes start, they can issue a service lookup and send a spine_msg. The
+payload could specify what 'psuedo-notifications' it wants to subscribe to. The `input`
+process will keep track of PIDs who send subscription messages, and when it deems input
+is appropriate to send to a process (ie process window is focused), it will 'forward'
+inputs to said process

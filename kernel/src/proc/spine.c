@@ -16,15 +16,18 @@
 #define SPINE_DEBUG_LEVEL 0
 #endif
 
-#if SPINE_DEBUG_LEVEL >= 1
 static inline log_t *spine_log() {
   static log_t *l = NULL;
   if (!l) {
     l = g_log_create("proc", "spine");
+    #if SPINE_DEBUG_LEVEL >= 1
+    g_log_set_level(l, LOG_LEVEL_DEBUG);
+    #else
+    g_log_set_level(l, LOG_LEVEL_INFO);
+    #endif
   }
   return l;
 }
-#endif
 
 // Registry lock to protect service name uniqueness and lookups.
 static struct spinlock g_spine_registry_lock;
@@ -57,6 +60,10 @@ void spine_init_proc(struct proc *p) {
   uint64_t mix = ((uint64_t)p->pid << 32) ^ ((uint64_t)(uintptr_t)p);
   p->spine_token = seq ^ mix;
   p->spine_service[0] = '\0';
+
+  LOG_DEBUG(spine_log(),
+            "spine_init_proc: pid=%{type: int} token=0x%{type: hex}",
+            p->pid, p->spine_token);
 }
 
 void spine_on_exit(struct proc *p) {
@@ -64,6 +71,10 @@ void spine_on_exit(struct proc *p) {
   acquire(&g_spine_registry_lock);
   p->spine_service[0] = '\0';
   release(&g_spine_registry_lock);
+
+  LOG_DEBUG(spine_log(),
+            "spine_on_exit: pid=%{type: int} token=0x%{type: hex}",
+            p->pid, p->spine_token);
 }
 
 static proc_t *find_proc_by_pid_nolock(int pid) {
@@ -110,6 +121,11 @@ g_bool spine_service_advertise(struct proc *p, const char *name, uint32_t flags)
   // Assign name to this process.
   acquire(&p->lock);
   strncopy(p->spine_service, name, sizeof(p->spine_service));
+
+  LOG_DEBUG(spine_log(),
+            "spine_service_advertise: pid=%{type: int} name=%{type: str}",
+            p->pid, p->spine_service);
+
   release(&p->lock);
 
   release(&g_spine_registry_lock);
@@ -133,6 +149,10 @@ int64_t spine_service_lookup(const char *name, uint32_t flags) {
     int pid = q->pid;
     release(&q->lock);
     if (match) {
+      LOG_DEBUG(spine_log(),
+                "spine_service_lookup: name=%{type: str} -> pid=%{type: int}",
+                name, pid);
+
       release(&g_spine_registry_lock);
       return pid;
     }
@@ -167,9 +187,17 @@ g_bool spine_msg_send(struct proc *src, int dest_pid,
   hdr->reserved = 0;
 
   if (!result_is_ok(copyin(src->pagetable, tmp + header_size, (uint64_t)user_src, size))) {
+    LOG_WARN(spine_log(),
+             "spine_msg_send: copyin failed: src_pid=%{type: int} dest_pid=%{type: int} size=%{type: int}",
+             src->pid, dest_pid, (int)size);
+
     kfree(tmp);
     return false;
   }
+
+  LOG_DEBUG(spine_log(),
+            "spine_msg_send: src_pid=%{type: int} dest_pid=%{type: int} size=%{type: int}",
+            src->pid, dest_pid, (int)size);
 
   g_bool ok = notification_post_copy(dest, NOTIF_TYPE_SPINE_MESSAGE, tmp, total, 0);
   kfree(tmp);
@@ -201,5 +229,3 @@ g_bool spine_get_seal(uint64_t token, spine_seal_t *out) {
   }
   return false;
 }
-
-

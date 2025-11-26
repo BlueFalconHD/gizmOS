@@ -32,6 +32,14 @@ typedef struct notif_ctx {
   uint8_t  valid;    // non-zero if a handler is currently staged
 } notif_ctx_t;
 
+// Support limited nesting of notification handlers (e.g., reply during keypress).
+// Depth includes the currently active handler. Depth 0 means no active handler.
+#define NOTIF_MAX_NEST_DEPTH 2
+typedef struct notif_ctx_stack {
+  notif_ctx_t frames[NOTIF_MAX_NEST_DEPTH];
+  uint8_t     depth; // 0..NOTIF_MAX_NEST_DEPTH
+} notif_ctx_stack_t;
+
 
 // Reserved notification type ids
 // Keep small and stable; 0 is unused

@@ -21,6 +21,9 @@
 #include <page_table.h>
 
 #define PROC_LIFECYCLE_DEBUG_LEVEL 0
+#define USER_STACK_SIZE   (1 * 1024 * 1024ULL) /* 1 MiB user stack */
+#define USER_STACK_GUARD  PAGE_SIZE            /* guard below notif region */
+#define USER_STACK_TOP    (NOTIF_BUF_BASE - USER_STACK_GUARD)
 
 extern void forkret();
 
@@ -35,6 +38,54 @@ static inline log_t *proc_lifecycle_log() {
     #endif
   }
   return l;
+}
+
+static void teardown_user_stack(proc_t *p, uint64_t base, uint64_t top) {
+  if (!p || !p->pagetable)
+    return;
+  for (uint64_t va = base; va < top; va += PAGE_SIZE) {
+    uint64_t pa = 0;
+    if (!get_physical_address(p->pagetable, va, &pa))
+      continue;
+    unmap_page(p->pagetable, va);
+    kfree((void *)(pa + hhdm_offset));
+  }
+}
+
+static g_bool setup_user_stack(proc_t *p) {
+  if (!p || !p->pagetable || !p->trapframe)
+    return false;
+
+  const uint64_t stack_top = USER_STACK_TOP;
+  const uint64_t stack_base = stack_top - USER_STACK_SIZE;
+
+  if (stack_base <= p->sz) {
+    LOG_ERROR(proc_lifecycle_log(),
+              "stack_base (0x%{type: hex}) overlaps heap end (0x%{type: hex}) "
+              "for pid=%{type: int}",
+              stack_base, p->sz, p->pid);
+    return false;
+  }
+
+  for (uint64_t va = stack_base; va < stack_top; va += PAGE_SIZE) {
+    void *page = buddy_alloc_page();
+    if (!page) {
+      teardown_user_stack(p, stack_base, va);
+      return false;
+    }
+    memset(page, 0, PAGE_SIZE);
+    if (!map_page(p->pagetable, va, V2P((uint64_t)page),
+                  PTE_U | PTE_V | PTE_R | PTE_W)) {
+      kfree(page);
+      teardown_user_stack(p, stack_base, va);
+      return false;
+    }
+  }
+
+  p->stack_base = stack_base;
+  p->stack_top = stack_top;
+  p->trapframe->sp = stack_top;
+  return true;
 }
 
 g_bool killed(proc_t *p) {
@@ -84,6 +135,9 @@ found:
   }
 
   p->pagetable = pt;
+  p->heap_base = 0;
+  p->stack_base = 0;
+  p->stack_top = 0;
 
   memset(&p->context, 0, sizeof(context_t));
   p->context.ra = (uint64_t)forkret;
@@ -139,6 +193,9 @@ void free_process(proc_t *p) {
   }
 
   p->sz = 0;
+  p->heap_base = 0;
+  p->stack_base = 0;
+  p->stack_top = 0;
   p->pid = 0;
   p->parent = 0;
   p->name[0] = 0;
@@ -296,12 +353,10 @@ uint64_t fork(void) {
 
   proc_t *new_proc = (proc_t *)result_unwrap(rnew_proc);
 
-  if (!uvmcopy(p->pagetable, new_proc->pagetable, p->sz)) {
+  if (!uvmcopy(p, new_proc)) {
     free_process(new_proc);
     return -1;
   }
-
-  new_proc->sz = p->sz;
 
   *(new_proc->trapframe) = *(p->trapframe);
   new_proc->trapframe->a0 = 0;
@@ -360,7 +415,15 @@ proc_from_code(uint8_t code[], uint64_t size, const char *name) {
 
   // Set initial trapframe for user entry
   p->trapframe->epc = 0;    // entry point at 0
-  p->trapframe->sp = newsz; // simple stack at top of image
+  p->heap_base = newsz;
+  p->stack_base = 0;
+  p->stack_top = 0;
+  if (!setup_user_stack(p)) {
+    uvmdealloc(p, newsz, 0);
+    free_process(p);
+    release(&p->lock);
+    return RESULT_FAILURE(RESULT_NOMEM);
+  }
 
   if (name != NULL)
     strncopy(p->name, name, sizeof(p->name));
@@ -392,8 +455,42 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
   uint64_t file_id = 0;
   result_t rlp = objfs_lookup_path(objpath, &file_id);
   if (result_is_ok(rlp)) {
+    /*
+     * Support two layouts:
+     *  1) Legacy: path points directly to a Vessel file object (flat .VES/.vessel)
+     *  2) New:   path points to a directory-like object with attribute vessel=true
+     *            whose subobject "exe" contains the actual Vessel file. The root
+     *            vessel object may also have textual metadata as its own contents.
+     */
+    uint64_t payload_obj_id = file_id;
+    g_bool has_vessel_attr = false;
+    objfs_attr_value_t av;
+    result_t rav = objfs_attr_get(file_id, "vessel", &av);
+    if (result_is_ok(rav) && av.type == OBJFS_ATTR_V_BOOL && av.v.b) {
+      has_vessel_attr = true;
+    }
+    // If it's a vessel object, or if it's a dir with an "exe" child, resolve to that child
+    objfs_stat_t st;
+    (void)objfs_object_stat(file_id, &st);
+    if (has_vessel_attr || st.kind == OBJFS_OBJ_DIR) {
+      // Try to find subobject named "exe"
+      uint64_t cnt = 0;
+      (void)objfs_subobjects_count(file_id, &cnt);
+      for (uint64_t idx = 0; idx < cnt; idx++) {
+        char namebuf[65];
+        uint8_t kind = 0;
+        uint64_t cid = 0;
+        if (!result_is_ok(objfs_subobject_at(file_id, idx, namebuf, sizeof(namebuf), &kind, &cid)))
+          continue;
+        if (namebuf[0] == 'e' && namebuf[1] == 'x' && namebuf[2] == 'e' && namebuf[3] == '\0') {
+          payload_obj_id = cid;
+          break;
+        }
+      }
+    }
+    // Read payload from resolved object id
     size_t outn = 0;
-    result_t rr = objfs_read(file_id, 0, filebuf, MAX_VESSEL_BYTES, &outn);
+    result_t rr = objfs_read(payload_obj_id, 0, filebuf, MAX_VESSEL_BYTES, &outn);
     if (result_is_ok(rr)) {
       nbytes = outn;
     } else {
@@ -501,27 +598,16 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
     cmdp += c->size;
   }
 
-  // Default stack above max_vend
-  uint64_t stack_size = 1 * 1024 * 1024; // 1 MiB
-  uint64_t stack_base = align_up(max_vend + PAGE_SIZE, PAGE_SIZE);
-  uint64_t stack_top = stack_base + stack_size;
-
-  uint64_t cur = stack_base;
-  while (cur < stack_top) {
-    void *page = buddy_alloc_page();
-    if (!page) { free_process(p); kfree(filebuf); return RESULT_FAILURE(RESULT_NOMEM); }
-    memset(page, 0, PAGE_SIZE);
-    uint64_t pa = (uint64_t)page - hhdm_offset;
-    if (!map_page(p->pagetable, cur, pa, PTE_U | PTE_V | PTE_R | PTE_W)) {
-      buddy_free_page(page);
-      free_process(p); kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR);
-    }
-    cur += PAGE_SIZE;
+  p->heap_base = align_up(max_vend, PAGE_SIZE);
+  p->sz = p->heap_base;
+  if (!setup_user_stack(p)) {
+    free_process(p);
+    release(&p->lock);
+    kfree(filebuf);
+    return RESULT_FAILURE(RESULT_NOMEM);
   }
 
   p->trapframe->epc = entry;
-  p->trapframe->sp = stack_top;
-  p->sz = stack_top; // address space high water mark
 
   if (name) strncopy(p->name, name, sizeof(p->name));
   p->state = RUNNABLE;

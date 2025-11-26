@@ -53,11 +53,17 @@ g_bool uvmdealloc(proc_t *p, uint64_t oldsz, uint64_t newsz) {
   return true;
 }
 
-g_bool uvmcopy(page_table_t *src, page_table_t *dst, uint64_t sz) {
-  for (uint64_t a = 0; a < sz; a += PAGE_SIZE) {
+g_bool uvmcopy(proc_t *src_proc, proc_t *dst_proc) {
+  if (!src_proc || !dst_proc || !src_proc->pagetable || !dst_proc->pagetable)
+    return false;
+
+  page_table_t *src = src_proc->pagetable;
+  page_table_t *dst = dst_proc->pagetable;
+
+  for (uint64_t a = 0; a < src_proc->sz; a += PAGE_SIZE) {
     uint64_t pa = 0;
     if (!get_physical_address(src, a, &pa))
-      return false;
+      continue;
 
     void *mem = buddy_alloc_page();
     if (!mem)
@@ -70,6 +76,29 @@ g_bool uvmcopy(page_table_t *src, page_table_t *dst, uint64_t sz) {
       return false;
     }
   }
+
+  if (src_proc->stack_base && src_proc->stack_top) {
+    for (uint64_t a = src_proc->stack_base; a < src_proc->stack_top;
+         a += PAGE_SIZE) {
+      uint64_t pa = 0;
+      if (!get_physical_address(src, a, &pa))
+        return false;
+      void *mem = buddy_alloc_page();
+      if (!mem)
+        return false;
+      memcpy(mem, (void *)(pa + hhdm_offset), PAGE_SIZE);
+      if (!map_page(dst, a, V2P((uint64_t)mem),
+                    PTE_R | PTE_W | PTE_U | PTE_V)) {
+        kfree(mem);
+        return false;
+      }
+    }
+  }
+
+  dst_proc->sz = src_proc->sz;
+  dst_proc->heap_base = src_proc->heap_base;
+  dst_proc->stack_base = src_proc->stack_base;
+  dst_proc->stack_top = src_proc->stack_top;
   return true;
 }
 

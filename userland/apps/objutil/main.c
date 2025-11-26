@@ -13,7 +13,7 @@
     - cat <path> [offset] [n]
     - read <path> <offset> <n>    (hex)
     - write <path> <offset> <data...>  (write string bytes)
-    - create <dir> <name> <kind>  (kind: 1=file,2=dir,3=reference)
+    - create <dir> <name>         (capabilities inferred on first use)
     - link <dir> <name> <target_path>
     - unlink <dir> <name>
     - rename <dir> <old> <new>
@@ -251,10 +251,10 @@ static int cmd_write(const char *path, long off, int argc, char **argv, int argi
   return 0;
 }
 
-static int cmd_create(const char *dir, const char *name, long kind) {
+static int cmd_create(const char *dir, const char *name) {
   long dh = sys_objh_open_at(dir, 0);
   if (dh < 0) { sys_print_str("open dir failed\n"); return 1; }
-  long nh = sys_objh_create(dh, name, 0, (unsigned long)kind);
+  long nh = sys_objh_create(dh, name, 0, 0);
   sys_objh_close(dh);
   if (nh < 0) { sys_print_str("create failed\n"); return 1; }
   sys_objh_close(nh);
@@ -306,7 +306,7 @@ static void usage() {
     "  objutil cat <path> [offset] [n]\n"
     "  objutil read <path> <offset> <n>\n"
     "  objutil write <path> <offset> <data...>\n"
-    "  objutil create <dir> <name> <kind>\n"
+    "  objutil create <dir> <name>\n"
     "  objutil link <dir> <name> <target_path>\n"
     "  objutil unlink <dir> <name>\n"
     "  objutil rename <dir> <old> <new>\n"
@@ -347,9 +347,8 @@ int main(int argc, char **argv) {
     long off=0; if (!str_to_int(argv[3], &off)) { sys_print_str("bad off\n"); return 1; }
     return cmd_write(argv[2], off, argc, argv, 4);
   } else if (streq(cmd, "create")) {
-    if (argc < 5) { usage(); return 1; }
-    long kind=0; if (!str_to_int(argv[4], &kind)) { sys_print_str("bad kind\n"); return 1; }
-    return cmd_create(argv[2], argv[3], kind);
+    if (argc < 4) { usage(); return 1; }
+    return cmd_create(argv[2], argv[3]);
   } else if (streq(cmd, "link")) {
     if (argc < 5) { usage(); return 1; }
     return cmd_link(argv[2], argv[3], argv[4]);

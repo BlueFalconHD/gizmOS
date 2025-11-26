@@ -288,34 +288,33 @@ class Builder:
         # mark initial used: superblock + object table + freemap
         for b in range(0, self.content_region_start):
             self.used_blocks.add(b)
-        # subobjects blocks
+        # subobjects blocks: allocate for any node that actually has children
         for node in self.nodes:
-            if node['kind'] != OBJ_KIND_DIR:
-                continue
             ents = self.subobject_entries.get(node['id'], [])
             if ents:
                 ents = sorted(ents, key=lambda e: e[0])
-            # one block should be enough for MVP; if not, chain single block anyway
-            blk_idx = self.next_free_block
-            self.next_free_block += 1
-            self.subobjects_blocks.append((blk_idx, ents, 0))
-            node['subobjects_idx'] = blk_idx if ents else 0
-            self.used_blocks.add(blk_idx)
-        # content blocks (files and directory metadata-as-contents)
+                # one block should be enough for MVP; if not, chain single block anyway
+                blk_idx = self.next_free_block
+                self.next_free_block += 1
+                self.subobjects_blocks.append((blk_idx, ents, 0))
+                node['subobjects_idx'] = blk_idx
+                self.used_blocks.add(blk_idx)
+            else:
+                node['subobjects_idx'] = 0
+        # content blocks (file contents or directory metadata-as-contents)
         for node in self.nodes:
-            needs_content = False
-            if node['kind'] == OBJ_KIND_FILE:
-                needs_content = True
-            elif node['kind'] == OBJ_KIND_DIR and node.get('dir_metadata_path'):
-                needs_content = True
+            size = node.get('size', 0)
+            has_dir_meta = bool(node.get('dir_metadata_path'))
+            needs_content = (size > 0) or has_dir_meta
             if not needs_content:
-                continue
-            size = node['size']
-            if size == 0:
                 node['data_start_block'] = 0
                 node['data_num_blocks'] = 0
                 continue
-            nblocks = (size + BS - 1) // BS
+            nblocks = (size + BS - 1) // BS if size > 0 else 0
+            if nblocks == 0:
+                node['data_start_block'] = 0
+                node['data_num_blocks'] = 0
+                continue
             start = self.next_free_block
             node['data_start_block'] = start
             node['data_num_blocks'] = nblocks
@@ -337,16 +336,19 @@ class Builder:
 
         self.objects = []
         for node in self.nodes:
+            # Derive mode from capabilities: 0755 if has subobjects, else 0644
+            has_children = bool(self.subobject_entries.get(node['id'], []))
             o = {
                 'id': node['id'],
-                'kind': node['kind'],
+                # Write unknown kind; consumers should derive capabilities
+                'kind': OBJ_KIND_UNKNOWN,
                 'size': node.get('size',0),
                 'subobjects_idx': node.get('subobjects_idx', 0),
                 'attrs_head': node.get('attrs_head', 0),
                 'data_start_block': node.get('data_start_block', 0),
                 'data_num_blocks': node.get('data_num_blocks', 0),
                 'nlink': 1,
-                'mode': 0o755 if node['kind'] == OBJ_KIND_DIR else 0o644,
+                'mode': 0o755 if has_children else 0o644,
             }
             self.objects.append(o)
 
@@ -389,45 +391,41 @@ class Builder:
             # subobjects blocks
             for blk_idx, ents, next_blk in self.subobjects_blocks:
                 f.seek(blk_idx * BS)
-                f.write(pack_subobjects_block(ents, next_blk))
+                # Store UNKNOWN type in index; kernels/extractors derive kind
+                ents_unknown = [(name, OBJ_KIND_UNKNOWN, sub_id) for (name, _k, sub_id) in ents]
+                f.write(pack_subobjects_block(ents_unknown, next_blk))
             # attributes blocks
             for blk_idx, data in self.attr_blocks:
                 f.seek(blk_idx * BS)
                 f.write(data)
-            # file contents
+            # file contents and directory metadata contents
             for node in self.nodes:
-                if node['kind'] != OBJ_KIND_FILE:
-                    # directory metadata contents
-                    if node.get('dir_metadata_path'):
-                        start = node.get('data_start_block', 0)
-                        nblocks = node.get('data_num_blocks', 0)
-                        if nblocks == 0:
-                            continue
-                        with open(node['dir_metadata_path'], 'rb') as src:
-                            remain = node['size']
-                            for bi in range(nblocks):
-                                data = src.read(min(remain, BS))
-                                if data is None:
-                                    data = b''
-                                data = data.ljust(BS, b'\x00')
-                                f.seek((start + bi) * BS)
-                                f.write(data)
-                                remain -= min(remain, BS)
-                    continue
                 start = node.get('data_start_block', 0)
                 nblocks = node.get('data_num_blocks', 0)
                 if nblocks == 0:
                     continue
-                with open(node['path'], 'rb') as src:
-                    remain = node['size']
-                    for bi in range(nblocks):
-                        data = src.read(min(remain, BS))
-                        if data is None:
-                            data = b''
-                        data = data.ljust(BS, b'\x00')
-                        f.seek((start + bi) * BS)
-                        f.write(data)
-                        remain -= min(remain, BS)
+                if node.get('file_path') is not None:
+                    with open(node['path'], 'rb') as src:
+                        remain = node['size']
+                        for bi in range(nblocks):
+                            data = src.read(min(remain, BS))
+                            if data is None:
+                                data = b''
+                            data = data.ljust(BS, b'\x00')
+                            f.seek((start + bi) * BS)
+                            f.write(data)
+                            remain -= min(remain, BS)
+                elif node.get('dir_metadata_path'):
+                    with open(node['dir_metadata_path'], 'rb') as src:
+                        remain = node['size']
+                        for bi in range(nblocks):
+                            data = src.read(min(remain, BS))
+                            if data is None:
+                                data = b''
+                            data = data.ljust(BS, b'\x00')
+                            f.seek((start + bi) * BS)
+                            f.write(data)
+                            remain -= min(remain, BS)
             # free map: 1 bit per block, 1=free, 0=used
             # cover [0, total_blocks)
             freebits = bytearray(self.free_map_blocks * BS)

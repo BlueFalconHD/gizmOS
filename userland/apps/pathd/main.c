@@ -8,7 +8,6 @@
 #define HARD_PATH_COUNT 2
 #define PATHD_STORE_DIR  "/system/vessels/pathd.vessel"
 #define PATHD_STORE_FILE "paths.bin"
-#define OBJ_KIND_FILE 1
 
 static void __attribute__((noreturn)) spin(void) {
   for (;;) {
@@ -204,7 +203,8 @@ static int path_store_open_or_create(long *out_handle) {
   if (fh >= 0) { *out_handle = fh; return 1; }
   long dh = sys_objh_open_at(PATHD_STORE_DIR, 0);
   if (dh < 0) return 0;
-  long nh = sys_objh_create(dh, PATHD_STORE_FILE, 0, OBJ_KIND_FILE);
+  // Pass kind=0; kernel ignores it and sets capabilities on first use
+  long nh = sys_objh_create(dh, PATHD_STORE_FILE, 0, 0);
   sys_objh_close(dh);
   if (nh < 0) return 0;
   *out_handle = nh;

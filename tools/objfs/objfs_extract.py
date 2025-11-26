@@ -131,8 +131,8 @@ def read_objects(f, sb):
           *_reserved,
       ) = struct.unpack_from(OBJ_FMT, block, off)
       off += OBJ_SIZE
-      # Skip unused / reserved entries
-      if kind == OBJ_KIND_UNKNOWN:
+      # Skip unused / reserved entries indicated by nlink==0
+      if nlink == 0:
         continue
       objects[oid] = {
           "id": oid,
@@ -156,7 +156,8 @@ def read_objects(f, sb):
 
 
 def read_subobjects(f, sb, objects):
-  """Build parent_id -> list of {name, kind, id} from subobject blocks."""
+  """Build parent_id -> list of {name, kind, id} from subobject blocks.
+  Kind in entries is treated as a hint; we will derive actual kind later."""
   bs = sb["block_size"]
   children = {oid: [] for oid in objects.keys()}
   for oid, obj in objects.items():
@@ -325,10 +326,17 @@ def extract_dir(f, sb, objects, children, obj_id, host_dir: Path, is_root: bool)
       print(f"warning: skipping {raw_name!r}: {exc}", file=sys.stderr)
       continue
     child_id = ent["id"]
-    kind = ent["kind"]
     child = objects.get(child_id)
     if child is None:
       continue
+    # Derive capability-based kind for extraction
+    kind = OBJ_KIND_UNKNOWN
+    if child.get("target_id", 0) != 0:
+      kind = OBJ_KIND_REFERENCE
+    elif child.get("subobjects_idx", 0) != 0:
+      kind = OBJ_KIND_DIR
+    elif child.get("data_num_blocks", 0) != 0 or child.get("size", 0) != 0:
+      kind = OBJ_KIND_FILE
 
     if kind == OBJ_KIND_FILE:
       # Plain file: <parent>/<name>

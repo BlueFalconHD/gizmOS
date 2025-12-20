@@ -20,7 +20,7 @@ typedef enum syscall_num {
   SYSCALL_NUM_NOTIF_DONE = SYSNO_NOTIF_DONE,
 
   /* Spine IPC */
-  SYSCALL_NUM_SPINE_MSG_SEND = SYSNO_SPINE_MSG_SEND,
+  SYSCALL_NUM_SPINE_MSG = SYSNO_SPINE_MSG,
   SYSCALL_NUM_SPINE_SERVICE_ADVERTISE = SYSNO_SPINE_SERVICE_ADVERTISE,
   SYSCALL_NUM_SPINE_SERVICE_LOOKUP = SYSNO_SPINE_SERVICE_LOOKUP,
   SYSCALL_NUM_SPINE_GET_SEAL = SYSNO_SPINE_GET_SEAL,
@@ -120,7 +120,7 @@ static const syscall_entry_t syscall_table[] = {
     {"notification.done()", SYSCALL_NUM_NOTIF_DONE,
      syscall_handle_notification},
 
-    {"spine.msg_send()", SYSCALL_NUM_SPINE_MSG_SEND, syscall_handle_spine},
+    {"spine.msg()", SYSCALL_NUM_SPINE_MSG, syscall_handle_spine},
     {"spine.service_advertise()", SYSCALL_NUM_SPINE_SERVICE_ADVERTISE, syscall_handle_spine},
     {"spine.service_lookup()", SYSCALL_NUM_SPINE_SERVICE_LOOKUP, syscall_handle_spine},
     {"spine.get_seal()", SYSCALL_NUM_SPINE_GET_SEAL, syscall_handle_spine},

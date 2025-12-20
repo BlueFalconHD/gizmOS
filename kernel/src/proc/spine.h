@@ -2,10 +2,12 @@
 
 #include <lib/types.h>
 #include <stdint.h>
+#include "../../../include/spine_ipc.h"
 
 struct proc;
 
 #define SPINE_SERVICE_NAME_MAX 16
+#define SPINE_MSG_QUEUE_SIZE 32
 
 typedef struct {
   uint64_t token;
@@ -13,6 +15,11 @@ typedef struct {
   char     name[16];
   char     service[16];
 } spine_seal_t;
+
+typedef struct {
+  void    *kbuf; // kernel-owned buffer (wire header + payload)
+  uint64_t len;  // length in bytes
+} spine_msg_t;
 
 // Header that prefixes every Spine message delivered via notifications.
 // Followed by `message_size` bytes of payload.
@@ -24,6 +31,7 @@ typedef struct __attribute__((packed)) {
 
 void   spine_init_proc(struct proc *p);
 void   spine_on_exit(struct proc *p);
+void   spine_on_timer_tick(void);
 
 g_bool spine_service_advertise(struct proc *p, const char *name, uint32_t flags);
 // Returns PID on success, or -1 if not found.
@@ -33,7 +41,9 @@ int64_t spine_service_lookup(const char *name, uint32_t flags);
 g_bool spine_msg_send(struct proc *src, int dest_pid,
                       const void *user_src, uint64_t size, uint32_t flags);
 
+// Unified mach-like msg syscall implementation.
+// Returns 0 on success, -2 on timeout, -3 on buffer too small, -1 on other failure.
+int spine_msg(struct proc *p, const spine_msg_args_t *uargs, uint64_t uargs_size);
+
 // Fill out seal info for a given token. Returns false if not found.
 g_bool spine_get_seal(uint64_t token, spine_seal_t *out);
-
-

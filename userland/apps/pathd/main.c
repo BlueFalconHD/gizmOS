@@ -9,11 +9,6 @@
 #define PATHD_STORE_DIR  "/system/vessels/pathd.vessel"
 #define PATHD_STORE_FILE "paths.bin"
 
-static void __attribute__((noreturn)) spin(void) {
-  for (;;) {
-  }
-}
-
 static const char *kPathList[HARD_PATH_COUNT] = {
     "/vessels",
     "/system/vessels",
@@ -364,9 +359,9 @@ int main(void) {
   lattice_register(g_ctx, "pathd_remove", handle_remove, NULL);
   lattice_register(g_ctx, "pathd_list", handle_list, NULL);
 
-  // Keep alive
-  while (1) {
-    spin();
+  // Service loop
+  for (;;) {
+    (void)lattice_poll(g_ctx, 0);
   }
   return 0;
 }

@@ -6,6 +6,7 @@
 #include <lib/types.h>
 #include <lib/result.h>
 #include "notification_types.h"
+#include "spine.h"
 #include "descriptor.h"
 
 struct trapframe {
@@ -82,6 +83,14 @@ typedef struct proc {
   /* Spine IPC */
   uint64_t        spine_token;
   char            spine_service[16];
+  struct spinlock spine_lock;
+  spine_msg_t     spine_queue[SPINE_MSG_QUEUE_SIZE];
+  uint32_t        spine_q_head;
+  uint32_t        spine_q_tail;
+  uint32_t        spine_pending;
+  uint64_t        spine_stats_dropped;
+  uint64_t        spine_wait_deadline; // absolute spine tick, 0 if none
+  uint8_t         spine_wait_chan;     // unique sleep channel address
 
   g_bool is_kernel;
   /* Notifications */

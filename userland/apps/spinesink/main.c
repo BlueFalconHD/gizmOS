@@ -9,11 +9,6 @@ typedef struct __attribute__((packed)) {
   uint32_t reserved;
 } spine_wire_msg_t;
 
-static void __attribute__((noreturn)) spin(void) {
-  for (;;) {
-  }
-}
-
 static void print_chunked(const char *s, unsigned long n) {
   // Print n bytes from s as ASCII via sys_print_str in small chunks
   char buf[256 + 1];
@@ -27,22 +22,13 @@ static void print_chunked(const char *s, unsigned long n) {
   }
 }
 
-static void
-spine_handler(uint64_t type, uint64_t payload_uva, uint64_t len, uint64_t arg) {
-  (void)type; (void)arg;
-  if (len < sizeof(spine_wire_msg_t)) {
-    sys_print_str("[spinesink] short message\n");
-    return;
-  }
-  spine_wire_msg_t *hdr = (spine_wire_msg_t *)payload_uva;
-  const char *msg = (const char *)(payload_uva + sizeof(spine_wire_msg_t));
-  unsigned long avail = len - sizeof(spine_wire_msg_t);
-  unsigned long mlen = hdr->message_size;
-  if (mlen > avail) mlen = avail;
+static void spine_print_payload(uint64_t sender_token, const uint8_t *payload, unsigned long payload_len) {
+  const char *msg = (const char *)payload;
+  unsigned long mlen = payload_len;
 
   // Optional: print sender info
   sys_spine_seal_t seal;
-  long seal_ok = sys_spine_get_seal(hdr->sender_token, &seal, (long)sizeof(seal));
+  long seal_ok = sys_spine_get_seal(sender_token, &seal, (long)sizeof(seal));
   if (seal_ok == 0) {
     sys_print_str("[spinesink from ");
     // print pid
@@ -73,8 +59,16 @@ int main(void) {
   // Advertise service name so senders can find us easily
   long adv = sys_spine_service_advertise("spinesink", 0);
   (void)adv;
-  sys_notif_register(2 /* NOTIF_TYPE_SPINE_MESSAGE */, (uint64_t)&spine_handler, 0, 0);
-  spin();
+
+  enum { SPINE_RECV_BUF_SIZE = 64 * 1024 };
+  static uint8_t rxbuf[SPINE_RECV_BUF_SIZE];
+
+  for (;;) {
+    long got = 0;
+    uint64_t sender_token = 0;
+    long rc = sys_spine_msg_recv(rxbuf, (long)sizeof(rxbuf), &got, &sender_token, 0);
+    if (rc == 0 && got > 0) {
+      spine_print_payload(sender_token, rxbuf, (unsigned long)got);
+    }
+  }
 }
-
-

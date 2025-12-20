@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include "../../include/syscall_numbers.h"
+#include "../../include/spine_ipc.h"
 
 static inline long sys_print_int(long v) {
   register long a0 asm("a0") = v;
@@ -95,14 +96,50 @@ typedef struct {
   char     service[16];
 } sys_spine_seal_t;
 
-static inline long sys_spine_msg_send(long dest_pid, const void *buf, long n, unsigned long flags) {
-  register long a0 asm("a0") = dest_pid;
-  register long a1 asm("a1") = (long)buf;
-  register long a2 asm("a2") = n;
-  register long a3 asm("a3") = (long)flags;
-  register long a7 asm("a7") = SYSNO_SPINE_MSG_SEND;
-  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a3), "r"(a7) : "memory");
+static inline long sys_spine_msg(spine_msg_args_t *args, unsigned long args_size) {
+  register long a0 asm("a0") = (long)args;
+  register long a1 asm("a1") = (long)args_size;
+  register long a7 asm("a7") = SYSNO_SPINE_MSG;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
   return a0;
+}
+
+static inline long sys_spine_msg_send(long dest_pid, const void *buf, long n, unsigned long flags) {
+  spine_msg_args_t a = {
+    .dest_pid = (int64_t)dest_pid,
+    .flags = (uint32_t)(SPINE_MSGF_SEND | (uint32_t)flags),
+    .send_buf = (uint64_t)(uintptr_t)buf,
+    .send_len = (uint64_t)n,
+    .recv_buf = 0,
+    .recv_cap = 0,
+    .recv_len_out = 0,
+    .sender_token_out = 0,
+    .timeout_ticks = 0,
+  };
+  return sys_spine_msg(&a, (unsigned long)sizeof(a));
+}
+
+// Receive a Spine message body into `buf` (payload only).
+// Returns:
+// - 0 on success (writes payload size to *out_len)
+// - -2 on timeout
+// - -3 if buffer too small (message left queued; *out_len is required size)
+// - -1 on other failure
+static inline long sys_spine_msg_recv(void *buf, long cap, long *out_len,
+                                      uint64_t *out_sender_token,
+                                      unsigned long timeout_ticks) {
+  spine_msg_args_t a = {
+    .dest_pid = -1,
+    .flags = SPINE_MSGF_RECV | SPINE_MSGF_RECV_BODY_ONLY,
+    .send_buf = 0,
+    .send_len = 0,
+    .recv_buf = (uint64_t)(uintptr_t)buf,
+    .recv_cap = (uint64_t)cap,
+    .recv_len_out = (uint64_t)(uintptr_t)out_len,
+    .sender_token_out = (uint64_t)(uintptr_t)out_sender_token,
+    .timeout_ticks = (uint64_t)timeout_ticks,
+  };
+  return sys_spine_msg(&a, (unsigned long)sizeof(a));
 }
 
 static inline long sys_spine_service_advertise(const char *name, unsigned long flags) {

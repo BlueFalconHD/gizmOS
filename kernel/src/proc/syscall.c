@@ -11,6 +11,7 @@
 #include <fs/objectfs/objfs.h>
 #include "proc/notification.h"
 #include "proc/spine.h"
+#include "../../include/spine_ipc.h"
 #include <lib/str.h>
 #include <lib/memory.h>
 
@@ -61,7 +62,7 @@ syscall_err_t syscall_dispatch(proc_t *p, syscall_num_t num) {
         // only log about spine stuff
         if (num == SYSCALL_NUM_SPINE_SERVICE_ADVERTISE ||
             num == SYSCALL_NUM_SPINE_SERVICE_LOOKUP ||
-            num == SYSCALL_NUM_SPINE_MSG_SEND ||
+            num == SYSCALL_NUM_SPINE_MSG ||
             num == SYSCALL_NUM_SPINE_GET_SEAL) {
       LOG_DEBUG(syscall_log(),
                "syscall dispatched from %{type: int}: %{type: str} (0x%{type: hex})",
@@ -194,14 +195,12 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
 
 syscall_err_t syscall_handle_spine(proc_t *p, syscall_num_t num) {
   switch (num) {
-  case SYSCALL_NUM_SPINE_MSG_SEND: {
-    // a0=dest_pid, a1=user msg ptr, a2=msg size, a3=flags
-    int dest_pid = (int)p->trapframe->a0;
-    uint64_t uptr = p->trapframe->a1;
-    uint64_t n = p->trapframe->a2;
-    uint32_t flags = (uint32_t)p->trapframe->a3;
-    g_bool ok = spine_msg_send(p, dest_pid, (const void *)uptr, n, flags);
-    p->trapframe->a0 = ok ? 0 : (uint64_t)-1;
+  case SYSCALL_NUM_SPINE_MSG: {
+    // a0=user args*, a1=args size
+    uint64_t uargs = p->trapframe->a0;
+    uint64_t uargs_size = p->trapframe->a1;
+    int rc = spine_msg(p, (const spine_msg_args_t *)uargs, uargs_size);
+    p->trapframe->a0 = (uint64_t)rc;
     return SYSCALL_ERR_NONE;
   }
   case SYSCALL_NUM_SPINE_SERVICE_ADVERTISE: {

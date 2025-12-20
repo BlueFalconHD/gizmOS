@@ -1,10 +1,5 @@
 #include "lattice.h"
 
-static void __attribute__((noreturn)) spin(void) {
-  for (;;) {
-  }
-}
-
 // ------------- Utility -------------
 static int streq(const char *a, const char *b) {
   size_t i = 0;
@@ -438,7 +433,8 @@ struct lattice_ctx {
   pending_entry_t pending[32];
   int pending_count;
   uint64_t next_id;
-  uint32_t notif_id;
+  void *rxbuf;
+  unsigned long rxcap;
 };
 
 typedef struct __attribute__((packed)) {
@@ -539,30 +535,6 @@ static void lattice_dispatch_response(lattice_ctx_t *ctx, const lattice_value_t 
   }
 }
 
-static void lattice_spine_handler(uint64_t type, uint64_t payload_uva, uint64_t len, uint64_t arg) {
-  (void)type;
-  lattice_ctx_t *ctx = (lattice_ctx_t *)arg;
-  if (!ctx || len < sizeof(spine_wire_msg_t)) {
-      sys_print_str("lattice_spine_handler: short message\n");
-      return;
-  };
-  spine_wire_msg_t *hdr = (spine_wire_msg_t *)payload_uva;
-  unsigned long mlen = len - (unsigned long)sizeof(spine_wire_msg_t);
-  void *msg = (void *)(payload_uva + sizeof(spine_wire_msg_t));
-  lattice_value_t *root = NULL;
-  if (lat_decode(msg, mlen, &root) != 0) {
-      sys_print_str("lattice_spine_handler: failed to decode message\n");
-      return;
-  };
-  int is_resp = 0;
-  if (lat_map_get_bool(root, "resp", &is_resp) && is_resp) {
-    lattice_dispatch_response(ctx, root);
-  } else {
-    lattice_dispatch_request(ctx, hdr, root);
-  }
-  lat_free(root);
-}
-
 lattice_ctx_t *lattice_init(const char *service_name) {
   lattice_ctx_t *ctx = (lattice_ctx_t *)calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
@@ -572,13 +544,47 @@ lattice_ctx_t *lattice_init(const char *service_name) {
   if (service_name && service_name[0]) {
     (void)sys_spine_service_advertise(ctx->service, 0);
   }
-  // Register Spine notification handler, pass ctx as arg
-  ctx->notif_id = sys_notif_register(2 /* NOTIF_TYPE_SPINE_MESSAGE */,
-                                     (uint64_t)&lattice_spine_handler,
-                                     (uint64_t)ctx,
-                                     0);
+  ctx->rxcap = 64UL * 1024UL;
+  ctx->rxbuf = calloc(1, ctx->rxcap);
+  if (!ctx->rxbuf) {
+    free(ctx);
+    return NULL;
+  }
   ctx->next_id = 1;
   return ctx;
+}
+
+int lattice_poll(lattice_ctx_t *ctx, unsigned long timeout_ticks) {
+  if (!ctx || !ctx->rxbuf || ctx->rxcap == 0) return -1;
+
+  long got = 0;
+  uint64_t sender_token = 0;
+  long rc = sys_spine_msg_recv(ctx->rxbuf, (long)ctx->rxcap, &got, &sender_token, timeout_ticks);
+  if (rc == -2) return 0;   // timeout
+  if (rc != 0) return -1;
+  if (got <= 0) return -1;
+
+  spine_wire_msg_t hdr = {
+    .sender_token = sender_token,
+    .message_size = (uint32_t)got,
+    .reserved = 0,
+  };
+
+  unsigned long mlen = (unsigned long)got;
+  void *msg = ctx->rxbuf;
+
+  lattice_value_t *root = NULL;
+  if (lat_decode(msg, mlen, &root) != 0) {
+    return -1;
+  }
+  int is_resp = 0;
+  if (lat_map_get_bool(root, "resp", &is_resp) && is_resp) {
+    lattice_dispatch_response(ctx, root);
+  } else {
+    lattice_dispatch_request(ctx, &hdr, root);
+  }
+  lat_free(root);
+  return 1;
 }
 
 int lattice_register(lattice_ctx_t *ctx, const char *method, lattice_method_cb cb, void *user) {
@@ -693,15 +699,13 @@ int lattice_send_message_with_reply_sync(lattice_ctx_t *ctx,
     ctx->pending_count--;
     return -1;
   }
-  // Busy-wait with a no-op ecall to allow notification delivery without printing
-  unsigned long ticks = 0;
   while (!ctx->pending[slot].done) {
-    // Ecall into kernel so user_trap_ret can inject notifications for us.
-    // Use a no-op syscall (print_int) which the kernel ignores, but it
-    // transitions to kernel mode and back, enabling notification delivery.
-    (void)sys_print_int(0);
-    if (timeout_ticks && ++ticks >= timeout_ticks) {
-      break;
+    int pr = lattice_poll(ctx, timeout_ticks);
+    if (pr == 0) {
+      break; // timeout
+    }
+    if (pr < 0) {
+      break; // error
     }
   }
   if (!ctx->pending[slot].done) {

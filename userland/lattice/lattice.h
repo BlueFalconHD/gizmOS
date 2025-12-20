@@ -91,9 +91,16 @@ typedef void (*lattice_reply_cb)(lattice_ctx_t *ctx,
                                  const lattice_value_t *resp,
                                  void *user);
 
-// Initialize and advertise a service name; registers the Spine notification handler.
+// Initialize and (optionally) advertise a service name.
 // Returns an opaque context pointer or NULL on failure.
 lattice_ctx_t *lattice_init(const char *service_name);
+
+// Block waiting for one incoming Spine message, then dispatch it (request/response).
+// Returns:
+// - 1 if a message was processed
+// - 0 on timeout
+// - -1 on failure
+int lattice_poll(lattice_ctx_t *ctx, unsigned long timeout_ticks);
 
 // Register a method handler for incoming requests.
 int lattice_register(lattice_ctx_t *ctx, const char *method, lattice_method_cb cb, void *user);
@@ -119,5 +126,4 @@ int lattice_send_message_with_reply_sync(lattice_ctx_t *ctx,
                                          const lattice_value_t *args,
                                          lattice_value_t **out_resp,
                                          unsigned long timeout_ticks);
-
 

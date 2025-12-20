@@ -1,8 +1,7 @@
 #include "spine.h"
-#include "notification.h"
-#include "notification_types.h"
 #include "process.h"
 #include "process_table.h"
+#include "sleep.h"
 #include <lib/kalloc.h>
 #include <lib/log.h>
 #include <lib/memory.h>
@@ -29,14 +28,14 @@ static inline log_t *spine_log() {
   return l;
 }
 
-// Registry lock to protect service name uniqueness and lookups.
 static struct spinlock g_spine_registry_lock;
 static uint8_t g_spine_registry_lock_inited = 0;
 
-// Monotonic token sequence; mixed with pid and address for basic uniqueness.
 static uint64_t g_spine_token_seq = 0x9e3779b97f4a7c15ULL;
 static struct spinlock g_spine_token_lock;
 static uint8_t g_spine_token_lock_inited = 0;
+
+static volatile uint64_t g_spine_ticks = 0;
 
 static inline void spine_once_init() {
   if (!g_spine_registry_lock_inited) {
@@ -51,8 +50,6 @@ static inline void spine_once_init() {
 
 void spine_init_proc(struct proc *p) {
   spine_once_init();
-  // Generate a per-process token that is unlikely to collide:
-  // combine a monotonic counter, pid, and the address of the proc struct.
   acquire(&g_spine_token_lock);
   uint64_t seq = g_spine_token_seq;
   g_spine_token_seq = g_spine_token_seq * 6364136223846793005ULL + 1ULL;
@@ -61,6 +58,18 @@ void spine_init_proc(struct proc *p) {
   p->spine_token = seq ^ mix;
   p->spine_service[0] = '\0';
 
+  initlock(&p->spine_lock, "spine");
+  p->spine_q_head = 0;
+  p->spine_q_tail = 0;
+  p->spine_pending = 0;
+  p->spine_stats_dropped = 0;
+  p->spine_wait_deadline = 0;
+  p->spine_wait_chan = 0;
+  for (uint32_t i = 0; i < SPINE_MSG_QUEUE_SIZE; i++) {
+    p->spine_queue[i].kbuf = NULL;
+    p->spine_queue[i].len = 0;
+  }
+
   LOG_DEBUG(spine_log(),
             "spine_init_proc: pid=%{type: int} token=0x%{type: hex}",
             p->pid, p->spine_token);
@@ -68,6 +77,22 @@ void spine_init_proc(struct proc *p) {
 
 void spine_on_exit(struct proc *p) {
   spine_once_init();
+  if (p) {
+    acquire(&p->spine_lock);
+    for (uint32_t i = 0; i < SPINE_MSG_QUEUE_SIZE; i++) {
+      if (p->spine_queue[i].kbuf) {
+        kfree(p->spine_queue[i].kbuf);
+        p->spine_queue[i].kbuf = NULL;
+      }
+      p->spine_queue[i].len = 0;
+    }
+    p->spine_q_head = 0;
+    p->spine_q_tail = 0;
+    p->spine_pending = 0;
+    p->spine_wait_deadline = 0;
+    release(&p->spine_lock);
+  }
+
   acquire(&g_spine_registry_lock);
   p->spine_service[0] = '\0';
   release(&g_spine_registry_lock);
@@ -80,7 +105,6 @@ void spine_on_exit(struct proc *p) {
 static proc_t *find_proc_by_pid_nolock(int pid) {
   for (uint8_t i = 0; i < NPROC; i++) {
     proc_t *q = &processes[i];
-    // No lock for quick existence check; take the lock briefly to validate fields.
     acquire(&q->lock);
     g_bool match = (q->state != UNUSED && q->pid == pid);
     release(&q->lock);
@@ -94,14 +118,12 @@ static proc_t *find_proc_by_pid_nolock(int pid) {
 g_bool spine_service_advertise(struct proc *p, const char *name, uint32_t flags) {
   (void)flags;
   if (!p || !name) return false;
-  // Validate name length and characters; enforce <= SPINE_SERVICE_NAME_MAX - 1.
   size_t nlen = strlen(name);
   if (nlen == 0 || nlen >= SPINE_SERVICE_NAME_MAX) return false;
 
   spine_once_init();
   acquire(&g_spine_registry_lock);
 
-  // Uniqueness check across all processes.
   for (uint8_t i = 0; i < NPROC; i++) {
     proc_t *q = &processes[i];
     if (q == p) continue;
@@ -119,7 +141,6 @@ g_bool spine_service_advertise(struct proc *p, const char *name, uint32_t flags)
     }
   }
 
-  // Assign name to this process.
   acquire(&p->lock);
   strncopy(p->spine_service, name, sizeof(p->spine_service));
 
@@ -169,10 +190,8 @@ g_bool spine_msg_send(struct proc *src, int dest_pid,
   (void)flags;
   if (!src || !user_src) return false;
 
-  // Upper bound so we do not exceed the per-proc notification user buffer.
   const uint64_t header_size = sizeof(spine_wire_msg_t);
-  const uint64_t max_payload = (NOTIF_BUF_SIZE - NOTIF_PAYLOAD_OFFSET);
-  if (size > (max_payload > header_size ? (max_payload - header_size) : 0)) {
+  if (size > (NOTIF_BUF_SIZE > header_size ? (NOTIF_BUF_SIZE - header_size) : 0)) {
     return false;
   }
 
@@ -201,20 +220,167 @@ g_bool spine_msg_send(struct proc *src, int dest_pid,
             "spine_msg_send: src_pid=%{type: int} dest_pid=%{type: int} size=%{type: int}",
             src->pid, dest_pid, (int)size);
 
-  g_bool ok = notification_post_copy(dest, NOTIF_TYPE_SPINE_MESSAGE, tmp, total, 0);
-  if (!ok) {
-    acquire(&dest->lock);
-    int head = (int)dest->notif_q_head;
-    int tail = (int)dest->notif_q_tail;
-    int pending = (int)dest->notif_pending;
-    int dropped = (int)dest->notif_stats_dropped;
-    release(&dest->lock);
-    LOG_WARN(spine_log(),
-             "spine_msg_send: enqueue failed -> dest_pid=%{type: int} (head=%{type: int} tail=%{type: int} pending=%{type: int} dropped=%{type: int})",
-             dest_pid, head, tail, pending, dropped);
+  acquire(&dest->spine_lock);
+  if (dest->spine_pending >= SPINE_MSG_QUEUE_SIZE) {
+    dest->spine_stats_dropped++;
+    release(&dest->spine_lock);
+    kfree(tmp);
+    return false;
   }
-  kfree(tmp);
-  return ok;
+  uint32_t idx = dest->spine_q_tail;
+  dest->spine_queue[idx].kbuf = tmp;
+  dest->spine_queue[idx].len = total;
+  dest->spine_q_tail = (dest->spine_q_tail + 1u) % SPINE_MSG_QUEUE_SIZE;
+  dest->spine_pending++;
+  release(&dest->spine_lock);
+
+  wakeup((void *)&dest->spine_wait_chan);
+  return true;
+}
+
+static int spine_msg_recv_body(proc_t *dst,
+                               void *user_dst, uint64_t cap,
+                               uint64_t user_out_len_ptr,
+                               uint64_t user_sender_token_ptr,
+                               uint64_t timeout_ticks,
+                               uint32_t flags) {
+  if (!dst || !user_dst) return -1;
+  if (cap == 0) return -1;
+
+  uint64_t start = __atomic_load_n(&g_spine_ticks, __ATOMIC_RELAXED);
+  uint64_t deadline = 0;
+  if (timeout_ticks != 0) {
+    deadline = start + timeout_ticks;
+  }
+  __atomic_store_n(&dst->spine_wait_deadline, deadline, __ATOMIC_RELAXED);
+
+  for (;;) {
+    acquire(&dst->spine_lock);
+
+    if (dst->spine_pending > 0) {
+      spine_msg_t m = dst->spine_queue[dst->spine_q_head];
+      if (!m.kbuf || m.len < sizeof(spine_wire_msg_t)) {
+        dst->spine_queue[dst->spine_q_head].kbuf = NULL;
+        dst->spine_queue[dst->spine_q_head].len = 0;
+        dst->spine_q_head = (dst->spine_q_head + 1u) % SPINE_MSG_QUEUE_SIZE;
+        if (dst->spine_pending) dst->spine_pending--;
+        release(&dst->spine_lock);
+        if (m.kbuf) kfree(m.kbuf);
+        continue;
+      }
+
+      const spine_wire_msg_t *hdr = (const spine_wire_msg_t *)m.kbuf;
+      uint64_t payload_len = (uint64_t)hdr->message_size;
+      uint64_t avail = m.len - (uint64_t)sizeof(spine_wire_msg_t);
+      if (payload_len > avail) payload_len = avail;
+
+      if (user_out_len_ptr != 0) {
+        (void)copyout(dst->pagetable, user_out_len_ptr, &payload_len, sizeof(payload_len));
+      }
+      if (user_sender_token_ptr != 0) {
+        uint64_t tok = hdr->sender_token;
+        (void)copyout(dst->pagetable, user_sender_token_ptr, &tok, sizeof(tok));
+      }
+
+      if (cap < payload_len) {
+        release(&dst->spine_lock);
+        __atomic_store_n(&dst->spine_wait_deadline, 0, __ATOMIC_RELAXED);
+        return -3;
+      }
+
+      const uint8_t *payload = (const uint8_t *)m.kbuf + sizeof(spine_wire_msg_t);
+      if (!result_is_ok(copyout(dst->pagetable, (uint64_t)user_dst, (void *)payload, payload_len))) {
+        release(&dst->spine_lock);
+        __atomic_store_n(&dst->spine_wait_deadline, 0, __ATOMIC_RELAXED);
+        return -1;
+      }
+
+      dst->spine_queue[dst->spine_q_head].kbuf = NULL;
+      dst->spine_queue[dst->spine_q_head].len = 0;
+      dst->spine_q_head = (dst->spine_q_head + 1u) % SPINE_MSG_QUEUE_SIZE;
+      dst->spine_pending--;
+      release(&dst->spine_lock);
+
+      if (m.kbuf) kfree(m.kbuf);
+      __atomic_store_n(&dst->spine_wait_deadline, 0, __ATOMIC_RELAXED);
+      (void)flags;
+      return 0;
+    }
+
+    if (dst->killed) {
+      release(&dst->spine_lock);
+      __atomic_store_n(&dst->spine_wait_deadline, 0, __ATOMIC_RELAXED);
+      return -1;
+    }
+
+    if (deadline != 0) {
+      uint64_t now = __atomic_load_n(&g_spine_ticks, __ATOMIC_RELAXED);
+      if (now >= deadline) {
+        release(&dst->spine_lock);
+        if (user_out_len_ptr != 0) {
+          uint64_t z = 0;
+          (void)copyout(dst->pagetable, user_out_len_ptr, &z, sizeof(z));
+        }
+        __atomic_store_n(&dst->spine_wait_deadline, 0, __ATOMIC_RELAXED);
+        return -2;
+      }
+    }
+
+    sleep((void *)&dst->spine_wait_chan, &dst->spine_lock);
+    // sleep returns with dst->spine_lock held.
+    release(&dst->spine_lock);
+  }
+}
+
+void spine_on_timer_tick(void) {
+  uint64_t now = __atomic_add_fetch(&g_spine_ticks, 1, __ATOMIC_RELAXED);
+  for (uint8_t i = 0; i < NPROC; i++) {
+    proc_t *p = &processes[i];
+    acquire(&p->lock);
+    if (p->state == SLEEPING && p->chan == (void *)&p->spine_wait_chan) {
+      uint64_t deadline = __atomic_load_n(&p->spine_wait_deadline, __ATOMIC_RELAXED);
+      if (deadline != 0 && now >= deadline) {
+        p->state = RUNNABLE;
+      }
+    }
+    release(&p->lock);
+  }
+}
+
+int spine_msg(struct proc *p, const spine_msg_args_t *uargs, uint64_t uargs_size) {
+  if (!p || !uargs) return -1;
+  if (uargs_size < sizeof(spine_msg_args_t)) return -1;
+
+  spine_msg_args_t a;
+  if (!result_is_ok(copyin(p->pagetable, &a, (uint64_t)uargs, sizeof(a)))) {
+    return -1;
+  }
+
+  if ((a.flags & (SPINE_MSGF_SEND | SPINE_MSGF_RECV)) == 0) return -1;
+
+  if (a.flags & SPINE_MSGF_SEND) {
+    if (a.dest_pid < 0 || a.send_buf == 0) return -1;
+    if (!spine_msg_send(p, (int)a.dest_pid, (const void *)a.send_buf, a.send_len, 0)) {
+      return -1;
+    }
+  }
+
+  if (a.flags & SPINE_MSGF_RECV) {
+    if (a.recv_buf == 0) return -1;
+    uint32_t rflags = a.flags;
+    if ((rflags & SPINE_MSGF_RECV_BODY_ONLY) == 0) {
+      // Default behavior is body-only; keep wire header internal.
+      rflags |= SPINE_MSGF_RECV_BODY_ONLY;
+    }
+    return spine_msg_recv_body(p,
+                               (void *)a.recv_buf, a.recv_cap,
+                               a.recv_len_out,
+                               a.sender_token_out,
+                               a.timeout_ticks,
+                               rflags);
+  }
+
+  return 0;
 }
 
 g_bool spine_get_seal(uint64_t token, spine_seal_t *out) {

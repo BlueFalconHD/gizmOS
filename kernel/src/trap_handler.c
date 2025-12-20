@@ -10,6 +10,7 @@
 #include <proc/process.h>
 #include <proc/process_table.h>
 #include <proc/scheduler.h>
+#include <proc/spine.h>
 // legacy-specific include removed; unified virtio core used instead
 #include <lib/ansi.h>
 #include <lib/cpu.h>
@@ -195,6 +196,7 @@ void handle_interrupt(uint64_t interrupt_code, uint64_t sepc) {
       next_deadline = get_csrr_time();
     next_deadline += TICK_INTERVAL_CYCLES;
     sbi_set_timer(next_deadline);
+    spine_on_timer_tick();
     break;
   case 9: // Supervisor external interrupt
     handle_external_interrupt();

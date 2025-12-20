@@ -17,7 +17,6 @@
 #include <platform/interrupts.h>
 #include <platform/registers.h>
 #include <syscall.h>
-#include "spine.h"
 #include <lib/memory.h>
 // exit() is declared in lifecycle.h; keep implicit through user_trap.c's
 // existing includes
@@ -63,8 +62,7 @@ void user_trap_ret(void) {
   if (!p->is_kernel && p->notif_pending &&
       (p->notif_ctx.valid == 0 || notif_ctx_can_nest(p))) {
     notif_msg_t m;
-    // Prefer Spine replies when available to reduce user-visible timeouts
-    if (notification_pop_prefer(p, NOTIF_TYPE_SPINE_MESSAGE, &m)) {
+    if (notification_pop(p, &m)) {
       if (notification_ensure_userbuf(p)) {
         notif_handler_t *h = &p->notif_handlers[m.type];
         if (h->handler_va != 0) {
@@ -81,24 +79,10 @@ void user_trap_ret(void) {
 
 #if NOTIF_DELIVERY_DEBUG_LEVEL >= 1
           // print notification info (origin process, recipient process, type, length)
-          if (m.type == NOTIF_TYPE_SPINE_MESSAGE) {
           LOG_DEBUG(user_trap_log(),
                     "notif.deliver: -> pid=%{type: int} name=%{type: str} type=%{type: int} len=%{type: int} (handler=0x%{type: hex}) (head=%{type: int} tail=%{type: int} valid=%{type: int} depth=%{type: int} pending=%{type: int})",
                     p->pid, p->name, (int)m.type, (int)m.len, h->handler_va,
                     (int)p->notif_q_head, (int)p->notif_q_tail, (int)p->notif_ctx.valid, (int)p->notif_stack.depth, (int)p->notif_pending);
-          }
-#endif
-#if NOTIF_DELIVERY_DEBUG_LEVEL >= 1
-          if (m.type == NOTIF_TYPE_SPINE_MESSAGE && m.kbuf && m.len >= sizeof(spine_wire_msg_t)) {
-            spine_wire_msg_t *wh = (spine_wire_msg_t *)m.kbuf;
-            uint64_t w0 = 0;
-            if (m.len >= sizeof(spine_wire_msg_t) + sizeof(uint64_t)) {
-              memcpy(&w0, (uint8_t *)m.kbuf + sizeof(spine_wire_msg_t), sizeof(uint64_t));
-            }
-            LOG_DEBUG(user_trap_log(),
-                      "notif.spine: -> pid=%{type: int} sender=0x%{type: hex} msize=%{type: int} w0=0x%{type: hex}",
-                      p->pid, wh->sender_token, (int)wh->message_size, w0);
-          }
 #endif
           /*
            * Save/stack the current user context so we can resume it once the

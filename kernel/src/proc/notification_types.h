@@ -44,5 +44,3 @@ typedef struct notif_ctx_stack {
 // Reserved notification type ids
 // Keep small and stable; 0 is unused
 #define NOTIF_TYPE_KEYPRESS 1
-// Spine message delivery
-#define NOTIF_TYPE_SPINE_MESSAGE 2

@@ -20,7 +20,7 @@
 #define SYSNO_NOTIF_DONE      0x100
 
 // Spine IPC
-#define SYSNO_SPINE_MSG_SEND           0x180
+#define SYSNO_SPINE_MSG                0x180
 #define SYSNO_SPINE_SERVICE_ADVERTISE  0x181
 #define SYSNO_SPINE_SERVICE_LOOKUP     0x182
 #define SYSNO_SPINE_GET_SEAL           0x183
@@ -65,4 +65,3 @@
 
 // Seek is outside contiguous range by design in kernel header
 #define SYSNO_OBJH_SEEK            0x34A
-

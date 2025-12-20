@@ -66,6 +66,11 @@ static inline long sys_thread_join(long tid, long *status_out) {
   return a0;
 }
 
+// Convenience variant with correct status type (kernel writes 32-bit status).
+static inline long sys_thread_join_i32(long tid, int *status_out) {
+  return sys_thread_join(tid, (long *)status_out);
+}
+
 static inline void sys_thread_exit(long status) {
   register long a0 asm("a0") = (long)status;
   register long a7 asm("a7") = SYSNO_THREAD_EXIT;

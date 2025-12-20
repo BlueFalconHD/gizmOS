@@ -21,8 +21,8 @@ int main(void) {
     return 1;
   }
 
-  long status = -1;
-  long r = sys_thread_join(tid, &status);
+  int status = -1;
+  long r = sys_thread_join_i32(tid, &status);
   if (r < 0) {
     puts("threads: thread.join failed\n");
     return 1;
@@ -35,4 +35,3 @@ int main(void) {
   }
   return 0;
 }
-

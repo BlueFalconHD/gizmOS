@@ -7,6 +7,12 @@
 void wakeup(void *chan) {
   for (uint8_t i = 0; i < NPROC; i++) {
     proc_t *p = &processes[i];
+    if (holding(&p->lock)) {
+      if (p->state == SLEEPING && p->chan == chan) {
+        p->state = RUNNABLE;
+      }
+      continue;
+    }
     acquire(&p->lock);
     if (p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
@@ -31,5 +37,4 @@ void sleep(void *chan, struct spinlock *lk) {
   release(&p->lock);
   acquire(lk);
 }
-
 

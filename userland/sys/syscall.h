@@ -25,7 +25,7 @@ static inline void *sys_sbrk(long increment) {
   return (void *)a0;
 }
 
-static inline void sys_exit(int status) {
+static inline __attribute__((noreturn)) void sys_exit(int status) {
   register long a0 asm("a0") = status;
   register long a7 asm("a7") = SYSNO_EXIT; /* SYSCALL_EXIT */
   asm volatile("ecall" : : "r"(a0), "r"(a7) : "memory");
@@ -71,7 +71,7 @@ static inline long sys_thread_join_i32(long tid, int *status_out) {
   return sys_thread_join(tid, (long *)status_out);
 }
 
-static inline void sys_thread_exit(long status) {
+static inline __attribute__((noreturn)) void sys_thread_exit(long status) {
   register long a0 asm("a0") = (long)status;
   register long a7 asm("a7") = SYSNO_THREAD_EXIT;
   asm volatile("ecall" : : "r"(a0), "r"(a7) : "memory");

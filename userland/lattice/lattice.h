@@ -102,6 +102,10 @@ lattice_ctx_t *lattice_init(const char *service_name);
 // - -1 on failure
 int lattice_poll(lattice_ctx_t *ctx, unsigned long timeout_ticks);
 
+// Start a dedicated polling thread that calls lattice_poll(ctx, 0) forever.
+// Returns thread id (tid) on success, -1 on failure. Safe to call multiple times.
+long lattice_start(lattice_ctx_t *ctx);
+
 // Register a method handler for incoming requests.
 int lattice_register(lattice_ctx_t *ctx, const char *method, lattice_method_cb cb, void *user);
 
@@ -126,4 +130,3 @@ int lattice_send_message_with_reply_sync(lattice_ctx_t *ctx,
                                          const lattice_value_t *args,
                                          lattice_value_t **out_resp,
                                          unsigned long timeout_ticks);
-

@@ -435,6 +435,10 @@ struct lattice_ctx {
   uint64_t next_id;
   void *rxbuf;
   unsigned long rxcap;
+
+  long poll_tid;
+  void *poll_stack_alloc;
+  unsigned long poll_stack_size;
 };
 
 typedef struct __attribute__((packed)) {
@@ -551,7 +555,44 @@ lattice_ctx_t *lattice_init(const char *service_name) {
     return NULL;
   }
   ctx->next_id = 1;
+  ctx->poll_tid = -1;
   return ctx;
+}
+
+static uint64_t lattice_poll_thread_entry(uint64_t arg) {
+  lattice_ctx_t *ctx = (lattice_ctx_t *)(uintptr_t)arg;
+  for (;;) {
+    int r = lattice_poll(ctx, 0);
+    if (r < 0)
+      break;
+  }
+  return (uint64_t)-1;
+}
+
+long lattice_start(lattice_ctx_t *ctx) {
+  if (!ctx) return -1;
+  if (ctx->poll_tid >= 0) return ctx->poll_tid;
+
+  const unsigned long stack_size = 32UL * 1024UL;
+  void *stack = malloc(stack_size + 32);
+  if (!stack) return -1;
+
+  uintptr_t base = (uintptr_t)stack;
+  uintptr_t top = base + stack_size + 32;
+  top &= ~(uintptr_t)0xFUL; // 16-byte alignment
+
+  long tid = sys_thread_create((uint64_t)(uintptr_t)lattice_poll_thread_entry,
+                               (uint64_t)(uintptr_t)ctx,
+                               (void *)top);
+  if (tid < 0) {
+    free(stack);
+    return -1;
+  }
+
+  ctx->poll_tid = tid;
+  ctx->poll_stack_alloc = stack;
+  ctx->poll_stack_size = stack_size;
+  return tid;
 }
 
 int lattice_poll(lattice_ctx_t *ctx, unsigned long timeout_ticks) {

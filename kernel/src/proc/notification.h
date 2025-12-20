@@ -49,6 +49,13 @@ void   notif_ctx_pop_restore_to_trapframe(struct proc *p);
 // Constants for the injected return stub layout inside user buffer
 #define NOTIF_STUB_OFFSET   0x0
 #define NOTIF_STUB_SIZE     8  /* li a7, SYSCALL_NOTIF_DONE; ecall */
-#define NOTIF_PAYLOAD_OFFSET (NOTIF_STUB_OFFSET + NOTIF_STUB_SIZE)
 
+// Additional user stub used for threads:
+//   li a7, SYSNO_THREAD_EXIT; ecall
+// This allows the kernel to set a thread's initial RA so a normal `ret`
+// automatically performs thread_exit(a0) when the entry function returns.
+#define THREAD_STUB_OFFSET  (NOTIF_STUB_OFFSET + NOTIF_STUB_SIZE)
+#define THREAD_STUB_SIZE    8
+
+#define NOTIF_PAYLOAD_OFFSET (THREAD_STUB_OFFSET + THREAD_STUB_SIZE)
 

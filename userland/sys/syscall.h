@@ -47,6 +47,32 @@ static inline long sys_wait(long *status_out) {
   return a0;
 }
 
+// Threads
+static inline long sys_thread_create(uint64_t entry_va, uint64_t arg, void *stack_top) {
+  register long a0 asm("a0") = (long)entry_va;
+  register long a1 asm("a1") = (long)arg;
+  register long a2 asm("a2") = (long)stack_top;
+  register long a7 asm("a7") = SYSNO_THREAD_CREATE;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a2), "r"(a7) : "memory");
+  return a0;
+}
+
+// Returns tid on success, -1 on error.
+static inline long sys_thread_join(long tid, long *status_out) {
+  register long a0 asm("a0") = (long)tid;
+  register long a1 asm("a1") = (long)status_out;
+  register long a7 asm("a7") = SYSNO_THREAD_JOIN;
+  asm volatile("ecall" : "+r"(a0) : "r"(a1), "r"(a7) : "memory");
+  return a0;
+}
+
+static inline void sys_thread_exit(long status) {
+  register long a0 asm("a0") = (long)status;
+  register long a7 asm("a7") = SYSNO_THREAD_EXIT;
+  asm volatile("ecall" : : "r"(a0), "r"(a7) : "memory");
+  __builtin_unreachable();
+}
+
 // Spawn with argv: path, name(optional), argv array, argc
 static inline long sys_spawn2(const char *path, const char *name,
                               const char *const *argv, long argc) {

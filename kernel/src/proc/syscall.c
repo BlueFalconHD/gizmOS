@@ -4,6 +4,7 @@
 #include "lib/result.h"
 #include "lib/usermem.h"
 #include "lifecycle.h"
+#include "thread.h"
 #include "proc/process_table.h"
 #include "proc/memory.h"
 #include <fs/objectfs/objfs.h>
@@ -81,6 +82,26 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
     exit((uint64_t)(int)p->trapframe->a0);
     return SYSCALL_ERR_NONE;
     break;
+  case SYSCALL_NUM_THREAD_CREATE: {
+    // a0 = entry_va, a1 = arg, a2 = stack_top
+    uint64_t entry = p->trapframe->a0;
+    uint64_t arg = p->trapframe->a1;
+    uint64_t stack_top = p->trapframe->a2;
+    p->trapframe->a0 = thread_create(entry, arg, stack_top);
+    return SYSCALL_ERR_NONE;
+  }
+  case SYSCALL_NUM_THREAD_JOIN: {
+    // a0 = tid, a1 = status_out ptr (or 0)
+    uint64_t tid = p->trapframe->a0;
+    uint64_t status_out = p->trapframe->a1;
+    p->trapframe->a0 = thread_join(tid, status_out);
+    return SYSCALL_ERR_NONE;
+  }
+  case SYSCALL_NUM_THREAD_EXIT: {
+    // a0 = status
+    thread_exit(p->trapframe->a0);
+    return SYSCALL_ERR_NONE;
+  }
   case SYSCALL_NUM_SPAWN: {
     // a0 = user path (8.3 or objectfs root entry), a1 = user name (optional, may be 0)
     result_t rpath = copyinstr(p->pagetable, p->trapframe->a0, 256);
@@ -108,7 +129,7 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
     }
     proc_t *child = (proc_t *)result_unwrap(rp);
     acquire(&wait_lock);
-    child->parent = p;
+    child->parent = proc_group(p);
     release(&wait_lock);
     p->trapframe->a0 = (uint64_t)child->pid;
     return SYSCALL_ERR_NONE;
@@ -182,7 +203,7 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
     }
     proc_t *child = (proc_t *)result_unwrap(rp);
     acquire(&wait_lock);
-    child->parent = p;
+    child->parent = proc_group(p);
     release(&wait_lock);
     p->trapframe->a0 = (uint64_t)child->pid;
     return SYSCALL_ERR_NONE;
@@ -194,12 +215,13 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
 };
 
 syscall_err_t syscall_handle_spine(proc_t *p, syscall_num_t num) {
+  proc_t *owner = proc_group(p);
   switch (num) {
   case SYSCALL_NUM_SPINE_MSG: {
     // a0=user args*, a1=args size
     uint64_t uargs = p->trapframe->a0;
     uint64_t uargs_size = p->trapframe->a1;
-    int rc = spine_msg(p, (const spine_msg_args_t *)uargs, uargs_size);
+    int rc = spine_msg(owner ? owner : p, (const spine_msg_args_t *)uargs, uargs_size);
     p->trapframe->a0 = (uint64_t)rc;
     return SYSCALL_ERR_NONE;
   }
@@ -209,7 +231,7 @@ syscall_err_t syscall_handle_spine(proc_t *p, syscall_num_t num) {
     if (!result_is_ok(rname)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     char *kname = (char *)result_unwrap(rname);
     uint32_t flags = (uint32_t)p->trapframe->a1;
-    g_bool ok = spine_service_advertise(p, kname, flags);
+    g_bool ok = spine_service_advertise(owner ? owner : p, kname, flags);
     kfree(kname);
     p->trapframe->a0 = ok ? 0 : (uint64_t)-1;
     return SYSCALL_ERR_NONE;
@@ -329,8 +351,14 @@ syscall_err_t syscall_handle_memory(proc_t *p, syscall_num_t num) {
   if (num != SYSCALL_NUM_SBRK)
     return SYSCALL_ERR_NONEXISTENT_CALLNUM;
 
+  proc_t *owner = proc_group(p);
+  if (!owner) {
+    p->trapframe->a0 = (uint64_t)-1;
+    return SYSCALL_ERR_NONE;
+  }
+
   int64_t incr = (int64_t)p->trapframe->a0;
-  uint64_t old = p->sz;
+  uint64_t old = owner->sz;
 
   if (incr == 0) {
     p->trapframe->a0 = old;
@@ -341,9 +369,9 @@ syscall_err_t syscall_handle_memory(proc_t *p, syscall_num_t num) {
     uint64_t new_end = old + (uint64_t)incr;
     if (new_end < old)
       goto fail;
-    if (p->stack_base && new_end > p->stack_base)
+    if (owner->stack_base && new_end > owner->stack_base)
       goto fail;
-    if (!uvmalloc(p, old, new_end))
+    if (!uvmalloc(owner, old, new_end))
       goto fail;
     p->trapframe->a0 = old;
     return SYSCALL_ERR_NONE;
@@ -352,9 +380,9 @@ syscall_err_t syscall_handle_memory(proc_t *p, syscall_num_t num) {
     if (dec > old)
       goto fail;
     uint64_t new_end = old - dec;
-    if (new_end < p->heap_base)
+    if (new_end < owner->heap_base)
       goto fail;
-    if (!uvmdealloc(p, old, new_end))
+    if (!uvmdealloc(owner, old, new_end))
       goto fail;
     p->trapframe->a0 = old;
     return SYSCALL_ERR_NONE;
@@ -426,6 +454,9 @@ static void emit_attr_to_user(const char *key, uint8_t type, void *arg) {
 }
 
 syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
+  proc_t *owner = proc_group(p);
+  if (!owner) owner = p;
+
   switch (num) {
   case SYSCALL_NUM_OBJH_ID_AT: {
     // a0=user path
@@ -444,11 +475,11 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
     uint32_t flags = (uint32_t)p->trapframe->a1;
     int slot = -1;
     for (int i = 0; i < PROC_MAX_OBJH; i++) {
-      if (p->objh_ids[i] == (uint64_t)-1) { slot = i; break; }
+      if (owner->objh_ids[i] == (uint64_t)-1) { slot = i; break; }
     }
     if (slot < 0) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
-    p->objh_ids[slot] = id;
-    p->objh_flags[slot] = flags;
+    owner->objh_ids[slot] = id;
+    owner->objh_flags[slot] = flags;
     p->trapframe->a0 = (uint64_t)slot;
     return SYSCALL_ERR_NONE;
   }
@@ -456,18 +487,18 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
     // a0=handle
     int h = (int)p->trapframe->a0;
     if (h < 0 || h >= PROC_MAX_OBJH) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
-    p->objh_ids[h] = (uint64_t)-1;
-    p->objh_flags[h] = 0;
+    owner->objh_ids[h] = (uint64_t)-1;
+    owner->objh_flags[h] = 0;
     p->trapframe->a0 = 0;
     return SYSCALL_ERR_NONE;
   }
   case SYSCALL_NUM_OBJH_HAS_SUBS: {
     // a0=handle
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = 0; return SYSCALL_ERR_NONE;
     }
-    uint64_t id = p->objh_ids[h];
+    uint64_t id = owner->objh_ids[h];
     // count quickly: we can stop at first subobject
     has_subobject_ctx_t hctx = {.found = 0};
     objfs_list_subobjects(id, has_subobject_cb, &hctx);
@@ -477,10 +508,10 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_SUBS_COUNT: {
     // a0=handle
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
-    uint64_t id = p->objh_ids[h];
+    uint64_t id = owner->objh_ids[h];
     count_subobject_ctx_t cctx = {.cnt = 0};
     objfs_list_subobjects(id, count_subobject_cb, &cctx);
     p->trapframe->a0 = cctx.cnt;
@@ -490,10 +521,10 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
     // a0=handle, a1=index
     int h = (int)p->trapframe->a0;
     uint64_t idx = p->trapframe->a1;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
-    uint64_t id = p->objh_ids[h];
+    uint64_t id = owner->objh_ids[h];
     nth_subobject_ctx_t nctx = {.want = idx, .cur = 0, .out = (uint64_t)-1, .found = 0};
     objfs_list_subobjects(id, nth_subobject_cb, &nctx);
     p->trapframe->a0 = nctx.found ? nctx.out : (uint64_t)-1;
@@ -510,21 +541,21 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
     if (!result_is_ok(r)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     int slot = -1;
     for (int i = 0; i < PROC_MAX_OBJH; i++) {
-      if (p->objh_ids[i] == (uint64_t)-1) { slot = i; break; }
+      if (owner->objh_ids[i] == (uint64_t)-1) { slot = i; break; }
     }
     if (slot < 0) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
-    p->objh_ids[slot] = id;
-    p->objh_flags[slot] = (uint32_t)p->trapframe->a1;
+    owner->objh_ids[slot] = id;
+    owner->objh_flags[slot] = (uint32_t)p->trapframe->a1;
     p->trapframe->a0 = (uint64_t)slot;
     return SYSCALL_ERR_NONE;
   }
   case SYSCALL_NUM_OBJH_STAT: {
     // a0=handle, a1=user objfs_stat_t*
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
-    uint64_t id = p->objh_ids[h];
+    uint64_t id = owner->objh_ids[h];
     objfs_stat_t st;
     result_t r = objfs_object_stat(id, &st);
     if (!result_is_ok(r)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
@@ -538,11 +569,11 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_LIST_SUBOBJECTS: {
     // a0=handle, a1=user buf, a2=cap
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
-    uint64_t id = p->objh_ids[h];
-    subobject_emit_ctx_t ctx = {.p = p, .dst = p->trapframe->a1, .cap = p->trapframe->a2, .wrote = 0};
+    uint64_t id = owner->objh_ids[h];
+    subobject_emit_ctx_t ctx = {.p = owner, .dst = p->trapframe->a1, .cap = p->trapframe->a2, .wrote = 0};
     result_t r = objfs_list_subobjects(id, emit_subobject_to_user, &ctx);
     if (!result_is_ok(r)) p->trapframe->a0 = (uint64_t)-1;
     else p->trapframe->a0 = ctx.wrote;
@@ -551,10 +582,10 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_READ: {
     // a0=handle, a1=user dst, a2=offset, a3=nbytes
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
-    uint64_t id = p->objh_ids[h];
+    uint64_t id = owner->objh_ids[h];
     uint64_t dst = p->trapframe->a1;
     uint64_t off = p->trapframe->a2;
     uint64_t n   = p->trapframe->a3;
@@ -574,10 +605,10 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_WRITE: {
     // a0=handle, a1=user src, a2=offset, a3=nbytes
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
-    uint64_t id = p->objh_ids[h];
+    uint64_t id = owner->objh_ids[h];
     uint64_t src = p->trapframe->a1;
     uint64_t off = p->trapframe->a2;
     uint64_t n   = p->trapframe->a3;
@@ -596,7 +627,7 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_SEEK: {
     // a0=handle, a1=off, a2=whence (0=SET,1=CUR,2=END)
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
     // Compatibility: store per-handle offset in objh_flags high bits is messy; defer until unified descriptors
@@ -611,12 +642,12 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_ATTR_GET: {
     // a0=handle, a1=user key*, a2=user out struct*, a3=user str buf (opt), a4=cap
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1)
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1)
       { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     result_t rkey = copyinstr(p->pagetable, p->trapframe->a1, 128);
     if (!result_is_ok(rkey)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     char *kkey = (char *)result_unwrap(rkey);
-    uint64_t id = p->objh_ids[h];
+    uint64_t id = owner->objh_ids[h];
     uint64_t outp = p->trapframe->a2;
     uint64_t strp = p->trapframe->a3;
     uint64_t cap  = p->trapframe->a4;
@@ -650,11 +681,11 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_ATTR_LIST: {
     // a0=handle, a1=user buf, a2=cap
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
-    uint64_t id = p->objh_ids[h];
-    attr_emit_ctx_t ctx = {.p = p, .dst = p->trapframe->a1, .cap = p->trapframe->a2, .wrote = 0};
+    uint64_t id = owner->objh_ids[h];
+    attr_emit_ctx_t ctx = {.p = owner, .dst = p->trapframe->a1, .cap = p->trapframe->a2, .wrote = 0};
     result_t r = objfs_list_attrs(id, emit_attr_to_user, &ctx);
     p->trapframe->a0 = result_is_ok(r) ? ctx.wrote : (uint64_t)-1;
     return SYSCALL_ERR_NONE;
@@ -662,10 +693,10 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_DESC: {
     // a0=handle, a1=user out struct
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1) {
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
-    uint64_t id = p->objh_ids[h];
+    uint64_t id = owner->objh_ids[h];
     typedef struct __attribute__((packed)) {
       uint64_t id;
       uint16_t mode;
@@ -697,13 +728,13 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_CREATE: {
     // a0=parent handle, a1=user name*, a2=mode, a3=kind
     int ph = (int)p->trapframe->a0;
-    if (ph < 0 || ph >= PROC_MAX_OBJH || p->objh_ids[ph] == (uint64_t)-1) {
+    if (ph < 0 || ph >= PROC_MAX_OBJH || owner->objh_ids[ph] == (uint64_t)-1) {
       p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
     }
     result_t rname = copyinstr(p->pagetable, p->trapframe->a1, 128);
     if (!result_is_ok(rname)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     char *kname = (char *)result_unwrap(rname);
-    uint64_t parent = p->objh_ids[ph];
+    uint64_t parent = owner->objh_ids[ph];
     uint16_t mode = (uint16_t)p->trapframe->a2;
     uint8_t  kind = (uint8_t)p->trapframe->a3;
     uint64_t new_id = 0;
@@ -712,21 +743,21 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
     if (!result_is_ok(r)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     // open handle for new object
     int slot = -1;
-    for (int i = 0; i < PROC_MAX_OBJH; i++) if (p->objh_ids[i] == (uint64_t)-1) { slot = i; break; }
+    for (int i = 0; i < PROC_MAX_OBJH; i++) if (owner->objh_ids[i] == (uint64_t)-1) { slot = i; break; }
     if (slot < 0) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
-    p->objh_ids[slot] = new_id; p->objh_flags[slot] = 0;
+    owner->objh_ids[slot] = new_id; owner->objh_flags[slot] = 0;
     p->trapframe->a0 = (uint64_t)slot;
     return SYSCALL_ERR_NONE;
   }
   case SYSCALL_NUM_OBJH_SET_ATTR: {
     // a0=handle, a1=user key*, a2=type, a3=user value ptr, a4=cap_or_size
     int h = (int)p->trapframe->a0;
-    if (h < 0 || h >= PROC_MAX_OBJH || p->objh_ids[h] == (uint64_t)-1)
+    if (h < 0 || h >= PROC_MAX_OBJH || owner->objh_ids[h] == (uint64_t)-1)
       { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     result_t rkey = copyinstr(p->pagetable, p->trapframe->a1, 128);
     if (!result_is_ok(rkey)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     char *kkey = (char *)result_unwrap(rkey);
-    uint64_t id = p->objh_ids[h];
+    uint64_t id = owner->objh_ids[h];
     uint8_t type = (uint8_t)p->trapframe->a2;
     result_t rr = RESULT_FAILURE(RESULT_INVALID);
     if (type == OBJFS_ATTR_V_STR) {
@@ -760,12 +791,12 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
     // a0=parent handle, a1=user name*, a2=target handle
     int ph = (int)p->trapframe->a0;
     int th = (int)p->trapframe->a2;
-    if (ph < 0 || ph >= PROC_MAX_OBJH || p->objh_ids[ph] == (uint64_t)-1) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
-    if (th < 0 || th >= PROC_MAX_OBJH || p->objh_ids[th] == (uint64_t)-1) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    if (ph < 0 || ph >= PROC_MAX_OBJH || owner->objh_ids[ph] == (uint64_t)-1) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    if (th < 0 || th >= PROC_MAX_OBJH || owner->objh_ids[th] == (uint64_t)-1) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     result_t rname = copyinstr(p->pagetable, p->trapframe->a1, 128);
     if (!result_is_ok(rname)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     char *kname = (char *)result_unwrap(rname);
-    result_t r = objfs_link(p->objh_ids[ph], kname, p->objh_ids[th]);
+    result_t r = objfs_link(owner->objh_ids[ph], kname, owner->objh_ids[th]);
     kfree(kname);
     p->trapframe->a0 = result_is_ok(r) ? 0 : (uint64_t)-1;
     return SYSCALL_ERR_NONE;
@@ -773,11 +804,11 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_UNLINK: {
     // a0=parent handle, a1=user name*
     int ph = (int)p->trapframe->a0;
-    if (ph < 0 || ph >= PROC_MAX_OBJH || p->objh_ids[ph] == (uint64_t)-1) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    if (ph < 0 || ph >= PROC_MAX_OBJH || owner->objh_ids[ph] == (uint64_t)-1) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     result_t rname = copyinstr(p->pagetable, p->trapframe->a1, 128);
     if (!result_is_ok(rname)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     char *kname = (char *)result_unwrap(rname);
-    result_t r = objfs_unlink(p->objh_ids[ph], kname);
+    result_t r = objfs_unlink(owner->objh_ids[ph], kname);
     kfree(kname);
     p->trapframe->a0 = result_is_ok(r) ? 0 : (uint64_t)-1;
     return SYSCALL_ERR_NONE;
@@ -785,14 +816,14 @@ syscall_err_t syscall_handle_fs(proc_t *p, syscall_num_t num) {
   case SYSCALL_NUM_OBJH_RENAME: {
     // a0=parent handle, a1=user old*, a2=user new*
     int ph = (int)p->trapframe->a0;
-    if (ph < 0 || ph >= PROC_MAX_OBJH || p->objh_ids[ph] == (uint64_t)-1) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    if (ph < 0 || ph >= PROC_MAX_OBJH || owner->objh_ids[ph] == (uint64_t)-1) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     result_t ro = copyinstr(p->pagetable, p->trapframe->a1, 128);
     if (!result_is_ok(ro)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     char *ko = (char *)result_unwrap(ro);
     result_t rn = copyinstr(p->pagetable, p->trapframe->a2, 128);
     if (!result_is_ok(rn)) { kfree(ko); p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
     char *kn = (char *)result_unwrap(rn);
-    result_t r = objfs_rename(p->objh_ids[ph], ko, kn);
+    result_t r = objfs_rename(owner->objh_ids[ph], ko, kn);
     kfree(ko); kfree(kn);
     p->trapframe->a0 = result_is_ok(r) ? 0 : (uint64_t)-1;
     return SYSCALL_ERR_NONE;

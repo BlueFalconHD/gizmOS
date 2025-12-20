@@ -10,6 +10,9 @@ typedef enum syscall_num {
   SYSCALL_NUM_SPAWN = SYSNO_SPAWN,
   SYSCALL_NUM_WAIT = SYSNO_WAIT,
   SYSCALL_NUM_SPAWN2 = SYSNO_SPAWN2,
+  SYSCALL_NUM_THREAD_CREATE = SYSNO_THREAD_CREATE,
+  SYSCALL_NUM_THREAD_JOIN   = SYSNO_THREAD_JOIN,
+  SYSCALL_NUM_THREAD_EXIT   = SYSNO_THREAD_EXIT,
 
   SYSCALL_NUM_PRINT_INT = SYSNO_PRINT_INT,
   SYSCALL_NUM_PRINT_STR = SYSNO_PRINT_STR,
@@ -108,6 +111,9 @@ static const syscall_entry_t syscall_table[] = {
     {"spawn()", SYSCALL_NUM_SPAWN, syscall_handle_lifecycle},
     {"wait()", SYSCALL_NUM_WAIT, syscall_handle_lifecycle},
     {"spawn2()", SYSCALL_NUM_SPAWN2, syscall_handle_lifecycle},
+    {"thread.create()", SYSCALL_NUM_THREAD_CREATE, syscall_handle_lifecycle},
+    {"thread.join()", SYSCALL_NUM_THREAD_JOIN, syscall_handle_lifecycle},
+    {"thread.exit()", SYSCALL_NUM_THREAD_EXIT, syscall_handle_lifecycle},
 
     {"print_int()", SYSCALL_NUM_PRINT_INT, syscall_handle_work},
     {"print_str()", SYSCALL_NUM_PRINT_STR, syscall_handle_work},

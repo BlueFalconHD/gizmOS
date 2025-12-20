@@ -9,6 +9,11 @@
 // Spawn with argv/argc
 #define SYSNO_SPAWN2 0x05
 
+// Threads (within a process address space)
+#define SYSNO_THREAD_CREATE 0x06
+#define SYSNO_THREAD_JOIN   0x07
+#define SYSNO_THREAD_EXIT   0x08
+
 // Work / debug
 #define SYSNO_PRINT_INT 0x10
 #define SYSNO_PRINT_STR 0x11

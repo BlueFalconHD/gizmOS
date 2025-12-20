@@ -4,6 +4,7 @@
 #include <lib/cpu.h>
 #include <lib/panic.h>
 #include <platform/interrupts.h>
+#include <platform/registers.h>
 
 extern void swtch(context_t *, context_t *);
 
@@ -12,6 +13,7 @@ void scheduler() {
   cpu_t *c = current_cpu();
   static uint64_t schedule_count = 0; (void)schedule_count;
   static uint8_t rr_index = 0;
+  const int cpu_id = (int)P_get_thread_ptr();
 
   c->proc = 0;
 
@@ -28,9 +30,13 @@ void scheduler() {
       p = &processes[i];
       acquire(&p->lock);
       if (p->state == RUNNABLE) {
-        runnable_count++;
-        if (p->priority < min_priority) {
-          min_priority = p->priority;
+        proc_t *leader = proc_group(p);
+        int running = leader ? __atomic_load_n(&leader->tg_running_cpu, __ATOMIC_ACQUIRE) : -1;
+        if (running == -1 || running == cpu_id) {
+          runnable_count++;
+          if (p->priority < min_priority) {
+            min_priority = p->priority;
+          }
         }
       }
       release(&p->lock);
@@ -42,9 +48,17 @@ void scheduler() {
         p = &processes[i];
         acquire(&p->lock);
         if (p->state == RUNNABLE && p->priority == min_priority) {
-          selected_proc = p;
-          selected_index = i;
-          break;
+          proc_t *leader = proc_group(p);
+          if (leader) {
+            int expected = -1;
+            if (__atomic_compare_exchange_n(&leader->tg_running_cpu, &expected, cpu_id,
+                                            false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE) ||
+                expected == cpu_id) {
+              selected_proc = p;
+              selected_index = i;
+              break;
+            }
+          }
         }
         release(&p->lock);
       }
@@ -57,6 +71,13 @@ void scheduler() {
       swtch(&c->context, &selected_proc->context);
 
       c->proc = 0;
+
+      proc_t *leader = proc_group(selected_proc);
+      if (leader) {
+        int expected = cpu_id;
+        (void)__atomic_compare_exchange_n(&leader->tg_running_cpu, &expected, -1,
+                                          false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+      }
       release(&selected_proc->lock);
       schedule_count++;
 
@@ -94,5 +115,4 @@ void yield(void) {
   sched();
   release(&p->lock);
 }
-
 

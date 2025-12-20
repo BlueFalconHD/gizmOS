@@ -16,6 +16,7 @@
 #include <page_table.h>
 #include <platform/interrupts.h>
 #include <platform/registers.h>
+#include <platform/tlb.h>
 #include <syscall.h>
 #include <lib/memory.h>
 // exit() is declared in lifecycle.h; keep implicit through user_trap.c's
@@ -55,21 +56,23 @@ void user_trap_ret(void) {
     return;
   }
 
+  proc_t *owner = proc_group(p);
+
   // Before switching back to user, inject a pending notification if any.
   // Allow limited nesting: when already in a handler (valid!=0), we can push
   // the current context and inject another handler as long as the stack
   // depth limit has not been reached.
-  if (!p->is_kernel && p->notif_pending &&
+  if (!p->is_kernel && owner && owner->notif_pending &&
       (p->notif_ctx.valid == 0 || notif_ctx_can_nest(p))) {
     notif_msg_t m;
     if (notification_pop(p, &m)) {
-      if (notification_ensure_userbuf(p)) {
-        notif_handler_t *h = &p->notif_handlers[m.type];
+      if (notification_ensure_userbuf(owner)) {
+        notif_handler_t *h = &owner->notif_handlers[m.type];
         if (h->handler_va != 0) {
-          uint64_t uva = p->notif_userbuf_base + NOTIF_PAYLOAD_OFFSET;
-          uint64_t maxn = p->notif_userbuf_size - NOTIF_PAYLOAD_OFFSET;
+          uint64_t uva = owner->notif_userbuf_base + NOTIF_PAYLOAD_OFFSET;
+          uint64_t maxn = owner->notif_userbuf_size - NOTIF_PAYLOAD_OFFSET;
           uint64_t n = (m.len < maxn) ? m.len : maxn;
-          if (!result_is_ok(copyout(p->pagetable, uva, m.kbuf, n))) {
+          if (!result_is_ok(copyout(owner->pagetable, uva, m.kbuf, n))) {
             // failed copy; drop
             n = 0;
           }
@@ -82,7 +85,7 @@ void user_trap_ret(void) {
           LOG_DEBUG(user_trap_log(),
                     "notif.deliver: -> pid=%{type: int} name=%{type: str} type=%{type: int} len=%{type: int} (handler=0x%{type: hex}) (head=%{type: int} tail=%{type: int} valid=%{type: int} depth=%{type: int} pending=%{type: int})",
                     p->pid, p->name, (int)m.type, (int)m.len, h->handler_va,
-                    (int)p->notif_q_head, (int)p->notif_q_tail, (int)p->notif_ctx.valid, (int)p->notif_stack.depth, (int)p->notif_pending);
+                    (int)owner->notif_q_head, (int)owner->notif_q_tail, (int)p->notif_ctx.valid, (int)p->notif_stack.depth, (int)owner->notif_pending);
 #endif
           /*
            * Save/stack the current user context so we can resume it once the
@@ -112,20 +115,20 @@ void user_trap_ret(void) {
           p->trapframe->a1 = uva;
           p->trapframe->a2 = n;
           p->trapframe->a3 = h->arg_va;
-          p->trapframe->ra = p->notif_userbuf_base + NOTIF_STUB_OFFSET;
+          p->trapframe->ra = owner->notif_userbuf_base + NOTIF_STUB_OFFSET;
           p->trapframe->epc = h->handler_va;
         }
       }
       if (m.kbuf)
         kfree(m.kbuf);
     }
-  } else if (!p->is_kernel && p->notif_pending && p->notif_ctx.valid != 0) {
+  } else if (!p->is_kernel && owner && owner->notif_pending && p->notif_ctx.valid != 0) {
 #if NOTIF_DELIVERY_DEBUG_LEVEL >= 1
     LOG_DEBUG(user_trap_log(),
              "[notif] skip(nested): pid=%{type: int} valid=%{type: int} "
              "(pending=%{type: int} head=%{type: int} tail=%{type: int})",
              p->pid, (int)p->notif_ctx.valid,
-             (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail);
+             (int)owner->notif_pending, (int)owner->notif_q_head, (int)owner->notif_q_tail);
 #endif
   }
 
@@ -143,6 +146,15 @@ void user_trap_ret(void) {
   PS_set_status(x);
 
   PS_set_exception_pc(p->trapframe->epc);
+
+  // For thread groups, all threads share a single user page table; the
+  // trampoline expects TRAPFRAME to point to the currently-running thread's
+  // trapframe page.
+  if (!p->is_kernel && p->pagetable && p->trapframe) {
+    (void)map_page(p->pagetable, TRAPFRAME, V2P((uint64_t)p->trapframe),
+                   PTE_R | PTE_W | PTE_X | PTE_V);
+    tlb_flush_all();
+  }
 
   uint64_t table_pa = ((uint64_t)p->pagetable) - hhdm_offset;
   uint64_t table_ppn = table_pa >> 12;

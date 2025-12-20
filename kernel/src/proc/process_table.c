@@ -60,6 +60,10 @@ g_bool initialize_processes() {
     proc_t *p = &processes[i];
     initlock(&p->lock, "proc");
     p->state = UNUSED;
+    p->tg_leader = NULL;
+    p->tgid = 0;
+    p->is_thread = 0;
+    p->tg_running_cpu = -1;
     setup_process_kernel_stack(p, i);
   }
 

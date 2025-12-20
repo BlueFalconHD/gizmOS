@@ -28,6 +28,7 @@ static inline log_t *notif_log() {
 #include <page_table.h>
 #include <proc/process.h>
 #include <syscall.h>
+#include "../../../include/syscall_numbers.h"
 
 // Simple ring buffer kept inside proc_t; helpers here operate with p->lock held
 
@@ -42,38 +43,41 @@ void notification_init_proc(struct proc *p) {
 uint32_t notification_register(struct proc *p, uint16_t type,
                                uint64_t handler_va, uint64_t arg_va,
                                uint32_t flags) {
-  if (!p || type >= NOTIF_MAX_TYPE || handler_va == 0)
+  proc_t *owner = proc_group((proc_t *)p);
+  if (!owner || type >= NOTIF_MAX_TYPE || handler_va == 0)
     return 0;
-  acquire(&p->lock);
-  notif_handler_t *h = &p->notif_handlers[type];
+  acquire(&owner->lock);
+  notif_handler_t *h = &owner->notif_handlers[type];
   h->handler_va = handler_va;
   h->arg_va = arg_va;
   h->flags = flags;
   h->id++;
   uint32_t id = h->id;
-  release(&p->lock);
+  release(&owner->lock);
   return id;
 }
 
 g_bool notification_unregister(struct proc *p, uint16_t type, uint32_t id) {
-  if (!p || type >= NOTIF_MAX_TYPE)
+  proc_t *owner = proc_group((proc_t *)p);
+  if (!owner || type >= NOTIF_MAX_TYPE)
     return false;
   g_bool ok = false;
-  acquire(&p->lock);
-  notif_handler_t *h = &p->notif_handlers[type];
+  acquire(&owner->lock);
+  notif_handler_t *h = &owner->notif_handlers[type];
   if (h->id == id && h->handler_va != 0) {
     h->handler_va = 0;
     h->arg_va = 0;
     h->flags = 0;
     ok = true;
   }
-  release(&p->lock);
+  release(&owner->lock);
   return ok;
 }
 
 g_bool notification_post_copy(struct proc *p, uint16_t type, const void *data,
                               uint64_t len, uint16_t flags) {
-  if (!p || type >= NOTIF_MAX_TYPE) {
+  proc_t *owner = proc_group((proc_t *)p);
+  if (!owner || type >= NOTIF_MAX_TYPE) {
     LOG_WARN(notif_log(), "invalid notification post: pid=%{type: int} type=%{type: int}", p ? p->pid : -1, (int)type);
     return false;
   }
@@ -82,87 +86,89 @@ g_bool notification_post_copy(struct proc *p, uint16_t type, const void *data,
   if (len > 0) {
     kbuf = kalloc(len);
     if (!kbuf) {
-      LOG_WARN(notif_log(), "notification post: pid=%{type: int} type=%{type: int} len=%{type: int} - kalloc failed", p->pid, (int)type, (int)len);
+      LOG_WARN(notif_log(), "notification post: pid=%{type: int} type=%{type: int} len=%{type: int} - kalloc failed", owner->pid, (int)type, (int)len);
       return false;
     }
     memcpy(kbuf, data, len);
   }
 
   g_bool enq = false;
-  acquire(&p->lock);
+  acquire(&owner->lock);
 
-  uint32_t next_tail = inc_mod(p->notif_q_tail, NOTIF_QUEUE_SIZE);
-  if (next_tail == p->notif_q_head) {
+  uint32_t next_tail = inc_mod(owner->notif_q_tail, NOTIF_QUEUE_SIZE);
+  if (next_tail == owner->notif_q_head) {
     // queue full: drop newest by default
-    p->notif_stats_dropped++;
+    owner->notif_stats_dropped++;
 #if NOTIF_DEBUG_LEVEL >= 1
     if (type == 2) { // TODO: remove temp filter for spine
     LOG_WARN(notif_log(), "drop: pid=%{type: int} type=%{type: int} len=%{type: int} (pending=%{type: int} head=%{type: int} tail=%{type: int} dropped=%{type: int})",
-             p->pid, (int)type, (int)len, (int)p->notif_pending, (int)p->notif_q_head, (int)p->notif_q_tail, (int)p->notif_stats_dropped);
+             owner->pid, (int)type, (int)len, (int)owner->notif_pending, (int)owner->notif_q_head, (int)owner->notif_q_tail, (int)owner->notif_stats_dropped);
     }
 #endif
   } else {
-    notif_msg_t *m = &p->notif_queue[p->notif_q_tail];
+    notif_msg_t *m = &owner->notif_queue[owner->notif_q_tail];
     m->type = type;
     m->flags = flags;
     m->reserved = 0;
     m->kbuf = kbuf;
     m->len = len;
-    m->id = ++p->notif_seq;
-    p->notif_q_tail = next_tail;
-    p->notif_pending = 1;
+    m->id = ++owner->notif_seq;
+    owner->notif_q_tail = next_tail;
+    owner->notif_pending = 1;
     enq = true;
 #if NOTIF_DEBUG_LEVEL >= 2
     if (type == 2) { // TODO: remove temp filter for spine
     LOG_DEBUG(notif_log(), "enq: pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int} (head=%{type: int} tail=%{type: int})",
-              p->pid, (int)m->id, (int)m->type, (int)m->len, (int)p->notif_q_head, (int)p->notif_q_tail);
+              owner->pid, (int)m->id, (int)m->type, (int)m->len, (int)owner->notif_q_head, (int)owner->notif_q_tail);
     }
 #endif
   }
 
-  release(&p->lock);
+  release(&owner->lock);
   if (!enq && kbuf)
     kfree(kbuf);
   return enq;
 }
 
 g_bool notification_pop(struct proc *p, notif_msg_t *out) {
-  if (!p || !out)
+  proc_t *owner = proc_group((proc_t *)p);
+  if (!owner || !out)
     return false;
   g_bool ok = false;
-  acquire(&p->lock);
-  if (p->notif_q_head != p->notif_q_tail) {
-    *out = p->notif_queue[p->notif_q_head];
-    p->notif_q_head = inc_mod(p->notif_q_head, NOTIF_QUEUE_SIZE);
+  acquire(&owner->lock);
+  if (owner->notif_q_head != owner->notif_q_tail) {
+    *out = owner->notif_queue[owner->notif_q_head];
+    owner->notif_q_head = inc_mod(owner->notif_q_head, NOTIF_QUEUE_SIZE);
     ok = true;
 #if NOTIF_DEBUG_LEVEL >= 2
     if (out->type == 2) { // TODO: remove temp filter for spine
-    LOG_DEBUG(notif_log(), "pop: pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int}", p->pid, (int)out->id, (int)out->type, (int)out->len);
+    LOG_DEBUG(notif_log(), "pop: pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int}", owner->pid, (int)out->id, (int)out->type, (int)out->len);
     }
 #endif
   } else {
     if (out->type == 2) { // TODO: remove temp filter for spine
-    LOG_DEBUG(notif_log(), "pop: pid=%{type: int} - queue empty", p->pid);
-    p->notif_pending = 0;
+    LOG_DEBUG(notif_log(), "pop: pid=%{type: int} - queue empty", owner->pid);
+    owner->notif_pending = 0;
     }
   }
-  release(&p->lock);
+  release(&owner->lock);
   return ok;
 }
 
 // Prefer popping a specific notification type if present in the queue.
 // Falls back to FIFO head when not found.
 g_bool notification_pop_prefer(struct proc *p, uint16_t preferred_type, notif_msg_t *out) {
-  if (!p || !out)
+  proc_t *owner = proc_group((proc_t *)p);
+  if (!owner || !out)
     return false;
   g_bool ok = false;
-  acquire(&p->lock);
-  if (p->notif_q_head != p->notif_q_tail) {
+  acquire(&owner->lock);
+  if (owner->notif_q_head != owner->notif_q_tail) {
     // Scan the ring for preferred type
     uint32_t picked = (uint32_t)-1;
-    uint32_t idx = p->notif_q_head;
-    while (idx != p->notif_q_tail) {
-      if (p->notif_queue[idx].type == preferred_type) {
+    uint32_t idx = owner->notif_q_head;
+    while (idx != owner->notif_q_tail) {
+      if (owner->notif_queue[idx].type == preferred_type) {
         picked = idx;
         break;
       }
@@ -170,34 +176,34 @@ g_bool notification_pop_prefer(struct proc *p, uint16_t preferred_type, notif_ms
     }
     if (picked == (uint32_t)-1) {
       // Fallback: FIFO
-      *out = p->notif_queue[p->notif_q_head];
-      p->notif_q_head = inc_mod(p->notif_q_head, NOTIF_QUEUE_SIZE);
+      *out = owner->notif_queue[owner->notif_q_head];
+      owner->notif_q_head = inc_mod(owner->notif_q_head, NOTIF_QUEUE_SIZE);
 #if NOTIF_DEBUG_LEVEL >= 2
       if (out->type == 2) { // TODO: remove temp filter for spine
       LOG_DEBUG(notif_log(), "pop(fifo): pid=%{type: int} id=%{type: int} type=%{type: int} len=%{type: int}",
-                p->pid, (int)out->id, (int)out->type, (int)out->len);
+                owner->pid, (int)out->id, (int)out->type, (int)out->len);
         }
 #endif
     } else {
       // Swap picked with head and pop
-      notif_msg_t tmp = p->notif_queue[p->notif_q_head];
-      *out = p->notif_queue[picked];
-      p->notif_queue[picked] = tmp;
-      p->notif_q_head = inc_mod(p->notif_q_head, NOTIF_QUEUE_SIZE);
+      notif_msg_t tmp = owner->notif_queue[owner->notif_q_head];
+      *out = owner->notif_queue[picked];
+      owner->notif_queue[picked] = tmp;
+      owner->notif_q_head = inc_mod(owner->notif_q_head, NOTIF_QUEUE_SIZE);
 #if NOTIF_DEBUG_LEVEL >= 1
 if (out->type == 2) { // TODO: remove temp filter for spine
       LOG_DEBUG(notif_log(), "pop(prefer:%{type: int}): pid=%{type: int} id=%{type: int} len=%{type: int} (head=%{type: int} tail=%{type: int})",
-                (int)preferred_type, p->pid, (int)out->id, (int)out->len,
-                (int)p->notif_q_head, (int)p->notif_q_tail);
+                (int)preferred_type, owner->pid, (int)out->id, (int)out->len,
+                (int)owner->notif_q_head, (int)owner->notif_q_tail);
 }
 #endif
     }
     ok = true;
   } else {
     // empty
-    p->notif_pending = 0;
+    owner->notif_pending = 0;
   }
-  release(&p->lock);
+  release(&owner->lock);
   return ok;
 }
 void notif_ctx_clear(struct proc *p) { p->notif_ctx.valid = 0; }
@@ -313,7 +319,10 @@ void notif_ctx_pop_restore_to_trapframe(struct proc *p) {
 }
 
 g_bool notification_ensure_userbuf(struct proc *p) {
-  if (p->notif_userbuf_base != 0)
+  proc_t *owner = proc_group((proc_t *)p);
+  if (!owner)
+    return false;
+  if (owner->notif_userbuf_base != 0)
     return true;
 
   // Reserve a small user buffer region: map one page minimum for stub+payload,
@@ -325,14 +334,14 @@ g_bool notification_ensure_userbuf(struct proc *p) {
     if (!pg)
       return false;
     memset(pg, 0, PAGE_SIZE);
-    if (!map_page(p->pagetable, base + off, V2P((uint64_t)pg),
+    if (!map_page(owner->pagetable, base + off, V2P((uint64_t)pg),
                   PTE_R | PTE_W | PTE_X | PTE_U | PTE_V)) {
       return false;
     }
   }
 
-  p->notif_userbuf_base = base;
-  p->notif_userbuf_size = size;
+  owner->notif_userbuf_base = base;
+  owner->notif_userbuf_size = size;
 
   // Install a minimal RISC-V user stub at base:
   //   li a7, SYSCALL_NOTIF_DONE; ecall
@@ -346,14 +355,18 @@ g_bool notification_ensure_userbuf(struct proc *p) {
   //
   // We construct the correct ADDI encoding for a7 here.
   uint32_t stub[2];
-  uint32_t imm = (uint32_t)SYSCALL_NOTIF_DONE & 0xfffU;
   // addi a7, x0, imm  => opcode/funct3/rd/rs1 fixed, imm12 variable
-  stub[0] = (imm << 20) | (17u << 7) | 0x13u;
   stub[1] = 0x00000073u; // ecall
-  if (!result_is_ok(copyout(p->pagetable, base + NOTIF_STUB_OFFSET, stub,
-                            sizeof(stub)))) {
+
+  uint32_t imm_notif = (uint32_t)SYSNO_NOTIF_DONE & 0xfffU;
+  stub[0] = (imm_notif << 20) | (17u << 7) | 0x13u;
+  if (!result_is_ok(copyout(owner->pagetable, base + NOTIF_STUB_OFFSET, stub, sizeof(stub))))
     return false;
-  }
+
+  uint32_t imm_thread = (uint32_t)SYSNO_THREAD_EXIT & 0xfffU;
+  stub[0] = (imm_thread << 20) | (17u << 7) | 0x13u;
+  if (!result_is_ok(copyout(owner->pagetable, base + THREAD_STUB_OFFSET, stub, sizeof(stub))))
+    return false;
 
   return true;
 }

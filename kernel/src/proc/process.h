@@ -66,6 +66,16 @@ typedef struct proc {
   int xstate;
   int pid;
 
+  // Thread groups:
+  // - A "process" is the thread-group leader (tg_leader == this, is_thread==0).
+  // - Additional threads share the leader's address space (pagetable) and are
+  //   scheduled as independent proc_t instances (is_thread==1).
+  // - Use proc_group(p) when accessing process-wide resources.
+  struct proc *tg_leader;      // NULL until initialized; leader points to self
+  uint32_t     tgid;           // thread group id (leader pid)
+  uint8_t      is_thread;      // 0 = leader (process), 1 = thread
+  int32_t      tg_running_cpu; // -1 if not running; used to prevent SMP overlap
+
   struct proc *parent;
 
   uint64_t kstack;
@@ -118,3 +128,14 @@ typedef struct proc {
   uint64_t objh_ids[PROC_MAX_OBJH];   /* UINT64_MAX means free slot */
   uint32_t objh_flags[PROC_MAX_OBJH]; /* open flags */
 } proc_t;
+
+static inline proc_t *proc_group(proc_t *p) {
+  if (!p) return NULL;
+  return p->tg_leader ? p->tg_leader : p;
+}
+
+static inline g_bool proc_is_thread(proc_t *p) {
+  if (!p) return false;
+  proc_t *g = proc_group(p);
+  return (g != NULL && g != p);
+}

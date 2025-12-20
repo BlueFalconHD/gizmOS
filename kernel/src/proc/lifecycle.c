@@ -7,6 +7,7 @@
 #include "memory.h"
 #include "notification.h"
 #include "spine.h"
+#include "thread.h"
 #include "process.h"
 #include "process_table.h"
 #include "scheduler.h"
@@ -20,7 +21,7 @@
 #include <mem_layout.h>
 #include <page_table.h>
 
-#define PROC_LIFECYCLE_DEBUG_LEVEL 1
+#define PROC_LIFECYCLE_DEBUG_LEVEL 0
 #define USER_STACK_SIZE   (1 * 1024 * 1024ULL) /* 1 MiB user stack */
 #define USER_STACK_GUARD  PAGE_SIZE            /* guard below notif region */
 #define USER_STACK_TOP    (NOTIF_BUF_BASE - USER_STACK_GUARD)
@@ -116,6 +117,10 @@ RESULT_TYPE(proc_t *) make_proc() {
 found:
 
   p->pid = allocate_pid();
+  p->tg_leader = p;
+  p->tgid = (uint32_t)p->pid;
+  p->is_thread = 0;
+  __atomic_store_n(&p->tg_running_cpu, -1, __ATOMIC_RELAXED);
   p->state = USED;
   p->priority = PROC_PRIORITY_NORMAL;
 
@@ -177,6 +182,34 @@ void free_process(proc_t *p) {
   if (!p)
     return;
 
+  // Threads share their leader's address space; they must not free it.
+  if (proc_is_thread(p)) {
+    if (p->trapframe) {
+      buddy_free_page(p->trapframe);
+      p->trapframe = NULL;
+    }
+    p->pagetable = NULL;
+    p->sz = 0;
+    p->heap_base = 0;
+    p->stack_base = 0;
+    p->stack_top = 0;
+    p->pid = 0;
+    p->tg_leader = NULL;
+    p->tgid = 0;
+    p->is_thread = 0;
+    __atomic_store_n(&p->tg_running_cpu, -1, __ATOMIC_RELAXED);
+    p->parent = 0;
+    p->name[0] = 0;
+    p->chan = 0;
+    p->killed = 0;
+    p->xstate = 0;
+    p->state = UNUSED;
+    return;
+  }
+
+  // Reap any remaining threads in this process's thread group.
+  thread_group_reap(p);
+
   // Clear Spine state (e.g., advertised service)
   spine_on_exit(p);
 
@@ -197,6 +230,10 @@ void free_process(proc_t *p) {
   p->stack_base = 0;
   p->stack_top = 0;
   p->pid = 0;
+  p->tg_leader = NULL;
+  p->tgid = 0;
+  p->is_thread = 0;
+  __atomic_store_n(&p->tg_running_cpu, -1, __ATOMIC_RELAXED);
   p->parent = 0;
   p->name[0] = 0;
   p->chan = 0;
@@ -217,19 +254,33 @@ void reparent(proc_t *p) {
 }
 
 void exit(uint64_t status) {
-  proc_t *p = current_proc();
+  proc_t *caller = current_proc();
+  proc_t *leader = proc_group(caller);
 
-  if (p == init_proc)
+  if (leader == init_proc)
     panic("init proc exiting");
 
   acquire(&wait_lock);
 
-  reparent(p);
-  wakeup(p->parent);
+  reparent(leader);
+  wakeup(leader->parent);
 
-  acquire(&p->lock);
-  p->xstate = status;
-  p->state = ZOMBIE;
+  // Exit is process-wide: mark the entire thread group as ZOMBIE.
+  for (uint8_t i = 0; i < NPROC; i++) {
+    proc_t *q = &processes[i];
+    if (q == caller) continue;
+    acquire(&q->lock);
+    if (q->state != UNUSED && proc_group(q) == leader) {
+      q->xstate = (int)status;
+      q->state = ZOMBIE;
+      wakeup(q); // wake joiners
+    }
+    release(&q->lock);
+  }
+
+  acquire(&caller->lock);
+  caller->xstate = (int)status;
+  caller->state = ZOMBIE;
 
   release(&wait_lock);
 
@@ -241,7 +292,7 @@ uint64_t wait(uint64_t address) {
   proc_t *pp;
   g_bool has_children = false;
   uint64_t pid;
-  proc_t *p = current_proc();
+  proc_t *p = proc_group(current_proc());
 
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 3
   LOG_DEBUG(proc_lifecycle_log(),
@@ -256,7 +307,7 @@ uint64_t wait(uint64_t address) {
 
     for (uint8_t i = 0; i < NPROC; i++) {
       pp = &processes[i];
-      if (pp->parent != p)
+      if (pp->parent != p || pp->is_thread)
         continue;
 #if PROC_LIFECYCLE_DEBUG_LEVEL >= 3
       LOG_DEBUG(proc_lifecycle_log(),
@@ -366,7 +417,7 @@ uint64_t fork(void) {
   release(&new_proc->lock);
 
   acquire(&wait_lock);
-  new_proc->parent = p;
+  new_proc->parent = proc_group(p);
   release(&wait_lock);
 
   acquire(&new_proc->lock);

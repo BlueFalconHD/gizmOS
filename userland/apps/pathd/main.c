@@ -359,9 +359,13 @@ int main(void) {
   lattice_register(g_ctx, "pathd_remove", handle_remove, NULL);
   lattice_register(g_ctx, "pathd_list", handle_list, NULL);
 
-  // Service loop
-  for (;;) {
-    (void)lattice_poll(g_ctx, 0);
+  long tid = lattice_start(g_ctx);
+  if (tid < 0) {
+    sys_print_str("pathd: failed to start poll thread\n");
+    sys_exit(-1);
   }
-  return 0;
+
+  // Block forever; the polling thread runs the service loop.
+  (void)sys_thread_join(tid, 0);
+  sys_exit(-1);
 }

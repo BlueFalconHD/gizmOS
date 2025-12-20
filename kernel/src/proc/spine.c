@@ -106,7 +106,8 @@ g_bool spine_service_advertise(struct proc *p, const char *name, uint32_t flags)
     proc_t *q = &processes[i];
     if (q == p) continue;
     acquire(&q->lock);
-    g_bool taken = (q->state != UNUSED && q->spine_service[0] != '\0' &&
+    g_bool taken = (q->state != UNUSED &&
+                    q->spine_service[0] != '\0' &&
                     strcmp(q->spine_service, name));
     release(&q->lock);
     if (taken) {
@@ -144,7 +145,8 @@ int64_t spine_service_lookup(const char *name, uint32_t flags) {
   for (uint8_t i = 0; i < NPROC; i++) {
     proc_t *q = &processes[i];
     acquire(&q->lock);
-    g_bool match = (q->state != UNUSED && q->spine_service[0] != '\0' &&
+    g_bool match = (q->state != UNUSED &&
+                    q->spine_service[0] != '\0' &&
                     strcmp(q->spine_service, name));
     int pid = q->pid;
     release(&q->lock);

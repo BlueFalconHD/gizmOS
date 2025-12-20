@@ -20,7 +20,7 @@
 #include <mem_layout.h>
 #include <page_table.h>
 
-#define PROC_LIFECYCLE_DEBUG_LEVEL 0
+#define PROC_LIFECYCLE_DEBUG_LEVEL 1
 #define USER_STACK_SIZE   (1 * 1024 * 1024ULL) /* 1 MiB user stack */
 #define USER_STACK_GUARD  PAGE_SIZE            /* guard below notif region */
 #define USER_STACK_TOP    (NOTIF_BUF_BASE - USER_STACK_GUARD)
@@ -495,26 +495,41 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
       nbytes = outn;
     } else {
       kfree(filebuf);
+      LOG_WARN(proc_lifecycle_log(),
+               "failed to read vessel file from path %{type: str}: %{result: err}",
+               path83, rr);
       return RESULT_FAILURE(RESULT_ERROR);
     }
   } else {
     kfree(filebuf);
+    LOG_WARN(proc_lifecycle_log(),
+             "vessel file not found at path %{type: str}: %{result: err}",
+             path83, rlp);
     return RESULT_FAILURE(RESULT_NOT_FOUND);
   }
   if (nbytes < sizeof(vessel_hdr_t)) {
     kfree(filebuf);
+    LOG_WARN(proc_lifecycle_log(),
+             "vessel file at path %{type: str} too small (%{type: int} bytes)",
+             path83, nbytes);
     return RESULT_FAILURE(RESULT_ERROR);
   }
 
   vessel_hdr_t *hdr = (vessel_hdr_t *)filebuf;
   if (hdr->magic != VESSEL_MAGIC_U64) {
     kfree(filebuf);
+    LOG_WARN(proc_lifecycle_log(),
+             "vessel file at path %{type: str} has invalid magic (%{type: hex})",
+             path83, hdr->magic);
     return RESULT_FAILURE(RESULT_ERROR);
   }
 
   uint32_t cmds_size = hdr->commands_size;
   if (sizeof(vessel_hdr_t) + cmds_size > nbytes) {
     kfree(filebuf);
+    LOG_WARN(proc_lifecycle_log(),
+             "vessel file at path %{type: str} has invalid commands size (%{type: int})",
+             path83, cmds_size);
     return RESULT_FAILURE(RESULT_ERROR);
   }
 
@@ -549,6 +564,9 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
   if (!have_entry) {
     // Require an explicit ENTRY_POINT command
     kfree(filebuf);
+    LOG_WARN(proc_lifecycle_log(),
+             "vessel file at path %{type: str} missing entry point command",
+             path83);
     return RESULT_FAILURE(RESULT_ERROR);
   }
 
@@ -580,6 +598,9 @@ RESULT_TYPE(proc_t *) proc_from_vessel_path(const char *path83, const char *name
         uint64_t pa = (uint64_t)page - hhdm_offset;
         if (!map_page(p->pagetable, cur, pa, flags)) {
           buddy_free_page(page);
+          LOG_WARN(proc_lifecycle_log(),
+                   "failed to map vessel segment page at va %{type: hex} for pid %{type: int}",
+                   cur, p->pid);
           free_process(p); kfree(filebuf); return RESULT_FAILURE(RESULT_ERROR);
         }
         cur += PAGE_SIZE;

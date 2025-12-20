@@ -144,6 +144,9 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
           kfree(kargv);
           if (kname) kfree(kname);
           kfree(kpath);
+          LOG_DEBUG(syscall_log(),
+                   "syscall_handle_lifecycle: spawn2 copyin argv ptr failed for pid=%{type: int}",
+                   p->pid);
           p->trapframe->a0 = (uint64_t)-1;
           return SYSCALL_ERR_NONE;
         }
@@ -154,6 +157,9 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
           kfree(kargv);
           if (kname) kfree(kname);
           kfree(kpath);
+          LOG_DEBUG(syscall_log(),
+                   "syscall_handle_lifecycle: spawn2 copyinstr argv[%{type: int}] failed for pid=%{type: int}",
+                   (int)i, p->pid);
           p->trapframe->a0 = (uint64_t)-1;
           return SYSCALL_ERR_NONE;
         }
@@ -167,7 +173,12 @@ syscall_err_t syscall_handle_lifecycle(proc_t *p, syscall_num_t num) {
     }
     if (kname) kfree(kname);
     kfree(kpath);
-    if (!result_is_ok(rp)) { p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE; }
+    if (!result_is_ok(rp)) {
+        LOG_DEBUG(syscall_log(),
+                 "syscall_handle_lifecycle: spawn2 proc_from_vessel_path_args failed for pid=%{type: int}",
+                 p->pid);
+        p->trapframe->a0 = (uint64_t)-1; return SYSCALL_ERR_NONE;
+    }
     proc_t *child = (proc_t *)result_unwrap(rp);
     acquire(&wait_lock);
     child->parent = p;

@@ -296,21 +296,23 @@ static int cmd_rename(const char *dir, const char *oldn, const char *newn) {
 }
 
 static void usage() {
-  sys_print_str(
-    "Usage:\n"
-    "  objutil ls <path>\n"
-    "  objutil stat <path>\n"
-    "  objutil attrs <path>\n"
-    "  objutil getattr <path> <key>\n"
-    "  objutil setattr <path> <str|int|bool> <key> <value>\n"
-    "  objutil cat <path> [offset] [n]\n"
-    "  objutil read <path> <offset> <n>\n"
-    "  objutil write <path> <offset> <data...>\n"
-    "  objutil create <dir> <name>\n"
-    "  objutil link <dir> <name> <target_path>\n"
-    "  objutil unlink <dir> <name>\n"
-    "  objutil rename <dir> <old> <new>\n"
-  );
+  #define pl(x) sys_print_str(x)
+
+  pl("Usage:\n");
+  pl("  objutil ls <path>\n");
+  pl("  objutil stat <path>\n");
+  pl("  objutil attrs <path>\n");
+  pl("  objutil getattr <path> <key>\n");
+  pl("  objutil setattr <path> <str|int|bool> <key> <value>\n");
+  pl("  objutil cat <path> [offset] [n]\n");
+  pl("  objutil read <path> <offset> <n>\n");
+  pl("  objutil write <path> <offset> <data>\n");
+  pl("  objutil create <dir> <name>\n");
+  pl("  objutil link <dir> <name> <target_path>\n");
+  pl("  objutil unlink <dir> <name>\n");
+  pl("  objutil rename <dir> <old> <new>\n");
+
+  #undef pl
 }
 
 int main(int argc, char **argv) {
@@ -363,5 +365,3 @@ int main(int argc, char **argv) {
     return 1;
   }
 }
-
-

@@ -1,4 +1,0 @@
-format: vessel
-entry: 0x0000000000000000
-payload_bytes: 25248
-flags: RWX

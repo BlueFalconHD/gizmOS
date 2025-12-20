@@ -66,7 +66,7 @@ typedef struct {
   size_t      nlen;
   uint64_t    out_id;
   uint8_t     out_kind;
-  g_bool      found;
+  uint32_t    matches;
 } find_ctx_t;
 
 static result_t find_cb(const objfs_subobject_entry_t *e, void *arg) {
@@ -74,10 +74,15 @@ static result_t find_cb(const objfs_subobject_entry_t *e, void *arg) {
   size_t en = (size_t)e->name_len;
   if (en > 64) en = 64;
   if (en == ctx->nlen && memcmp(e->name, ctx->name, en) == 0) {
-    ctx->out_id = e->subobject_id;
-    ctx->out_kind = e->type;
-    ctx->found = true;
-    return RESULT_FAILURE(RESULT_NOT_FOUND); // sentinel to stop iteration
+    if (ctx->matches == 0) {
+      ctx->out_id = e->subobject_id;
+      ctx->out_kind = e->type;
+    }
+    ctx->matches++;
+    if (ctx->matches > 1) {
+      // Duplicate names are unsupported; treat directory as invalid.
+      return RESULT_FAILURE(RESULT_ERROR);
+    }
   }
   return RESULT_SUCCESS(0);
 }
@@ -110,21 +115,57 @@ static result_t objfs_find_subobject(uint64_t dir_id, const char *name, size_t n
 
   if (head == 0)
     return RESULT_FAILURE(RESULT_NOT_FOUND);
-  find_ctx_t ctx = {.name = name, .nlen = nlen, .found = false};
-  (void)for_each_subobject_block(head, find_cb, &ctx);
-  if (ctx.found) {
+  find_ctx_t ctx = {.name = name, .nlen = nlen, .matches = 0};
+  result_t rf = for_each_subobject_block(head, find_cb, &ctx);
+  if (!result_is_ok(rf)) {
+    // Duplicate-name error propagates; any other error also propagates.
+    return rf;
+  }
+  if (ctx.matches == 1) {
     if (out_id) *out_id = ctx.out_id;
     if (out_kind) *out_kind = ctx.out_kind;
     return RESULT_SUCCESS(0);
   }
-  // if rf returned RESULT_NOT_FOUND sentinel, it's fine; not found means error
   return RESULT_FAILURE(RESULT_NOT_FOUND);
 }
 
 typedef struct {
   objfs_emit_subobject_fn emit;
   void *arg;
+  struct seen_name {
+    uint8_t len;
+    char    name[64];
+  } *seen;
+  uint32_t seen_cnt;
+  uint32_t seen_cap;
 } emit_ctx_t;
+
+static g_bool seen_contains(const emit_ctx_t *ctx, const char *name, size_t n) {
+  for (uint32_t i = 0; i < ctx->seen_cnt; i++) {
+    if (ctx->seen[i].len == (uint8_t)n && memcmp(ctx->seen[i].name, name, n) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static result_t seen_add(emit_ctx_t *ctx, const char *name, size_t n) {
+  if (ctx->seen_cnt >= ctx->seen_cap) {
+    uint32_t new_cap = (ctx->seen_cap == 0) ? 32 : (ctx->seen_cap * 2);
+    void *nb = kalloc((uint64_t)new_cap * sizeof(*ctx->seen));
+    if (!nb) return RESULT_FAILURE(RESULT_NOMEM);
+    if (ctx->seen && ctx->seen_cnt) {
+      memcpy(nb, ctx->seen, (uint64_t)ctx->seen_cnt * sizeof(*ctx->seen));
+      kfree(ctx->seen);
+    }
+    ctx->seen = (typeof(ctx->seen))nb;
+    ctx->seen_cap = new_cap;
+  }
+  ctx->seen[ctx->seen_cnt].len = (uint8_t)n;
+  for (size_t i = 0; i < 64; i++) ctx->seen[ctx->seen_cnt].name[i] = (i < n) ? name[i] : '\0';
+  ctx->seen_cnt++;
+  return RESULT_SUCCESS(0);
+}
 
 static result_t objfs_emit_cb(const objfs_subobject_entry_t *e, void *a) {
   emit_ctx_t *ctx = (emit_ctx_t *)a;
@@ -133,6 +174,12 @@ static result_t objfs_emit_cb(const objfs_subobject_entry_t *e, void *a) {
   if (n > 64) n = 64;
   for (size_t i = 0; i < n; i++) name[i] = e->name[i];
   name[n] = '\0';
+  if (seen_contains(ctx, name, n)) {
+    // Duplicate names are unsupported.
+    return RESULT_FAILURE(RESULT_ERROR);
+  }
+  result_t rs = seen_add(ctx, name, n);
+  if (!result_is_ok(rs)) return rs;
   // Derive kind from child descriptor capabilities for accurate reporting
   uint8_t derived = e->type;
   objfs_object_disk_t d;
@@ -183,8 +230,10 @@ result_t objfs_list_subobjects(uint64_t dir_id, objfs_emit_subobject_fn emit, vo
   if (head == 0)
     return RESULT_SUCCESS(0);
 
-  emit_ctx_t ctx = {.emit = emit, .arg = arg};
-  return for_each_subobject_block(head, objfs_emit_cb, &ctx);
+  emit_ctx_t ctx = {.emit = emit, .arg = arg, .seen = NULL, .seen_cnt = 0, .seen_cap = 0};
+  result_t r = for_each_subobject_block(head, objfs_emit_cb, &ctx);
+  if (ctx.seen) kfree(ctx.seen);
+  return r;
 }
 
 typedef struct {
@@ -356,5 +405,4 @@ result_t objfs_lookup_path(const char *path, uint64_t *out_obj_id) {
   *out_obj_id = cur;
   return RESULT_SUCCESS(0);
 }
-
 

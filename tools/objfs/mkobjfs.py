@@ -169,6 +169,7 @@ class Builder:
         self.nodes = []  # list of dicts {id, path, kind, size, file_path, dir_metadata_path, attrs_head, attrs[]}
         self.path_to_id = {}
         self.subobject_entries = {}  # id -> list of (name, kind, subobject_id)
+        self.subobject_names = {}    # id -> set(name)
         self.objects = []  # filled later with layout
         self.subobjects_blocks = []  # (block_index, entries, next_block)
         self.content_blocks = []   # (block_index, data)
@@ -205,9 +206,16 @@ class Builder:
     def _ensure_subentries(self, parent_id):
         if parent_id not in self.subobject_entries:
             self.subobject_entries[parent_id] = []
+        if parent_id not in self.subobject_names:
+            self.subobject_names[parent_id] = set()
 
     def _add_subentry(self, parent_id, name, kind, child_id):
         self._ensure_subentries(parent_id)
+        if name in self.subobject_names[parent_id]:
+            parent_path = str(self.nodes[parent_id]['path']) if parent_id < len(self.nodes) else f'id={parent_id}'
+            raise RuntimeError(f"duplicate subobject name '{name}' under {parent_path}; "
+                               f"remove one of '{name}' and '{name}.obj' (or other duplicates)")
+        self.subobject_names[parent_id].add(name)
         self.subobject_entries[parent_id].append((name, kind, child_id))
 
     def _scan_root(self, host_dir: Path, parent_id: int):
@@ -456,5 +464,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 

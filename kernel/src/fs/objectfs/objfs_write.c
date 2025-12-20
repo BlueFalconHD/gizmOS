@@ -168,8 +168,49 @@ static result_t ensure_subobjects_head(objfs_object_disk_t *dir, uint64_t dir_id
   return objfs_store_desc(dir_id, dir);
 }
 
+static result_t subobject_name_count(uint64_t head, const char *name, uint32_t *out_count) {
+  objfs_fs_t *fs = objfs_global();
+  if (!fs || !name) return RESULT_FAILURE(RESULT_INVALID);
+  uint32_t bs = fs->sb.block_size;
+  uint8_t *buf = (uint8_t *)kalloc(bs);
+  if (!buf) return RESULT_FAILURE(RESULT_NOMEM);
+  size_t nlen = strlen(name);
+  if (nlen > 64) nlen = 64;
+  uint32_t cnt = 0;
+  uint64_t blk = head;
+  while (blk) {
+    result_t rr = objfs_block_read(fs->bc, blk, buf);
+    if (!result_is_ok(rr)) { kfree(buf); return rr; }
+    objfs_subobjects_block_hdr_t *hdr = (objfs_subobjects_block_hdr_t *)buf;
+    objfs_subobject_entry_t *ents = (objfs_subobject_entry_t *)(buf + sizeof(*hdr));
+    for (uint32_t i = 0; i < hdr->count; i++) {
+      size_t en = ents[i].name_len;
+      if (en > 64) en = 64;
+      if (en == nlen && memcmp(ents[i].name, name, nlen) == 0) {
+        cnt++;
+        if (cnt > 1) {
+          kfree(buf);
+          return RESULT_FAILURE(RESULT_ERROR);
+        }
+      }
+    }
+    blk = hdr->next_block;
+  }
+  kfree(buf);
+  if (out_count) *out_count = cnt;
+  return RESULT_SUCCESS(0);
+}
+
 static result_t add_subobject_entry(uint64_t head, const char *name, uint8_t kind, uint64_t subobject_id) {
   objfs_fs_t *fs = objfs_global();
+  if (!fs || !name) return RESULT_FAILURE(RESULT_INVALID);
+  // Duplicate names are unsupported.
+  {
+    uint32_t cnt = 0;
+    result_t rc = subobject_name_count(head, name, &cnt);
+    if (!result_is_ok(rc)) return rc;
+    if (cnt != 0) return RESULT_FAILURE(RESULT_ERROR);
+  }
   uint32_t bs = fs->sb.block_size;
   uint8_t *buf = (uint8_t *)kalloc(bs);
   if (!buf) return RESULT_FAILURE(RESULT_NOMEM);
@@ -249,6 +290,12 @@ result_t objfs_create(uint64_t parent_dir_id, const char *name, uint16_t mode, u
   objfs_object_disk_t dir;
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
+  if (dir.subobjects_idx != 0) {
+    uint32_t cnt = 0;
+    result_t rc = subobject_name_count(dir.subobjects_idx, name, &cnt);
+    if (!result_is_ok(rc)) return rc;
+    if (cnt != 0) return RESULT_FAILURE(RESULT_ERROR);
+  }
   // Allocate object slot
   uint64_t new_id = 0;
   result_t rs = find_free_object_slot(&new_id);
@@ -269,7 +316,12 @@ result_t objfs_create(uint64_t parent_dir_id, const char *name, uint16_t mode, u
   if (!result_is_ok(re)) return re;
   // Emit unknown type in index; consumers will derive kind from descriptor fields
   result_t ra = add_subobject_entry(dir.subobjects_idx, name, OBJFS_OBJ_UNKNOWN, new_id);
-  if (!result_is_ok(ra)) return ra;
+  if (!result_is_ok(ra)) {
+    // Roll back the allocated slot so it can be reused.
+    nd.nlink = 0;
+    (void)objfs_store_desc(new_id, &nd);
+    return ra;
+  }
   if (out_obj_id) *out_obj_id = new_id;
   return RESULT_SUCCESS(0);
 }
@@ -278,6 +330,12 @@ result_t objfs_link(uint64_t parent_dir_id, const char *name, uint64_t target_id
   objfs_object_disk_t dir;
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
+  if (dir.subobjects_idx != 0) {
+    uint32_t cnt = 0;
+    result_t rc = subobject_name_count(dir.subobjects_idx, name, &cnt);
+    if (!result_is_ok(rc)) return rc;
+    if (cnt != 0) return RESULT_FAILURE(RESULT_ERROR);
+  }
   result_t re = ensure_subobjects_head(&dir, parent_dir_id);
   if (!result_is_ok(re)) return re;
   objfs_object_disk_t t;
@@ -295,6 +353,20 @@ static result_t update_subobject_by_name(uint64_t head, const char *name,
                                          g_bool remove, const char *rename_to) {
   objfs_fs_t *fs = objfs_global();
   uint32_t bs = fs->sb.block_size;
+  // Duplicate names are unsupported; ensure there is exactly one match.
+  {
+    uint32_t cnt = 0;
+    result_t rc = subobject_name_count(head, name, &cnt);
+    if (!result_is_ok(rc)) return rc;
+    if (cnt == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
+    if (remove == false && rename_to) {
+      // Renaming must not collide with an existing entry.
+      uint32_t new_cnt = 0;
+      result_t r2 = subobject_name_count(head, rename_to, &new_cnt);
+      if (!result_is_ok(r2)) return r2;
+      if (new_cnt != 0) return RESULT_FAILURE(RESULT_ERROR);
+    }
+  }
   uint8_t *buf = (uint8_t *)kalloc(bs);
   if (!buf) return RESULT_FAILURE(RESULT_NOMEM);
   uint64_t blk = head;
@@ -336,6 +408,12 @@ result_t objfs_unlink(uint64_t parent_dir_id, const char *name) {
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
   if (dir.subobjects_idx == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
+  {
+    uint32_t cnt = 0;
+    result_t rc = subobject_name_count(dir.subobjects_idx, name, &cnt);
+    if (!result_is_ok(rc)) return rc;
+    if (cnt == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
+  }
   return update_subobject_by_name(dir.subobjects_idx, name, true, NULL);
 }
 
@@ -344,6 +422,8 @@ result_t objfs_rename(uint64_t parent_dir_id, const char *old_name, const char *
   result_t rl = objfs_load_desc(parent_dir_id, &dir, NULL, NULL);
   if (!result_is_ok(rl)) return rl;
   if (dir.subobjects_idx == 0) return RESULT_FAILURE(RESULT_NOT_FOUND);
+  if (!old_name || !new_name) return RESULT_FAILURE(RESULT_INVALID);
+  if (strcmp(old_name, new_name) == 0) return RESULT_SUCCESS(0);
   return update_subobject_by_name(dir.subobjects_idx, old_name, false, new_name);
 }
 
@@ -469,5 +549,4 @@ result_t objfs_set_attr_int(uint64_t obj_id, const char *key, int64_t value) {
 result_t objfs_set_attr_bool(uint64_t obj_id, const char *key, uint8_t value) {
   return set_attr_core(obj_id, key, OBJFS_ATTR_BOOL, &value, 0);
 }
-
 
